@@ -1,45 +1,57 @@
-# Configuración de la flota. Los nombres de missions y positions son los que
-# aparecen en la web de cada MiR; el FM los resuelve a GUID por robot al
-# arrancar (los GUIDs cambian de un robot a otro aunque el nombre coincida).
-
-# Grupo de missions (web del MiR) del que se leen las missions: reduce ruido y
-# peticiones. Se resuelve a GUID por robot con GET /mission_groups.
-mission_group: "mirur-tknika"
+# Configuración de la flota.
+#
+# El core del FM solo lee las claves genéricas: `driver`, `manufacturer`,
+# `battery_min` y los nombres de `actions` de cada robot, más `auto_charge`,
+# `assigner` y `mqtt`. El resto del bloque de cada robot lo interpreta su
+# driver (`fm/adapters/<driver>/config.py`), fusionado con `drivers.<driver>`.
 
 mqtt:
   manufacturer: MiR            # segmento <manufacturer> del topic y del header
   # host/port vienen de .env (MQTT_HOST, MQTT_PORT)
 
 auto_charge:
-  mission: "Carga en estación MIRUR"  # nombre EXACTO en el grupo mirur-tknika (sin inputs)
   battery_floor: 20            # % — por debajo se encola la carga
-  priority: 10                 # mayor = entra más arriba en la mission_queue
+  priority: 10                 # mayor = entra más arriba en la cola del robot
   abort_cooldown_s: 60         # si la carga aborta, esperar antes de re-postear
 
 assigner:
   prefer_not_charging: true    # si hay otro robot libre, no sacar al que carga
 
+# Defaults por marca. Cualquier clave se puede sobreescribir en el robot.
+drivers:
+  mir:
+    # Grupo de missions (web del MiR) del que se leen las missions: reduce
+    # ruido y peticiones. Se resuelve a GUID por robot con GET /mission_groups.
+    mission_group: "mirur-tknika"
+    # Mission de auto-carga: nombre EXACTO en el grupo (sin inputs).
+    charge_mission: "Carga en estación MIRUR"
+    # Opcional. Si se omite, vale cualquier position que exista en el robot.
+    # positions_allowlist:
+    #   - H2D1-VL
+    #   - H2D2-VL
+
 # Histéresis: battery_min (aceptar trabajo) > battery_floor (ir a cargar).
 # Así un robot que acaba de salir del suelo no recibe trabajo y vuelve a caer.
+#
+# Los nombres de missions y positions son los que aparecen en la web de cada
+# MiR; el driver los resuelve a GUID por robot al arrancar (los GUIDs cambian
+# de un robot a otro aunque el nombre coincida).
 robots:
   mir-1:
-    host: 192.168.15.5
+    driver: mir                # por defecto "mir"; el manufacturer lo pone el driver ("MiR")
+    host: 192.168.15.5         # o MIR_HOST_MIR_1 en .env
     battery_min: 25
     actions:
       coger:
-        mission: "coger"          # sin parámetros por ahora
+        mission: "coger"       # sin parámetros por ahora
       dejar:
         mission: "dejar"
   mir-2:
+    driver: mir
     host: 192.168.15.15
     battery_min: 25
     actions:
       coger:
-        mission: "coger"          # sin parámetros por ahora
+        mission: "coger"
       dejar:
         mission: "dejar"
-
-# Opcional. Si se omite, vale cualquier position que exista en el robot.
-# positions_allowlist:
-#   - H2D1-VL
-#   - H2D2-VL

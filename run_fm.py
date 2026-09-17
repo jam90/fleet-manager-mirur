@@ -18,8 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fm.adapters.mir import MirDriver  # noqa: E402
-from fm.config import load_config  # noqa: E402
+from fm.adapters import make_driver  # noqa: E402
+from fm.config import ConfigError, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus  # noqa: E402
 from fm.robot import Robot  # noqa: E402
@@ -42,16 +42,21 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s")
-    cfg = load_config(args.config, args.env)
+    try:
+        cfg = load_config(args.config, args.env)
+    except ConfigError as e:
+        log.error("configuración inválida: %s", e)
+        return 2
     serials = args.robot or sorted(cfg.robots)
     unknown = [s for s in serials if s not in cfg.robots]
     if unknown:
         log.error("robots desconocidos: %s (en fleet.yaml: %s)", unknown, sorted(cfg.robots))
         return 2
-    # Fase 3 del plan de drivers: aquí entrará `make_driver()` según `robots.<s>.driver`.
-    robots = {s: Robot(cfg.robots[s], MirDriver(
-        cfg.robots[s], mission_group=cfg.mission_group, charge_mission=cfg.auto_charge.mission,
-        positions_allowlist=cfg.positions_allowlist)) for s in serials}
+    try:
+        robots = {s: Robot(cfg.robots[s], make_driver(cfg.robots[s], cfg)) for s in serials}
+    except ConfigError as e:
+        log.error("configuración inválida: %s", e)
+        return 2
 
     bus = MqttBus(cfg.mqtt.host, cfg.mqtt.port, cfg.mqtt.manufacturer, serials)
     bus.start()

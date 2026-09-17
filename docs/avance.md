@@ -389,3 +389,42 @@ El core deja de importar nada de MiR. `pytest`: 39 en verde.
     (H4) de una lanzada desde la web.
 26. **`job_id` es `str` opaco** en la frontera (el MiR usa el int de la cola,
     otra marca puede usar un UUID). El driver convierte.
+
+## 2026-09-17 — Drivers fase 3: configuración y registro
+
+`pytest`: 45 en verde. `run_fm.py` arranca con el nuevo `fleet.yaml` y
+construye los dos `MirDriver` por el registro.
+
+### Código
+
+- `fm/config.py`: `RobotConfig(serial, driver, manufacturer, battery_min,
+  action_types, raw)`. El core solo interpreta eso; `raw` es el bloque
+  completo para el driver. `AutoChargeConfig` pierde `mission`;
+  `FleetConfig` pierde `mission_group`/`positions_allowlist` y gana
+  `drivers: dict` (+ `driver_defaults(name)`). `ConfigError` para fallos
+  de configuración; `run_fm` los imprime y sale con 2.
+- `fm/adapters/mir/config.py`: `ActionConfig` (movido desde `fm/config.py`),
+  `MirRobotConfig` y `parse_config(serial, raw, defaults, env)`: fusiona
+  `drivers.mir` ← `robots.<s>` y resuelve `MIR_HOST_*`/`MIR_AUTH_*`.
+- `fm/adapters/__init__.py`: `DRIVERS = {"mir": "fm.adapters.mir"}` y
+  `make_driver(rcfg, fleet, env)`. Cada paquete de driver expone
+  `make_driver(serial, raw, defaults, env)`. Import perezoso por nombre de
+  módulo: el core no carga marcas que no use.
+- `config/fleet.yaml` en el formato nuevo; `README` sección de configuración.
+- `scripts/_common.py`: `robot_or_exit` devuelve `MirRobotConfig` (los
+  scripts son de MiR) y rechaza serials con otro driver.
+- `tests/test_config.py`: carga genérica, fusión de defaults/entorno,
+  registro, y los tres errores "clave en el sitio antiguo".
+
+### Decisiones nuevas
+
+27. **`actions:` es convención para todos los drivers**: mapping
+    `actionType → config de la marca`. El core solo lee sus claves
+    (`RobotConfig.action_types`) para que el asignador sepa qué robots
+    soportan el `actionType` de la order sin conocer la marca.
+28. **Claves antiguas en la raíz → error al arrancar**, no aviso: como
+    acordamos, sin capa de compatibilidad, pero el mensaje dice dónde va
+    ahora cada clave (`mission_group` → `drivers.mir.mission_group`, etc.).
+29. **`robots.<s>.manufacturer` pisa el del driver** (`make_driver` lo asigna
+    en la instancia). Sirve para la fase 4 (manufacturer por robot en el
+    topic) y para marcas cuyo nombre en el topic no es el de la clase.

@@ -1,13 +1,12 @@
 from fm.assigner import RobotSnapshot, assign
-from fm.config import ActionConfig, AutoChargeConfig, FleetConfig, MqttConfig, RobotConfig
+from fm.config import FleetConfig, RobotConfig
 
 
 def _cfg(prefer_not_charging=True):
-    acts = {"coger": ActionConfig("coger", "coger")}
+    acts = frozenset({"coger"})
     return FleetConfig(
-        robots={"mir-1": RobotConfig("mir-1", "h1", "a", 25, acts),
-                "mir-2": RobotConfig("mir-2", "h2", "a", 25, dict(acts))},
-        mission_group="g", auto_charge=AutoChargeConfig("Carga"), mqtt=MqttConfig(),
+        robots={"mir-1": RobotConfig("mir-1", battery_min=25, action_types=acts),
+                "mir-2": RobotConfig("mir-2", battery_min=25, action_types=acts)},
         prefer_not_charging=prefer_not_charging)
 
 

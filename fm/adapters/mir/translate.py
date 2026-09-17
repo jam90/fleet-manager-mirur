@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Collection
 
 from fm.adapters.base import Telemetry
-from fm.config import RobotConfig
+from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.client import (STATE_EMERGENCY_STOP, STATE_ERROR, STATE_EXECUTING,
                                     STATE_MANUAL, STATE_PAUSE, MirStatus)
 from fm.vda5050.order import Action, OrderRejected
@@ -78,7 +78,7 @@ class MissionRequest:
 
 
 
-def from_vda_order(action: Action, robot: RobotConfig, missions: dict[str, str],
+def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, str],
                    positions: dict[str, str], mission_inputs: dict[str, set[str]],
                    allowlist: set[str] | None = None) -> MissionRequest:
     """`Action` VDA → `MissionRequest` usando los índices DE ESE robot.

@@ -40,7 +40,7 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
     for serial in sorted(snapshots):
         s = snapshots[serial]
         rcfg = cfg.robots.get(serial)
-        if rcfg is None or action_type not in rcfg.actions:
+        if rcfg is None or action_type not in rcfg.action_types:
             rejections[serial] = f"no soporta '{action_type}'"
         elif not s.available:
             rejections[serial] = "no disponible (manual/error/sin REST)"

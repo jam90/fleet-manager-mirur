@@ -2,11 +2,11 @@ import pytest
 
 from fm.adapters.base import Job, Telemetry
 from fm.adapters.mir.translate import from_vda_order
-from fm.config import ActionConfig, RobotConfig
+from fm.adapters.mir.config import ActionConfig, MirRobotConfig
 from fm.orders import IgnoreOrder, OrderTracker, pick_action
 from fm.vda5050.order import OrderRejected, parse_order
 
-ROBOT = RobotConfig("mir-1", "h", "a", 25, {
+ROBOT = MirRobotConfig("mir-1", "h", "a", {
     "coger": ActionConfig("coger", "coger"),
     "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"], required_inputs=["pieza"]),
 })

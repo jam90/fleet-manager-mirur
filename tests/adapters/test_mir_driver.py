@@ -3,13 +3,13 @@ import pytest
 
 from fm.adapters.mir import MirDriver
 from fm.adapters.mir.client import MirClient
-from fm.config import ActionConfig, RobotConfig
+from fm.adapters.mir.config import ActionConfig, MirRobotConfig
 from fm.vda5050.order import Action, ActionParameter, OrderRejected
 
-CFG = RobotConfig("mir-1", "h", "a", 25, {
+CFG = MirRobotConfig("mir-1", "h", "a", {
     "coger": ActionConfig("coger", "coger"),
     "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"]),
-})
+}, mission_group="g", charge_mission="Carga")
 STATUS = {"state_id": 3, "state_text": "Ready", "battery_percentage": 70.0, "map_id": "m",
           "position": {"x": 0, "y": 0, "orientation": 0}, "mission_queue_id": None}
 
@@ -52,7 +52,7 @@ class _FakeClient(MirClient):
 
 def _driver(**kw):
     c = _FakeClient(**kw)
-    return MirDriver(CFG, c, mission_group="g", charge_mission="Carga"), c
+    return MirDriver(CFG, c), c
 
 
 def test_connect_indices_y_translate():
@@ -115,6 +115,6 @@ def test_charge_job():
     d.connect()
     job = d.charge_job()
     assert job.payload.mission_guid == "m-carga" and job.action.actionType == "charge"
-    d2 = MirDriver(CFG, _FakeClient(), mission_group="g")
+    d2 = MirDriver(MirRobotConfig("mir-1", "h", "a", {}, mission_group="g"), _FakeClient())
     d2.connect()
     assert d2.charge_job() is None              # sin mission de carga configurada

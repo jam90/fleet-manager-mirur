@@ -1,7 +1,11 @@
 """Carga de configuración: `.env` (secretos y red) + `config/fleet.yaml` (flota).
 
-Se convierte todo a dataclasses para que el resto del código no toque dicts
-sueltos y los errores de configuración salten al arrancar, no en runtime.
+El core solo entiende las claves genéricas (driver, manufacturer, battery_min,
+qué actionTypes soporta cada robot, auto-carga, asignador, MQTT). El resto
+del bloque de cada robot (`host`, `actions.<tipo>.mission`, ...) se entrega
+crudo al driver de su marca, que lo valida en `fm/adapters/<marca>/config.py`.
+Así los errores de configuración saltan al arrancar, no en runtime, y el core
+no sabe qué claves necesita cada marca.
 """
 from __future__ import annotations
 
@@ -15,28 +19,34 @@ from dotenv import load_dotenv
 
 log = logging.getLogger("fm.config")
 
+DEFAULT_DRIVER = "mir"
 
-@dataclass
-class ActionConfig:
-    """Cómo se traduce un `actionType` VDA a una mission del MiR."""
-    action_type: str
-    mission: str                                  # nombre de la mission en la web del MiR
-    position_inputs: list[str] = field(default_factory=list)   # inputs cuyo valor es un nombre de position
-    required_inputs: list[str] = field(default_factory=list)   # inputs obligatorios (se reenvían tal cual)
+# Claves que vivían en la raíz del fleet.yaml antiguo y ahora son del driver MiR.
+# Se rechazan con un mensaje claro en vez de ignorarlas en silencio.
+_MOVED_ROOT_KEYS = {
+    "mission_group": "drivers.mir.mission_group",
+    "positions_allowlist": "drivers.mir.positions_allowlist",
+}
+
+
+class ConfigError(ValueError):
+    """fleet.yaml inválido. Se lanza al arrancar con el motivo."""
 
 
 @dataclass
 class RobotConfig:
+    """Parte genérica de `robots.<serial>`. `raw` es el bloque completo, para el driver."""
     serial: str
-    host: str
-    auth: str                                     # cabecera Authorization completa ("Basic ...")
-    battery_min: float                            # % mínimo para aceptar orders
-    actions: dict[str, ActionConfig]
+    driver: str = DEFAULT_DRIVER
+    manufacturer: str | None = None               # None = el que declare el driver
+    battery_min: float = 25.0                     # % mínimo para aceptar orders
+    action_types: frozenset[str] = frozenset()    # claves de `actions:` (convención de todos los drivers)
+    raw: dict = field(default_factory=dict)
 
 
 @dataclass
 class AutoChargeConfig:
-    mission: str | None                           # None = auto-carga desactivada
+    """Umbrales de la auto-carga (H4). Qué job es "cargar" lo decide cada driver."""
     battery_floor: float = 20.0
     priority: int = 10
     abort_cooldown_s: float = 60.0
@@ -52,14 +62,16 @@ class MqttConfig:
 @dataclass
 class FleetConfig:
     robots: dict[str, RobotConfig]
-    mission_group: str | None                     # grupo de missions del MiR a indexar (None = todas)
-    auto_charge: AutoChargeConfig
-    mqtt: MqttConfig
-    positions_allowlist: set[str] | None = None   # None = cualquier position del robot
+    auto_charge: AutoChargeConfig = field(default_factory=AutoChargeConfig)
+    mqtt: MqttConfig = field(default_factory=MqttConfig)
+    drivers: dict[str, dict] = field(default_factory=dict)   # defaults por marca: bloque `drivers:`
     prefer_not_charging: bool = True
 
+    def driver_defaults(self, name: str) -> dict:
+        return dict(self.drivers.get(name) or {})
 
-def _env_key(serial: str) -> str:
+
+def env_key(serial: str) -> str:
     """`mir-2` → `MIR_2`, para variables tipo MIR_AUTH_MIR_2."""
     return serial.upper().replace("-", "_").replace(".", "_")
 
@@ -69,33 +81,26 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
     load_dotenv(env_path)  # no pisa variables ya definidas en el entorno
     raw = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8")) or {}
 
-    # AUTH_HEADER es el nombre que usaba el .env del proyecto anterior; se
-    # acepta como alias para poder reutilizar ese fichero sin tocarlo.
-    default_auth = os.environ.get("MIR_AUTH") or os.environ.get("AUTH_HEADER", "")
+    for key, dest in _MOVED_ROOT_KEYS.items():
+        if key in raw:
+            raise ConfigError(f"'{key}' ya no va en la raíz de fleet.yaml: muévelo a '{dest}'")
+    ac = raw.get("auto_charge") or {}
+    if "mission" in ac:
+        raise ConfigError("'auto_charge.mission' ya no existe: muévelo a 'drivers.mir.charge_mission'")
+
     robots: dict[str, RobotConfig] = {}
     for serial, r in (raw.get("robots") or {}).items():
-        actions = {}
-        for atype, a in (r.get("actions") or {}).items():
-            actions[atype] = ActionConfig(
-                action_type=atype,
-                mission=a["mission"],
-                position_inputs=list(a.get("position_inputs") or []),
-                required_inputs=list(a.get("required_inputs") or []),
-            )
-        key = _env_key(serial)
+        r = r or {}
         robots[serial] = RobotConfig(
             serial=serial,
-            host=os.environ.get(f"MIR_HOST_{key}", r.get("host", "")),
-            auth=os.environ.get(f"MIR_AUTH_{key}", default_auth),
+            driver=str(r.get("driver", DEFAULT_DRIVER)),
+            manufacturer=r.get("manufacturer"),
             battery_min=float(r.get("battery_min", 25)),
-            actions=actions,
+            action_types=frozenset(r.get("actions") or {}),
+            raw=r,
         )
-        if not robots[serial].auth:
-            log.warning("[%s] sin token MIR_AUTH: las llamadas REST fallarán", serial)
 
-    ac = raw.get("auto_charge") or {}
     auto_charge = AutoChargeConfig(
-        mission=ac.get("mission") or None,
         battery_floor=float(ac.get("battery_floor", 20)),
         priority=int(ac.get("priority", 10)),
         abort_cooldown_s=float(ac.get("abort_cooldown_s", 60)),
@@ -108,13 +113,11 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         manufacturer=str(mq.get("manufacturer", "MiR")),
     )
 
-    allow = raw.get("positions_allowlist")
     cfg = FleetConfig(
         robots=robots,
-        mission_group=raw.get("mission_group") or None,
         auto_charge=auto_charge,
         mqtt=mqtt,
-        positions_allowlist=set(allow) if allow else None,
+        drivers={k: (v or {}) for k, v in (raw.get("drivers") or {}).items()},
         prefer_not_charging=bool((raw.get("assigner") or {}).get("prefer_not_charging", True)),
     )
 

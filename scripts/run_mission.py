@@ -25,10 +25,11 @@ def main() -> None:
     wait = "--no-wait" not in sys.argv
 
     cfg = load()
-    client = client_for(robot_or_exit(cfg, serial))
-    missions = client.index_missions_by_name(cfg.mission_group)
+    robot = robot_or_exit(cfg, serial)
+    client = client_for(robot)
+    missions = client.index_missions_by_name(robot.mission_group)
     if name not in missions:
-        print(f"[{serial}] mission '{name}' no está en el grupo '{cfg.mission_group}'; hay: {sorted(missions)}")
+        print(f"[{serial}] mission '{name}' no está en el grupo '{robot.mission_group}'; hay: {sorted(missions)}")
         sys.exit(1)
     guid = missions[name]
 

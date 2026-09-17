@@ -25,16 +25,16 @@ def main() -> None:
     client = client_for(robot)
 
     wanted = {a.mission for a in robot.actions.values()}
-    if cfg.auto_charge.mission:
-        wanted.add(cfg.auto_charge.mission)
+    if robot.charge_mission:
+        wanted.add(robot.charge_mission)
 
-    if cfg.mission_group and "--all" not in sys.argv:
+    if robot.mission_group and "--all" not in sys.argv:
         groups = client.index_mission_groups_by_name()
         print(f"== [{serial}] mission_groups: {sorted(groups)}")
-        if cfg.mission_group not in groups:
-            print(f"!! el grupo '{cfg.mission_group}' NO existe en {serial}"); sys.exit(1)
-        print(f"== [{serial}] missions del grupo '{cfg.mission_group}' ({groups[cfg.mission_group]}) ==")
-        missions = client.mission_groups_group_id_missions_get(groups[cfg.mission_group])
+        if robot.mission_group not in groups:
+            print(f"!! el grupo '{robot.mission_group}' NO existe en {serial}"); sys.exit(1)
+        print(f"== [{serial}] missions del grupo '{robot.mission_group}' ({groups[robot.mission_group]}) ==")
+        missions = client.mission_groups_group_id_missions_get(groups[robot.mission_group])
     else:
         print(f"== [{serial}] missions (todas) ==")
         missions = client.missions_get()

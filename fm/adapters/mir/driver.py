@@ -11,8 +11,8 @@ import logging
 
 from fm.adapters.base import Job, JobStatus, Telemetry
 from fm.adapters.mir.client import MirClient, MirStatus
+from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, to_telemetry
-from fm.config import RobotConfig
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE, State
 
@@ -28,15 +28,10 @@ QUEUE_TO_JOB: dict[str, JobStatus] = {
 class MirDriver:
     manufacturer = "MiR"
 
-    def __init__(self, cfg: RobotConfig, client: MirClient | None = None, *,
-                 mission_group: str | None = None, charge_mission: str | None = None,
-                 positions_allowlist: set[str] | None = None):
+    def __init__(self, cfg: MirRobotConfig, client: MirClient | None = None):
         self.cfg = cfg
         self.serial = cfg.serial
         self.client = client or MirClient(cfg.host, cfg.auth)
-        self.mission_group = mission_group
-        self.charge_mission = charge_mission
-        self.positions_allowlist = positions_allowlist
         # Prefijo [serial] en cada línea para poder filtrar el log por robot.
         self.log = logging.LoggerAdapter(log, {})
         self.log.process = lambda msg, kw: (f"[{self.serial}] {msg}", kw)
@@ -55,12 +50,12 @@ class MirDriver:
         """Resuelve nombres → GUID. Tolerante: si falla, se reintenta en el
         próximo tick y mientras tanto el robot solo publica telemetría."""
         try:
-            self.missions = self.client.index_missions_by_name(self.mission_group)
+            self.missions = self.client.index_missions_by_name(self.cfg.mission_group)
             st = self.last_status or self.client.status_get()
             self.positions = self.client.index_positions_by_name(st.map_id)
             wanted = {a.mission for a in self.cfg.actions.values()}
-            if self.charge_mission:
-                wanted.add(self.charge_mission)
+            if self.cfg.charge_mission:
+                wanted.add(self.cfg.charge_mission)
             for name in sorted(wanted):
                 guid = self.missions.get(name)
                 if guid is None:
@@ -92,7 +87,7 @@ class MirDriver:
         if not self.indexed:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, "índices de missions/positions no cargados")
         req = from_vda_order(action, self.cfg, self.missions, self.positions,
-                             self.mission_inputs, self.positions_allowlist)
+                             self.mission_inputs, self.cfg.positions_allowlist)
         return Job(action, f"mission '{req.mission_name}'", req)
 
     def execute(self, job: Job, priority: int = 0) -> str:
@@ -121,14 +116,12 @@ class MirDriver:
 
     def charge_job(self) -> Job | None:
         """Job de auto-carga (H4): la mission configurada, sin parámetros."""
-        if not self.charge_mission:
-            return None
-        guid = self.missions.get(self.charge_mission)
+        name = self.cfg.charge_mission
+        guid = self.missions.get(name) if name else None
         if guid is None:
             return None
         action = Action("charge", "auto-charge", actionDescription="auto-carga del FM")
-        return Job(action, f"mission '{self.charge_mission}'",
-                   MissionRequest(action, self.charge_mission, guid, []))
+        return Job(action, f"mission '{name}'", MissionRequest(action, name, guid, []))
 
     def extra_state(self, s: State) -> None:
         """Nada que añadir: el MiR no expone más de lo que ya va en Telemetry."""

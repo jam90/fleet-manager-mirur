@@ -36,21 +36,30 @@ del MiR (Help → API → Authorize). Broker de desarrollo: Mosquitto en
 ## Configuración (`config/fleet.yaml`)
 
 ```yaml
-mission_group: "mirur-tknika"       # solo se indexan las missions de este grupo
 mqtt: { manufacturer: MiR }
-auto_charge:
-  mission: "Carga en estación MIRUR"
-  battery_floor: 20
+auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo pone el driver
+drivers:                            # defaults por marca (cualquier robot los puede pisar)
+  mir:
+    mission_group: "mirur-tknika"   # solo se indexan las missions de este grupo
+    charge_mission: "Carga en estación MIRUR"
 robots:
   mir-1:
-    host: 192.168.15.5
+    driver: mir                     # por defecto "mir"
+    host: 192.168.15.5              # ↓ a partir de aquí lo interpreta el driver
     battery_min: 25                 # > battery_floor (histéresis)
     actions:
       coger: { mission: "coger" }
       dejar: { mission: "dejar" }
 ```
 
-Por `action`:
+El core solo lee `driver`, `manufacturer` (opcional; por defecto el del
+driver), `battery_min` y las claves de `actions` (qué actionTypes soporta el
+robot). El resto del bloque va crudo al driver, que lo valida al arrancar
+(`fm/adapters/mir/config.py`). Un `fleet.yaml` con `mission_group`,
+`positions_allowlist` o `auto_charge.mission` en la raíz (formato anterior)
+falla al arrancar con la pista de dónde va ahora cada clave.
+
+Por `action` (driver `mir`):
 
 | Clave | Significado |
 |---|---|
