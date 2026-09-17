@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 
 from _common import client_for, load, robot_or_exit, setup_logging
-from fm.mir_client import position_map_id  # noqa: E402  (_common ajusta sys.path)
+from fm.adapters.mir.client import position_map_id  # noqa: E402  (_common ajusta sys.path)
 
 
 def main() -> None:

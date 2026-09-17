@@ -1,7 +1,7 @@
 import pytest
 
-from fm.adapters.base import Telemetry
-from fm.adapters.mir import MissionRequest, from_vda_order
+from fm.adapters.base import Job, Telemetry
+from fm.adapters.mir.translate import from_vda_order
 from fm.config import ActionConfig, RobotConfig
 from fm.orders import IgnoreOrder, OrderTracker, pick_action
 from fm.vda5050.order import OrderRejected, parse_order
@@ -74,18 +74,20 @@ def test_errores_de_traduccion():
     assert e.value.error_type == "NO_ROUTE_TO_TARGET"
 
 
-class FakeClient:
+class FakeDriver:
+    """Solo `job_status`: devuelve la secuencia dada y repite el último."""
     def __init__(self, states):
         self.states = list(states)
 
-    def mission_queue_id_get(self, qid):
-        return {"id": qid, "state": self.states.pop(0) if len(self.states) > 1 else self.states[0]}
+    def job_status(self, job_id):
+        return self.states.pop(0) if len(self.states) > 1 else self.states[0]
 
 
 def _accept(t, o):
     req = from_vda_order(pick_action(o), ROBOT, MISSIONS, POSITIONS, INPUTS)
-    t.accept(o, req, 42)
-    return req
+    job = Job(req.action, f"mission '{req.mission_name}'", req)
+    t.accept(o, job, "42")
+    return job
 
 
 def test_ciclo_order_update_id():
@@ -102,7 +104,7 @@ def test_ciclo_order_update_id():
         t.check_new(order(update_id=1), ready())
     assert e.value.error_type == "VALIDATION_FAILURE"
     # termina → se admite otra order y también un update; regresión sigue rechazada
-    t.poll(FakeClient(["Done"]))
+    t.poll(FakeDriver(["FINISHED"]))
     assert not t.busy and t.overlay().action_states[0].actionStatus == "FINISHED"
     t.check_new(order(order_id="o2"), ready())
     t.check_new(order(update_id=1), ready())
@@ -118,9 +120,11 @@ def test_robot_no_disponible_y_fallo_ejecucion():
         t.check_new(order(), Telemetry(battery=50.0, available=False, unavailable_reason="Manual"))
     assert e.value.error_type == "MOBILE_ROBOT_NOT_AVAILABLE" and "Manual" in e.value.description
     _accept(t, order())
-    t.poll(FakeClient(["Executing", "Aborted"]))
+    t.poll(FakeDriver(["RUNNING", "FAILED"]))
     assert t.overlay().action_states[0].actionStatus == "RUNNING" and t.busy
-    t.poll(FakeClient(["Aborted"]))
+    t.poll(FakeDriver([None]))     # sin respuesta: se conserva el estado
+    assert t.overlay().action_states[0].actionStatus == "RUNNING" and t.busy
+    t.poll(FakeDriver(["FAILED"]))
     ov = t.overlay()
     assert ov.action_states[0].actionStatus == "FAILED" and not t.busy
     assert ov.errors[0].errorType == "ORDER_EXECUTION_FAILED"

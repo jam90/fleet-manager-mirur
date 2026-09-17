@@ -1,18 +1,16 @@
-"""Estado de la order VDA de un robot y su seguimiento en `mission_queue`.
+"""Estado de la order VDA de un robot y su seguimiento a través del driver.
 
-Un `OrderTracker` por robot. Sabe qué order está activa, qué entrada de la
-cola del MiR la ejecuta, y traduce el estado de esa entrada a
-`actionStates[]`. También guarda los errores de rechazo que la norma manda
-reportar "hasta que se acepte una nueva order" (decisión 2).
+Un `OrderTracker` por robot. Sabe qué order está activa, qué `Job` del driver
+la ejecuta, y traduce el estado de ese job a `actionStates[]`. También guarda
+los errores de rechazo que la norma manda reportar "hasta que se acepte una
+nueva order" (decisión 2). No toca la red: pregunta `driver.job_status()`.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 
-from fm.adapters.base import Telemetry
-from fm.adapters.mir import MissionRequest
-from fm.mir_client import QUEUE_ALIVE, MirClient
+from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry
 from fm.vda5050.order import Action, Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
                               E_OTHER_ORDER_ACTIVE, E_OUTDATED_ORDER_UPDATE, E_VALIDATION_FAILURE,
@@ -21,9 +19,7 @@ from fm.vda5050.state_builder import StateOverlay
 
 log = logging.getLogger("fm.orders")
 
-# mission_queue.state → actionStatus VDA (granularidad gruesa, §5.2 del brief)
-QUEUE_TO_ACTION = {"Pending": "WAITING", "Executing": "RUNNING", "Done": "FINISHED",
-                   "Aborted": "FAILED", "Cancelled": "FAILED", "Canceled": "FAILED"}
+JOB_ALIVE = ("WAITING", "RUNNING")
 
 
 class IgnoreOrder(Exception):
@@ -48,15 +44,14 @@ def pick_action(order: Order, done_action_ids: set[str] = frozenset()) -> Action
 @dataclass
 class ActiveOrder:
     order: Order
-    request: MissionRequest
-    queue_id: int
-    queue_state: str = "Pending"
-    action_status: str = "WAITING"
+    job: Job
+    job_id: str
+    job_status: JobStatus = "WAITING"     # = actionStatus VDA de la action ejecutada
     finished_action_ids: set[str] = field(default_factory=set)
 
     @property
     def alive(self) -> bool:
-        return self.queue_state in QUEUE_ALIVE
+        return self.job_status in JOB_ALIVE
 
 
 class OrderTracker:
@@ -96,7 +91,7 @@ class OrderTracker:
                 raise OrderRejected(E_VALIDATION_FAILURE,
                                     "v1 no admite ampliar una order en curso (orderUpdateId > activo)")
             raise OrderRejected(E_OTHER_ORDER_ACTIVE,
-                                f"order '{a.order.orderId}' aún activa ({a.queue_state})")
+                                f"order '{a.order.orderId}' aún activa ({a.job_status})")
 
     def done_action_ids(self, order: Order) -> set[str]:
         """Para un update de una order terminada: actions ya FINISHED."""
@@ -106,13 +101,13 @@ class OrderTracker:
         return set()
 
     # -------------------------------------------------------------- eventos
-    def accept(self, order: Order, request: MissionRequest, queue_id: int) -> None:
+    def accept(self, order: Order, job: Job, job_id: str) -> None:
         prev_done = self.done_action_ids(order)
-        self.active = ActiveOrder(order, request, queue_id, finished_action_ids=prev_done)
+        self.active = ActiveOrder(order, job, job_id, finished_action_ids=prev_done)
         self.order_errors.clear()
         self.exec_errors.clear()
-        log.info("[%s] order %s/%d aceptada → '%s' queue id=%d", self.serial, order.orderId,
-                 order.orderUpdateId, request.mission_name, queue_id)
+        log.info("[%s] order %s/%d aceptada → %s job=%s", self.serial, order.orderId,
+                 order.orderUpdateId, job.label, job_id)
 
     def reject(self, order_id: str | None, err: OrderRejected) -> Error:
         e = error_for_order(err.error_type, err.description, order_id, level="WARNING")
@@ -120,28 +115,24 @@ class OrderTracker:
         log.warning("[%s] order %s rechazada: %s", self.serial, order_id, err)
         return e
 
-    def poll(self, client: MirClient) -> None:
-        """Cada tick: refresca el estado de la entrada de la cola."""
+    def poll(self, driver: RobotDriver) -> None:
+        """Cada tick: refresca el estado del job por el driver (None = sin
+        respuesta; se conserva el último estado y se reintenta)."""
         a = self.active
         if a is None or not a.alive:
             return
-        try:
-            q = client.mission_queue_id_get(a.queue_id)
-        except Exception as e:
-            log.warning("[%s] GET mission_queue/%d falló: %s", self.serial, a.queue_id, e)
+        status = driver.job_status(a.job_id)
+        if status is None or status == a.job_status:
             return
-        state = str(q.get("state", a.queue_state))
-        if state != a.queue_state:
-            log.info("[%s] order %s: mission_queue %d %s → %s", self.serial, a.order.orderId,
-                     a.queue_id, a.queue_state, state)
-        a.queue_state = state
-        a.action_status = QUEUE_TO_ACTION.get(state, a.action_status)
-        if a.action_status == "FINISHED":
-            a.finished_action_ids.add(a.request.action.actionId)
-        elif a.action_status == "FAILED" and not self.exec_errors:
+        log.info("[%s] order %s: %s job=%s %s → %s", self.serial, a.order.orderId,
+                 a.job.label, a.job_id, a.job_status, status)
+        a.job_status = status
+        if status == "FINISHED":
+            a.finished_action_ids.add(a.job.action.actionId)
+        elif status == "FAILED" and not self.exec_errors:
             self.exec_errors.append(error_for_order(
-                E_ORDER_EXECUTION_FAILED, f"mission '{a.request.mission_name}' terminó {state}",
-                a.order.orderId, level="WARNING", action_id=a.request.action.actionId))
+                E_ORDER_EXECUTION_FAILED, f"{a.job.label} terminó FAILED",
+                a.order.orderId, level="WARNING", action_id=a.job.action.actionId))
 
     # -------------------------------------------------------------- salida
     def overlay(self) -> StateOverlay:
@@ -153,8 +144,8 @@ class OrderTracker:
             # Todas las actions de la order: la ejecutada con su fase, las
             # terminadas en updates anteriores FINISHED.
             for act in a.order.released_actions():
-                if act.actionId == a.request.action.actionId:
-                    st = a.action_status
+                if act.actionId == a.job.action.actionId:
+                    st = a.job_status
                 else:
                     st = "FINISHED" if act.actionId in a.finished_action_ids else "WAITING"
                 ov.action_states.append(ActionState(act.actionId, st, act.actionType))

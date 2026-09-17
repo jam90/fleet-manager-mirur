@@ -12,7 +12,7 @@ import sys
 import time
 
 from _common import client_for, load, robot_or_exit, setup_logging
-from fm.mir_client import QUEUE_ALIVE  # noqa: E402
+from fm.adapters.mir.client import QUEUE_ALIVE  # noqa: E402
 
 
 def main() -> None:

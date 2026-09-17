@@ -236,14 +236,15 @@ evita que pytest cargue plugins de ROS presentes en el entorno.)
 ```
 run_fm.py               punto de entrada
 fm/config.py            .env + fleet.yaml → dataclasses
-fm/mir_client.py        REST MiR250 (MirClient, MirStatus, índices nombre→GUID)
-fm/robot.py             runtime por robot: cliente, índices, tracker, busy/snapshot
-fm/orders.py            OrderTracker: ciclo orderUpdateId + seguimiento de mission_queue
+fm/robot.py             runtime por robot: driver + OrderTracker + última Telemetry
+fm/orders.py            OrderTracker: ciclo orderUpdateId + seguimiento del job (vía driver)
 fm/assigner.py          assign(): función pura
 fm/fleet.py             Dispatcher: <serial>/order, fleet/order → order_response
 fm/mqtt_bus.py          paho: publish, LWT por robot, inbox (cola) de entrantes
-fm/adapters/mir.py      MirStatus → State; Action → MissionRequest (puro)
-fm/vda5050/             header.py (topic≡header), state.py, order.py, schemas.py
+fm/adapters/base.py     frontera core ↔ marca: Telemetry, Job, RobotDriver (Protocol)
+fm/adapters/mir/        driver MiR250: client.py (REST), translate.py (puro), driver.py
+fm/mir_client.py        shim: re-exporta fm/adapters/mir/client.py (lo usan scripts/)
+fm/vda5050/             header.py (topic≡header), state.py, state_builder.py, order.py, schemas.py
 schemas/                JSON Schemas oficiales v3.0.0 (con parches, ver schemas/README.md)
 scripts/, tests/, docs/avance.md
 ```

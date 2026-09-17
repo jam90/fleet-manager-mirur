@@ -6,7 +6,7 @@ import json
 import sys
 
 from _common import client_for, load, robot_or_exit, setup_logging
-from fm.mir_client import MirStatus
+from fm.adapters.mir.client import MirStatus
 
 
 def main() -> None:

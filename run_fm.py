@@ -3,7 +3,7 @@
 
     python run_fm.py [--period 1.0] [--robot mir-1 --robot mir-2] [--config config/fleet.yaml]
 
-Bucle principal (un hilo): cada `period` segundos, por robot: GET /status →
+Bucle principal (un hilo): cada `period` segundos, por robot: `driver.poll()` →
 `state` VDA → publicar. Los mensajes MQTT entrantes llegan por `bus.inbox`
 y se drenan al principio de cada tick (H2+).
 """
@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from fm.adapters.mir import MirDriver  # noqa: E402
 from fm.config import load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus  # noqa: E402
@@ -47,7 +48,10 @@ def main(argv=None) -> int:
     if unknown:
         log.error("robots desconocidos: %s (en fleet.yaml: %s)", unknown, sorted(cfg.robots))
         return 2
-    robots = {s: Robot(cfg.robots[s]) for s in serials}
+    # Fase 3 del plan de drivers: aquí entrará `make_driver()` según `robots.<s>.driver`.
+    robots = {s: Robot(cfg.robots[s], MirDriver(
+        cfg.robots[s], mission_group=cfg.mission_group, charge_mission=cfg.auto_charge.mission,
+        positions_allowlist=cfg.positions_allowlist)) for s in serials}
 
     bus = MqttBus(cfg.mqtt.host, cfg.mqtt.port, cfg.mqtt.manufacturer, serials)
     bus.start()
@@ -63,7 +67,7 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, _on_signal)
 
     for r in robots.values():
-        r.refresh_indices(cfg.auto_charge.mission, cfg.mission_group)
+        r.connect()
         r.poll()
 
     def publish_state(r: Robot) -> None:
@@ -79,7 +83,7 @@ def main(argv=None) -> int:
             t0 = time.monotonic()
             dispatcher.drain()
             for r in robots.values():
-                tick_robot(r, bus, cfg)
+                tick_robot(r, bus)
             # Dormir lo que falte del periodo, en trozos cortos para reaccionar a señales.
             while not stop and (time.monotonic() - t0) < args.period:
                 time.sleep(min(0.1, args.period))
@@ -88,11 +92,8 @@ def main(argv=None) -> int:
     return 0
 
 
-def tick_robot(r: Robot, bus: MqttBus, cfg) -> None:
+def tick_robot(r: Robot, bus: MqttBus) -> None:
     t = r.poll()
-    if t is not None and not r.indexed:
-        r.refresh_indices(cfg.auto_charge.mission, cfg.mission_group)   # reintento tras un arranque sin red
-    r.orders.poll(r.client)
     header = bus.next_header(r.serial, "state")
     state = to_vda_state(header, t, r.orders.overlay(), error=r.last_error)
     bus.publish_raw(r.serial, "state", state.to_dict())

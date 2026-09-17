@@ -68,7 +68,7 @@ class Dispatcher:
             if header_err:
                 raise OrderRejected(E_VALIDATION_FAILURE, header_err)
             order = parse_order(data)
-            req = robot.translate_order(order, self.cfg)
+            req = robot.translate_order(order)
             robot.execute(order, req)
         except IgnoreOrder:
             log.info("[%s] order %s repetida: ignorada", serial, order_id)
@@ -112,6 +112,6 @@ class Dispatcher:
             raise OrderRejected(result.error_type, result.reason)
         robot = self.robots[result.serial]
         # El robot elegido puede aún rechazar (p.ej. mission inexistente en él).
-        req = robot.translate_order(order, self.cfg)
+        req = robot.translate_order(order)
         robot.execute(order, req)
         return robot

@@ -1,5 +1,7 @@
 """Traducción pura MiR ↔ core. Sin I/O: recibe snapshots e índices.
 
+La parte con red (índices, cola) está en `driver.py`.
+
 - `to_telemetry`: `MirStatus` (GET /status) → `Telemetry` normalizado.
 - `from_vda_order` (H2): `Action` + índices nombre → GUID → body de `/mission_queue`.
 
@@ -9,11 +11,12 @@ del `Telemetry`; aquí solo se interpreta lo que dice el MiR.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Collection
 
 from fm.adapters.base import Telemetry
 from fm.config import RobotConfig
-from fm.mir_client import (STATE_EMERGENCY_STOP, STATE_ERROR, STATE_EXECUTING,
-                           STATE_MANUAL, STATE_PAUSE, MirStatus)
+from fm.adapters.mir.client import (STATE_EMERGENCY_STOP, STATE_ERROR, STATE_EXECUTING,
+                                    STATE_MANUAL, STATE_PAUSE, MirStatus)
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET,
                               E_VALIDATION_FAILURE, Error, Info)
@@ -36,12 +39,12 @@ def _mir_errors(st: MirStatus) -> list[Error]:
     return out
 
 
-def to_telemetry(st: MirStatus, own_queue_id: int | None = None) -> Telemetry:
-    """`MirStatus` → `Telemetry`. `own_queue_id` es la entrada de `mission_queue`
-    que lanzó el FM (si hay): cualquier otra mission en marcha es ajena
+def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetry:
+    """`MirStatus` → `Telemetry`. `own_queue_ids` son las entradas de
+    `mission_queue` que lanzó el FM: cualquier otra mission en marcha es ajena
     (lanzada desde la web) y bloquea el robot (decisión 16)."""
     running = st.mission_queue_id is not None or st.state_id == STATE_EXECUTING
-    foreign = running and (own_queue_id is None or st.mission_queue_id != own_queue_id)
+    foreign = running and st.mission_queue_id not in own_queue_ids
     info = [Info("MISSION", "INFO", st.mission_text)] if st.mission_text else []
     return Telemetry(
         battery=st.battery_percentage,

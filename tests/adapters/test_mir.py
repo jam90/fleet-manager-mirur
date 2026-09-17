@@ -1,6 +1,6 @@
 """Traducción MiR → core: `MirStatus` → `Telemetry` (sin red)."""
-from fm.adapters.mir import to_telemetry
-from fm.mir_client import MirStatus
+from fm.adapters.mir.translate import to_telemetry
+from fm.adapters.mir.client import MirStatus
 
 BASE = {"state_id": 3, "state_text": "Ready", "battery_percentage": 61.0,
         "position": {"x": 1.0, "y": 2.0, "orientation": 90.0}, "map_id": "m",
@@ -33,8 +33,8 @@ def test_mission_propia_vs_ajena():
     # Executing con mission_queue 7: ajena si el FM no lanzó la 7 (decisión 16)
     st = _st(state_id=5, state_text="Executing", mission_queue_id=7, mission_text="Ir a H2D1")
     assert to_telemetry(st).foreign_busy
-    assert to_telemetry(st, own_queue_id=3).foreign_busy
-    t = to_telemetry(st, own_queue_id=7)
+    assert to_telemetry(st, {3}).foreign_busy
+    t = to_telemetry(st, {7})
     assert not t.foreign_busy and t.driving
     assert t.information[0].infoDescriptor == "Ir a H2D1"
     # En Pause con una mission en cola también cuenta como ocupado

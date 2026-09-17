@@ -1,7 +1,7 @@
 """Tests sin red del cliente MiR: parseo de /status e índices nombre → GUID."""
 import math
 
-from fm.mir_client import MirApiError, MirClient, MirStatus
+from fm.adapters.mir.client import MirApiError, MirClient, MirStatus
 
 
 def test_status_orientation_grados_a_radianes_normalizados():

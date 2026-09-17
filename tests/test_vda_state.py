@@ -2,8 +2,8 @@
 import math
 
 from fm.adapters.base import Telemetry
-from fm.adapters.mir import to_telemetry
-from fm.mir_client import MirStatus
+from fm.adapters.mir.translate import to_telemetry
+from fm.adapters.mir.client import MirStatus
 from fm.vda5050.header import HeaderCounter, make_header
 from fm.vda5050.schemas import assert_valid, validation_errors
 from fm.vda5050.state import ActionState, error_for_order

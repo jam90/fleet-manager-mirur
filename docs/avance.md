@@ -349,3 +349,43 @@ verde (34 tests) y el flujo con los MiR idéntico.
 `pytest` en este WSL carga plugins de ROS Jazzy del site-packages del sistema
 y falla al importar `lark`. Ejecutar con
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest`.
+
+## 2026-09-17 — Drivers fase 2: `MirDriver`
+
+El core deja de importar nada de MiR. `pytest`: 39 en verde.
+
+### Código
+
+- `fm/adapters/mir/` (paquete): `client.py` (= antiguo `mir_client.py`, sin
+  cambios), `translate.py` (= antiguo `adapters/mir.py`: `to_telemetry`,
+  `from_vda_order`, `MissionRequest`), `driver.py` (`MirDriver`).
+  `fm/mir_client.py` queda como shim porque `scripts/` importan de ahí.
+- `MirDriver` encapsula lo que antes repartían `Robot` y `OrderTracker`:
+  índices nombre → GUID (`connect()`), `GET /status` → `Telemetry`
+  (`poll()`), `POST /mission_queue` (`execute()` → `job_id` = id de cola como
+  str), `GET /mission_queue/{id}` → `JobStatus` (`job_status()`),
+  `DELETE` (`cancel()`), y `charge_job()` para H4.
+- `OrderTracker` ya no toca red: `ActiveOrder(order, job, job_id,
+  job_status)`; `poll(driver)` pregunta `driver.job_status()` y conserva el
+  último estado si devuelve None. `QUEUE_TO_ACTION` se va al driver
+  (`QUEUE_TO_JOB`).
+- `Robot(cfg, driver)`: composición driver + tracker + `last_telemetry`.
+  `connect()` reintentado desde `poll()` mientras falle; `translate_order`
+  y `execute` delegan en el driver. ~90 líneas, sin imports de marca.
+- `run_fm.py`: construye `MirDriver` explícitamente (la fase 3 lo sustituye
+  por `make_driver()`); `tick_robot` ya no conoce `cfg`.
+- Tests: `tests/adapters/test_mir_driver.py` (cliente falso: connect →
+  translate → execute → job_status → cancel, propia vs ajena, charge_job);
+  `test_mir_client.py` se mueve a `tests/adapters/`; `test_orders.py` usa
+  `FakeDriver` con `JobStatus` en vez de `FakeClient` con estados de cola.
+
+### Decisiones nuevas
+
+25. **Missions propias = conjunto de ids de cola lanzados por el driver**
+    (`_own_queue_ids`); se retira un id al verlo FINISHED/FAILED. Una
+    mission en marcha cuyo id no esté ahí es ajena (web) → `foreign_busy`.
+    Antes se deducía "ajena = hay mission y el tracker no está ocupado", que
+    es equivalente hoy pero no permitiría distinguir la mission de auto-carga
+    (H4) de una lanzada desde la web.
+26. **`job_id` es `str` opaco** en la frontera (el MiR usa el int de la cola,
+    otra marca puede usar un UUID). El driver convierte.

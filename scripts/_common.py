@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from fm.config import FleetConfig, RobotConfig, load_config  # noqa: E402
-from fm.mir_client import MirClient  # noqa: E402
+from fm.adapters.mir.client import MirClient  # noqa: E402
 
 
 def setup_logging(level: int = logging.INFO) -> None:
