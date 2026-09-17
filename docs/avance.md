@@ -501,3 +501,15 @@ batería baja mientras ejecutan; `state` bajo `vda5050/v3/SIM/sim-1/…`.
 33. **`Job.payload` del sim es un dict** (`duration_s`, `charge`): el core
     no lo mira, y así `charge_job()` y `translate()` comparten `execute()`.
     Confirma que `payload` opaco basta para dos marcas muy distintas.
+
+## 2026-09-17 — Drivers fase 6a: documentación
+
+- `README.md`: sección "Añadir una marca (driver)" con la tabla del
+  `Protocol`, los cuatro pasos (carpeta, `make_driver`, registro, contrato) y
+  la nota de que el `state` lo construye siempre el core.
+- `CLAUDE.md` §4 (diagrama, estructura real, principios), §5 (manufacturer
+  por robot, `imperial_fleet`), §5.6/5.7 (headers de `fleet/*`) y §8
+  (`fleet.yaml` en formato nuevo). El resto del brief se deja como estaba:
+  es el documento de arranque y su historia sigue siendo válida.
+- Pendiente (fase 6b): validación con los MiR reales, misma prueba que el
+  2026-09-16 13:25.

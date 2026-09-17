@@ -241,6 +241,48 @@ entorno.)
 6. Header con `manufacturer`/`serialNumber` ≠ topic → `REJECTED VALIDATION_FAILURE`.
 7. `kill -9` al FM → `CONNECTION_BROKEN` retained en cada `connection`. ✔
 
+## Añadir una marca (driver)
+
+El core no sabe de MiR: habla con cada robot a través de `fm/adapters/base.py`
+(`RobotDriver`, un `Protocol`; tipos `Telemetry`, `Job`, `JobStatus`).
+Añadir una marca es crear una carpeta y registrarla:
+
+1. **`fm/adapters/<marca>/`** con una clase que cumpla `RobotDriver`
+   (no hace falta heredar):
+
+   | Método | Qué hace | Regla |
+   |---|---|---|
+   | `manufacturer` | segmento `<manufacturer>` de sus topics | atributo; `robots.<s>.manufacturer` lo pisa |
+   | `connect() -> bool` | índices, handshake… | tolerante; el core reintenta cada tick mientras sea False |
+   | `poll() -> Telemetry \| None` | snapshot normalizado | None = inalcanzable (motivo en `last_error`); nunca lanza |
+   | `translate(Action) -> Job` | valida y prepara sin red | lanza `OrderRejected(errorType, texto)` |
+   | `execute(Job, priority) -> str` | lanza el job | devuelve un `job_id` opaco |
+   | `job_status(job_id) -> JobStatus \| None` | `WAITING/RUNNING/FINISHED/FAILED` | None = no se pudo consultar (se reintenta) |
+   | `cancel(job_id)` | aborta el job (H5) | |
+   | `charge_job() -> Job \| None` | job de auto-carga (H4) | None = no soporta |
+   | `extra_state(State)` | gancho para campos que el core no deduce | puede no hacer nada |
+
+   `Telemetry.available` (puede aceptar orders) y `foreign_busy` (ejecuta
+   algo que no lanzó el FM) los decide el driver: son las dos cosas que el
+   asignador necesita y que cada marca expresa a su manera.
+
+2. **`make_driver(serial, raw, defaults, env)`** en el `__init__.py` del
+   paquete: `raw` es el bloque `robots.<serial>` completo, `defaults` es
+   `drivers.<marca>`. Valida ahí y lanza `ConfigError` con un mensaje claro.
+   Convención: `actions:` es un mapping `actionType → config de la marca`
+   (el core solo lee sus claves para saber qué robots soportan cada action).
+
+3. **Registrar** en `fm/adapters/__init__.py`: `DRIVERS["<marca>"] = "fm.adapters.<marca>"`.
+
+4. **Añadir el driver a `tests/adapters/test_contract.py`** (una fixture que
+   lo construya con su cliente falso). Si pasa el contrato, el core funciona
+   con él. `fm/adapters/sim/` es el ejemplo mínimo (sin red, ~150 líneas);
+   `fm/adapters/mir/` el completo (REST, índices por robot, cola de missions).
+
+El `state` VDA lo construye siempre el core (`fm/vda5050/state_builder.py`)
+a partir de `Telemetry` + lo que sabe de la order: un driver no puede
+publicar un `state` mal formado.
+
 ## Limitaciones conocidas
 
 - Sin navegación por grafo `nodes`/`edges`: el MiR navega con sus missions; la

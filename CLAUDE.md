@@ -97,65 +97,86 @@ Si no, permitir `MIR_AUTH_<serial>` como override.
 
 ## 4. Arquitectura
 
+> Actualizado el 2026-09-17 tras la refactorización a drivers enchufables
+> (`docs/plan-drivers.md`, decisiones 22–33 de `docs/avance.md`). El core no
+> sabe nada de MiR: cada marca es un driver en `fm/adapters/<marca>/`.
+
 ```
                          MQTT (Mosquitto)
-  Sistema aguas arriba ──────────────────────────► vda5050/v3/MiR/fleet/order
-  (ERP/MES/SCADA/UI)   ◄────────────────────────── vda5050/v3/MiR/fleet/order_response
-                       ◄────────────────────────── vda5050/v3/MiR/<serial>/state (1 Hz)
-                       ◄────────────────────────── vda5050/v3/MiR/<serial>/connection (retained)
-                       ──────────────────────────► vda5050/v3/MiR/<serial>/order
-                       ──────────────────────────► vda5050/v3/MiR/<serial>/instantActions
+  Sistema aguas arriba ──────────────────────────► vda5050/v3/imperial_fleet/fleet/order
+  (ERP/MES/SCADA/UI)   ◄────────────────────────── vda5050/v3/imperial_fleet/fleet/order_response
+                       ◄────────────────────────── vda5050/v3/<manufacturer>/<serial>/state (1 Hz)
+                       ◄────────────────────────── vda5050/v3/<manufacturer>/<serial>/connection (retained)
+                       ──────────────────────────► vda5050/v3/<manufacturer>/<serial>/order
+                       ──────────────────────────► vda5050/v3/<manufacturer>/<serial>/instantActions
                                     │
                              ┌──────▼───────┐
                              │ Fleet Manager│  bucle 1 Hz por robot:
-                             │   (Python)   │  GET /status → state VDA
-                             └──┬────────┬──┘  GET /mission_queue/<id> → progreso
-                           REST │        │ REST  suelo de batería → carga
+                             │   core       │  driver.poll() → Telemetry → state VDA
+                             └──┬────────┬──┘  driver.job_status() → actionStates
+                     RobotDriver│        │RobotDriver   (Protocol, fm/adapters/base.py)
                           ┌─────▼──┐  ┌──▼─────┐
-                          │ MiR #1 │  │ MiR #2 │
-                          └────────┘  └────────┘
+                          │MirDriver│ │SimDriver│ ...  (una carpeta por marca)
+                          └────┬───┘  └────────┘
+                          REST │
+                          ┌────▼───┐
+                          │ MiR250 │
+                          └────────┘
 ```
 
-### Estructura de código propuesta
+Frontera core ↔ marca (`fm/adapters/base.py`): el core solo ve `Telemetry`
+(snapshot normalizado), `Job` (lo que el driver ejecutará para una `Action`)
+y `JobStatus` (= `actionStatus` VDA). Un driver implementa `connect`, `poll`,
+`translate`, `execute`, `job_status`, `cancel`, `charge_job`, `extra_state`.
+`tests/adapters/test_contract.py` es la definición ejecutable del contrato.
+
+### Estructura de código (real)
 
 ```
-fleet_manager/
+fleet-manager-mirur/
 ├── CLAUDE.md                      ← este brief
-├── README.md                      ← contrato de integración (se escribe en H6)
-├── run_fm.py                      ← punto de entrada (args: --period, --robot)
-├── requirements.txt
-├── .env.example
-├── config/fleet.yaml              ← robots, mapping actionType → mission, umbrales
-├── docs/avance.md                 ← bitácora de decisiones
-├── scripts/                       ← utilidades de prueba (§12)
-├── tests/                         ← pytest, sin red (asignador, guard, traducción)
+├── README.md                      ← contrato de integración y guía de uso
+├── run_fm.py                      ← punto de entrada (args: --period, --robot, --config)
+├── config/fleet.yaml              ← flota real; config/fleet-sim.yaml ← flota simulada
+├── docs/avance.md                 ← bitácora de decisiones; docs/plan-drivers.md ← plan drivers
+├── scripts/                       ← utilidades de prueba (§12); son herramientas MiR
+├── tests/                         ← pytest sin red; tests/adapters/ ← drivers y contrato
 └── fm/
-    ├── config.py                  ← carga .env + fleet.yaml → dataclasses
-    ├── mir_client.py              ← REST MiR250 (MirClient, MirStatus)
-    ├── assigner.py                ← función pura: order + snapshots → robot | rechazo
-    ├── charge.py                  ← ChargeGuard + enforce_battery_floor
-    ├── orders.py                  ← estado de order por robot, POST mission, seguimiento
-    ├── mqtt_publisher.py          ← state + connection + LWT
-    ├── mqtt_fleet.py              ← suscriptor fleet/order → asignador → order_response
-    ├── mqtt_orders.py             ← suscriptor <serial>/order (order dirigida)
-    ├── mqtt_instant.py            ← suscriptor <serial>/instantActions
-    ├── adapters/mir.py            ← MirStatus → State VDA; Order → body /mission_queue
+    ├── config.py                  ← .env + fleet.yaml → parte GENÉRICA (driver, battery_min, action_types, raw)
+    ├── robot.py                   ← Robot = driver + OrderTracker + última Telemetry
+    ├── orders.py                  ← pick_action, OrderTracker (ciclo orderUpdateId, job_status → actionStates)
+    ├── assigner.py                ← función pura: actionType + snapshots → robot | rechazo
+    ├── fleet.py                   ← Dispatcher: <serial>/order, fleet/order → order_response
+    ├── mqtt_bus.py                ← paho: publish, LWT por robot, inbox; manufacturer por serial
+    ├── mir_client.py              ← shim → adapters/mir/client.py (lo usan scripts/)
+    ├── adapters/
+    │   ├── __init__.py            ← registro DRIVERS + make_driver()
+    │   ├── base.py                ← Telemetry, Job, JobStatus, RobotDriver (Protocol)
+    │   ├── mir/                   ← client.py (REST), translate.py (puro), driver.py, config.py
+    │   └── sim/                   ← driver simulado sin hardware
     └── vda5050/
-        ├── header.py              ← validación topic ≡ header (§5.1), timestamp, headerId
-        ├── state.py               ← dataclasses State, MobileRobotPosition, PowerSupply
-        ├── order.py               ← dataclasses Order, Node, Action, ActionParameter
-        └── instant.py             ← dataclasses InstantActions, InstantAction
+        ├── header.py              ← topic ≡ header (§5.1), timestamp, headerId
+        ├── state.py               ← dataclasses State, Error, Info…; errorTypes
+        ├── state_builder.py       ← StateOverlay + to_vda_state(header, Telemetry, overlay)
+        ├── order.py               ← dataclasses Order, Node, Action; parse_order
+        └── schemas.py             ← validación contra los JSON Schema oficiales
 ```
 
 Principios:
 
-- **Traducción pura y testeable.** `adapters/mir.py` y `assigner.py` no hacen
-  I/O; reciben índices precalculados (nombre → GUID) y snapshots.
-- **Un hilo principal** con bucle a 1 Hz por robot; paho corre sus callbacks en
-  su propio hilo (`loop_start()`), así que el estado compartido por robot lleva
-  un `threading.Lock` y se lee vía `snapshot()`.
-- **Fallos REST tolerantes:** un `GET /status` que falla se loguea como warning
-  y se reintenta al tick siguiente; no tumba el servicio.
+- **El core no importa ninguna marca.** `grep -rn "mir" fm/*.py fm/vda5050`
+  debe seguir sin resultados (salvo el shim `mir_client.py`). Lo que una
+  marca necesita saber va en `fm/adapters/<marca>/`; lo que el core necesita
+  de cualquier marca va en `fm/adapters/base.py`.
+- **Traducción pura y testeable.** `adapters/mir/translate.py`,
+  `vda5050/state_builder.py` y `assigner.py` no hacen I/O; reciben índices
+  precalculados y snapshots.
+- **Un hilo principal** con bucle a 1 Hz por robot; paho solo encola en
+  `bus.inbox` desde su hilo y el principal drena al inicio de cada tick
+  (decisión 14): sin locks.
+- **Fallos de red tolerantes:** `driver.poll()`/`connect()`/`job_status()`
+  nunca lanzan; devuelven None/False y el core reintenta al tick siguiente
+  publicando `state` con `ROBOT_UNREACHABLE`.
 
 ---
 
@@ -163,10 +184,15 @@ Principios:
 
 Convención de topics del estándar: `<interfaceName>/<majorVersion>/<manufacturer>/<serialNumber>/<topic>`
 
-- `interfaceName = "vda5050"`, `majorVersion = "v3"`, `manufacturer = "MiR"`.
+- `interfaceName = "vda5050"`, `majorVersion = "v3"`.
+- `manufacturer` = **el del robot** (§6.2 de la norma): lo declara su driver
+  (`MiR`, `SIM`, …) o se fuerza con `robots.<serial>.manufacturer`
+  (decisión 30). El FM se suscribe a `vda5050/v3/+/+/order` e ignora pares
+  `(manufacturer, serial)` que no estén configurados.
 - `serialNumber` = nombre lógico del robot en `fleet.yaml` (`mir-1`, `mir-2`).
 - Pseudo-serial **`fleet`** para el topic de asignación (extensión propia, no VDA).
-  El "robot virtual" `fleet` es de la familia `MiR`: en el header también.
+  Como `fleet` no es un robot, su segmento `manufacturer` es el nombre de
+  flota `mqtt.fleet_manufacturer` = **`imperial_fleet`**.
 
 | Topic | Sentido | QoS | Retained |
 |---|---|---|---|
@@ -174,8 +200,8 @@ Convención de topics del estándar: `<interfaceName>/<majorVersion>/<manufactur
 | `vda5050/v3/MiR/<serial>/connection` | FM → bus | 1 | **sí** + Last Will |
 | `vda5050/v3/MiR/<serial>/order` | bus → FM | 1 | no |
 | `vda5050/v3/MiR/<serial>/instantActions` | bus → FM | 1 | no |
-| `vda5050/v3/MiR/fleet/order` | bus → FM | 1 | no |
-| `vda5050/v3/MiR/fleet/order_response` | FM → bus | 1 | no |
+| `vda5050/v3/imperial_fleet/fleet/order` | bus → FM | 1 | no |
+| `vda5050/v3/imperial_fleet/fleet/order_response` | FM → bus | 1 | no |
 
 ### 5.1. Header común (todos los mensajes)
 
@@ -316,7 +342,7 @@ FINISHED/FAILED). `cancelOrder` sin order activa → FAILED + log, no-op.
 
 ### 5.6. `fleet/order` (bus → FM) — **topic principal**
 
-Mismo esquema que §5.4 con header `manufacturer: "MiR", serialNumber: "fleet"`
+Mismo esquema que §5.4 con header `manufacturer: "imperial_fleet", serialNumber: "fleet"`
 (coherente con el topic, §5.1). El FM elige robot (§6), postea la mission y
 **reescribe `state.orderId`** del robot elegido.
 
@@ -328,14 +354,14 @@ propio `assignedSerial` (no se reutiliza `serialNumber` del header para eso).
 
 ```json
 { "headerId": 12, "timestamp": "…", "version": "3.0.0",
-  "manufacturer": "MiR", "serialNumber": "fleet",
+  "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-dc09ef50", "orderUpdateId": 0,
   "status": "ASSIGNED", "assignedSerial": "mir-2", "description": "asignado a mir-2" }
 ```
 
 ```json
 { "headerId": 13, "timestamp": "…", "version": "3.0.0",
-  "manufacturer": "MiR", "serialNumber": "fleet",
+  "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-9001", "orderUpdateId": 0,
   "status": "REJECTED", "errorType": "orderError",
   "errorDescription": "ningún robot puede atender la order: mir-1: ocupado; mir-2: batería 17.0% < 20%" }
@@ -433,16 +459,32 @@ al robot del dock. Elegir una y anotarlo en `docs/avance.md`.
 
 ## 8. `config/fleet.yaml`
 
+> Formato vigente desde 2026-09-17 (fase 3 de drivers). El core solo lee
+> `driver`, `manufacturer`, `battery_min` y las claves de `actions`; el resto
+> del bloque de cada robot lo valida su driver (`fm/adapters/<driver>/config.py`)
+> fusionado con `drivers.<driver>`. Claves del formato anterior
+> (`mission_group`, `positions_allowlist`, `auto_charge.mission`,
+> `mqtt.manufacturer`) → error al arrancar con la pista de dónde van ahora.
+
 ```yaml
-auto_charge:
-  mission: "Carga en estación"     # nombre EXACTO de la mission en la web del MiR (sin parámetros)
+mqtt:
+  fleet_manufacturer: imperial_fleet   # segmento <manufacturer> de fleet/*
+
+auto_charge:                       # genérico: umbrales
   battery_floor: 20                # % — por debajo se encola la carga
   priority: 10
   abort_cooldown_s: 60
 
+drivers:                           # defaults por marca
+  mir:
+    mission_group: "mirur-tknika"
+    charge_mission: "Carga en estación"   # nombre EXACTO de la mission de carga (sin parámetros)
+    # positions_allowlist: [H2D1-VL]     # opcional; si se omite, cualquier position del robot
+
 robots:
   mir-1:
-    host: 192.168.15.5             # o en .env; decidir y documentar
+    driver: mir                    # por defecto "mir"
+    host: 192.168.15.5             # o MIR_HOST_MIR_1 en .env
     battery_min: 25                # % mínimo para aceptar orders (> battery_floor)
     actions:
       ir_a:
@@ -459,13 +501,13 @@ robots:
       ir_a:
         mission: "Ir a posición"
         position_inputs: [target_pos]
-
-positions_allowlist:               # opcional; si se omite, cualquier position que exista en el robot
-  - H2D1-VL
-  - H2D2-VL
+  sim-1:                           # opcional: robot simulado (fm/adapters/sim)
+    driver: sim
+    battery: 90
+    actions: { ir_a: {} }
 ```
 
-Semántica de cada `action`:
+Semántica de cada `action` (driver `mir`):
 
 - `mission`: nombre lógico. Al arranque se resuelve a GUID **por robot**
   (`GET /missions`, buscar por `name`). Si no existe en un robot: warning al
