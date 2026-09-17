@@ -428,3 +428,44 @@ construye los dos `MirDriver` por el registro.
 29. **`robots.<s>.manufacturer` pisa el del driver** (`make_driver` lo asigna
     en la instancia). Sirve para la fase 4 (manufacturer por robot en el
     topic) y para marcas cuyo nombre en el topic no es el de la clase.
+
+## 2026-09-17 — Drivers fase 4: manufacturer por robot
+
+`pytest`: 50 en verde. Contrato MQTT: cambia el topic y el header de
+`fleet/*`; los de los MiR no cambian (`vda5050/v3/MiR/<serial>/…`). No había
+ningún flujo Node-RED que actualizar (confirmado con el usuario).
+
+### Código
+
+- `MqttConfig.manufacturer` → `MqttConfig.fleet_manufacturer`
+  (`imperial_fleet` por defecto). `mqtt.manufacturer` en el yaml → `ConfigError`
+  con la pista.
+- `MqttBus(host, port, {serial: manufacturer}, fleet_manufacturer)`:
+  `topic()`, `next_header()`, Last Will y `publish_raw()` usan el manufacturer
+  de cada serial; `is_known(manufacturer, serial)`.
+- `Dispatcher.subscribe()`: `vda5050/v3/+/+/order` y `+/+/instantActions`;
+  `handle()` descarta (DEBUG) lo que no sea un `(manufacturer, serial)`
+  configurado. `validate_header` no cambia: header ≡ topic sigue igual.
+- `run_fm.py` pasa `{s: robots[s].manufacturer}` (el del driver, o
+  `robots.<s>.manufacturer`).
+- Scripts: `send_fleet_order` usa `fleet_manufacturer`; `send_order` y
+  `read_vda_state` resuelven el manufacturer del robot vía `make_driver`
+  (`_common.manufacturer_for`); `read_vda_state` sin serial escucha `+/+`.
+- Tests: `tests/test_fleet.py` (Dispatcher con bus y drivers falsos: filtro
+  por manufacturer, `fleet/*` bajo `imperial_fleet`, header ≠ topic) y
+  `tests/test_mqtt_bus.py` (topics/headers sin broker).
+
+### Decisiones nuevas
+
+30. **Manufacturer por robot y `imperial_fleet` para `fleet/*`** (cerrada en
+    el plan, aplicada aquí). Norma §6.2: `manufacturer` = fabricante del robot,
+    así que `vda5050/v3/MiR/mir-1/…` y, mañana, `vda5050/v3/OMRON/ld-1/…`.
+    `fleet` no es un robot: su segmento es un nombre de flota propio para que
+    no parezca que la flota "es de MiR". Emisor de `fleet/order`: topic
+    `vda5050/v3/imperial_fleet/fleet/order`, header `manufacturer:
+    "imperial_fleet", serialNumber: "fleet"`.
+31. **Suscripción con comodín `+/+` y filtro en `handle()`** en vez de una
+    suscripción por robot: menos suscripciones, y un mensaje bajo un
+    manufacturer equivocado no genera rechazo (nadie lo escucharía) sino un
+    log DEBUG. Un mismo serial bajo dos manufacturers no colisiona porque
+    `HeaderCounter` y `is_known` indexan por el par.

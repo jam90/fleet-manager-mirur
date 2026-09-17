@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-from _common import load, robot_or_exit, setup_logging
+from _common import load, manufacturer_for, setup_logging
 from _mqtt import build_order, connect, parse_kv, publish, wait_for
 from fm.vda5050.header import topic
 
@@ -22,8 +22,8 @@ def main() -> None:
     if len(pos) < 2:
         print(__doc__); sys.exit(2)
     serial, action_type, *kv = pos
-    cfg = load(); robot_or_exit(cfg, serial)
-    man = cfg.mqtt.manufacturer
+    cfg = load()
+    man = manufacturer_for(cfg, serial)
     order = build_order(man, serial, action_type, parse_kv(kv), order_id, update_id)
 
     c = connect(cfg)

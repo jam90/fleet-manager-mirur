@@ -22,7 +22,7 @@ def main() -> None:
         print(__doc__); sys.exit(2)
     action_type, *kv = pos
     cfg = load()
-    man = cfg.mqtt.manufacturer
+    man = cfg.mqtt.fleet_manufacturer
     order = build_order(man, "fleet", action_type, parse_kv(kv), order_id or f"fleet-{__import__('uuid').uuid4().hex[:8]}", update_id)
 
     c = connect(cfg)

@@ -6,7 +6,10 @@
 # driver (`fm/adapters/<driver>/config.py`), fusionado con `drivers.<driver>`.
 
 mqtt:
-  manufacturer: MiR            # segmento <manufacturer> del topic y del header
+  # Cada robot publica bajo el manufacturer de su driver (MiR → vda5050/v3/MiR/<serial>/…).
+  # `fleet` no es un robot: sus topics fleet/order y fleet/order_response van
+  # bajo este nombre de flota (vda5050/v3/imperial_fleet/fleet/…).
+  fleet_manufacturer: imperial_fleet
   # host/port vienen de .env (MQTT_HOST, MQTT_PORT)
 
 auto_charge:

@@ -28,9 +28,10 @@ class Dispatcher:
         self.last_fleet_order: tuple[str, int] | None = None
 
     def subscribe(self) -> None:
-        man = self.cfg.mqtt.manufacturer
-        self.bus.subscribe(f"vda5050/v3/{man}/+/order")
-        self.bus.subscribe(f"vda5050/v3/{man}/+/instantActions")
+        # Cada robot vive bajo el manufacturer de su driver: se escucha a todos
+        # y `handle()` filtra por (manufacturer, serial) configurados.
+        self.bus.subscribe("vda5050/v3/+/+/order")
+        self.bus.subscribe("vda5050/v3/+/+/instantActions")
 
     def drain(self) -> None:
         while not self.bus.inbox.empty():
@@ -44,6 +45,10 @@ class Dispatcher:
     def handle(self, topic: str, payload: bytes) -> None:
         pt = parse_topic(topic)
         if pt is None:
+            return
+        if not self.bus.is_known(pt.manufacturer, pt.serial):
+            log.debug("[fleet] %s ignorado: (%s, %s) no es un robot de esta flota",
+                      topic, pt.manufacturer, pt.serial)
             return
         try:
             data = json.loads(payload)

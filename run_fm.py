@@ -58,7 +58,8 @@ def main(argv=None) -> int:
         log.error("configuración inválida: %s", e)
         return 2
 
-    bus = MqttBus(cfg.mqtt.host, cfg.mqtt.port, cfg.mqtt.manufacturer, serials)
+    bus = MqttBus(cfg.mqtt.host, cfg.mqtt.port, {s: robots[s].manufacturer for s in serials},
+                  cfg.mqtt.fleet_manufacturer)
     bus.start()
 
     stop = False

@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 import os  # noqa: E402
 
+from fm.adapters import make_driver  # noqa: E402
 from fm.adapters.mir.client import MirClient  # noqa: E402
 from fm.adapters.mir.config import MirRobotConfig, parse_config  # noqa: E402
 from fm.config import FleetConfig, load_config  # noqa: E402
@@ -37,3 +38,11 @@ def robot_or_exit(cfg: FleetConfig, serial: str) -> MirRobotConfig:
 
 def client_for(robot: MirRobotConfig) -> MirClient:
     return MirClient(robot.host, robot.auth)
+
+
+def manufacturer_for(cfg: FleetConfig, serial: str) -> str:
+    """Segmento <manufacturer> de los topics de un robot (el de su driver)."""
+    if serial not in cfg.robots:
+        print(f"robot '{serial}' no está en fleet.yaml; disponibles: {sorted(cfg.robots)}")
+        sys.exit(2)
+    return make_driver(cfg.robots[serial], cfg).manufacturer

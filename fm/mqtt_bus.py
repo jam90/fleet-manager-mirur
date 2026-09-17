@@ -37,11 +37,13 @@ FLEET = "fleet"
 
 
 class MqttBus:
-    def __init__(self, host: str, port: int, manufacturer: str, serials: list[str],
-                 client_id: str = "fleet-manager-mir"):
+    def __init__(self, host: str, port: int, manufacturers: dict[str, str],
+                 fleet_manufacturer: str, client_id: str = "fleet-manager"):
+        """`manufacturers`: serial → segmento <manufacturer> de sus topics (el
+        del driver de cada robot). `fleet/*` va bajo `fleet_manufacturer`."""
         self.host, self.port = host, port
-        self.manufacturer = manufacturer
-        self.serials = list(serials)
+        self.manufacturers = {**manufacturers, FLEET: fleet_manufacturer}
+        self.serials = list(manufacturers)
         self.counter = HeaderCounter()
         self.inbox: queue.Queue[tuple[str, bytes]] = queue.Queue()
         self._ready: dict[str, threading.Event] = {}
@@ -58,7 +60,7 @@ class MqttBus:
         c.on_disconnect = self._on_disconnect
         # El LWT lleva header propio; el headerId lo pone el broker "en nuestro
         # nombre", así que se consume un número del contador de ese topic.
-        c.will_set(topic(self.manufacturer, serial, "connection"),
+        c.will_set(self.topic(serial, "connection"),
                    json.dumps(self._connection_payload(serial, "CONNECTION_BROKEN")),
                    qos=1, retain=True)
         self._ready[serial] = threading.Event()
@@ -66,6 +68,16 @@ class MqttBus:
 
     def _client_for(self, serial: str) -> mqtt.Client:
         return self._presence.get(serial, self._main)
+
+    def manufacturer_of(self, serial: str) -> str:
+        return self.manufacturers[serial]
+
+    def topic(self, serial: str, subtopic: str) -> str:
+        return topic(self.manufacturer_of(serial), serial, subtopic)
+
+    def is_known(self, manufacturer: str, serial: str) -> bool:
+        """¿(manufacturer, serial) del topic corresponde a un robot configurado o a `fleet`?"""
+        return self.manufacturers.get(serial) == manufacturer
 
     # ------------------------------------------------------------ ciclo vida
     def start(self, timeout: float = 10.0) -> None:
@@ -95,13 +107,13 @@ class MqttBus:
     # -------------------------------------------------------------- publicar
     def next_header(self, serial: str, subtopic: str) -> dict:
         """Header para quien construye el payload por su cuenta (p.ej. `State`)."""
-        return make_header(self.counter, self.manufacturer, serial, subtopic)
+        return make_header(self.counter, self.manufacturer_of(serial), serial, subtopic)
 
     def publish_raw(self, serial: str, subtopic: str, payload: dict,
                     retain: bool = False) -> mqtt.MQTTMessageInfo:
         """Publica un payload que YA lleva header (generado con `next_header`)."""
         client = self._client_for(serial) if subtopic == "connection" else self._main
-        return client.publish(topic(self.manufacturer, serial, subtopic), json.dumps(payload),
+        return client.publish(self.topic(serial, subtopic), json.dumps(payload),
                               qos=QOS.get(subtopic, 0), retain=retain)
 
     def publish(self, serial: str, subtopic: str, body: dict, retain: bool = False) -> dict:

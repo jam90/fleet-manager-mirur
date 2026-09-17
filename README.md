@@ -36,7 +36,7 @@ del MiR (Help → API → Authorize). Broker de desarrollo: Mosquitto en
 ## Configuración (`config/fleet.yaml`)
 
 ```yaml
-mqtt: { manufacturer: MiR }
+mqtt: { fleet_manufacturer: imperial_fleet }   # segmento <manufacturer> de fleet/*
 auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo pone el driver
 drivers:                            # defaults por marca (cualquier robot los puede pisar)
   mir:
@@ -96,7 +96,10 @@ Log (una línea por robot y tick, filtrable por `[serial]`):
 ## Contrato MQTT
 
 Topics `vda5050/v3/<manufacturer>/<serialNumber>/<subtopic>`. `serialNumber` es
-el nombre lógico de `fleet.yaml`; `fleet` es un pseudo-serial (extensión propia).
+el nombre lógico de `fleet.yaml`. `<manufacturer>` es **el del robot** (norma
+§6.2): lo pone su driver (`MiR` para los MiR250) o `robots.<serial>.manufacturer`.
+`fleet` es un pseudo-serial (extensión propia) y, como no es un robot, va bajo
+el nombre de flota `mqtt.fleet_manufacturer` (`imperial_fleet`).
 
 | Topic | Sentido | QoS | Retained |
 |---|---|---|---|
@@ -104,12 +107,16 @@ el nombre lógico de `fleet.yaml`; `fleet` es un pseudo-serial (extensión propi
 | `vda5050/v3/MiR/<serial>/connection` | FM → bus | 1 | sí + Last Will |
 | `vda5050/v3/MiR/<serial>/order` | bus → FM | 1 | no |
 | `vda5050/v3/MiR/<serial>/instantActions` | bus → FM (pendiente) | 1 | no |
-| `vda5050/v3/MiR/fleet/order` | bus → FM | 1 | no |
-| `vda5050/v3/MiR/fleet/order_response` | FM → bus | 1 | no |
+| `vda5050/v3/imperial_fleet/fleet/order` | bus → FM | 1 | no |
+| `vda5050/v3/imperial_fleet/fleet/order_response` | FM → bus | 1 | no |
+
+El FM se suscribe a `vda5050/v3/+/+/order` e `instantActions` e ignora (log
+DEBUG) cualquier `(manufacturer, serialNumber)` que no sea un robot
+configurado o `(imperial_fleet, fleet)`.
 
 **Header ≡ topic, siempre.** `manufacturer` y `serialNumber` del payload
 deben coincidir con los segmentos del topic; para `fleet/*` el header es
-`manufacturer: "MiR", serialNumber: "fleet"`. Si no cuadra → rechazo
+`manufacturer: "imperial_fleet", serialNumber: "fleet"`. Si no cuadra → rechazo
 `VALIDATION_FAILURE`.
 
 ### `order` aceptada (subset)
@@ -119,7 +126,7 @@ nodos no `released` (horizon) → `VALIDATION_FAILURE`.
 
 ```json
 { "headerId": 1, "timestamp": "2026-09-16T11:25:52.000Z", "version": "3.0.0",
-  "manufacturer": "MiR", "serialNumber": "fleet",
+  "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-3928d0aa", "orderUpdateId": 0,
   "nodes": [ { "nodeId": "N0", "sequenceId": 0, "released": true,
                "actions": [ { "actionType": "coger", "actionId": "act-1",
@@ -148,13 +155,13 @@ WARNING`, `errorReferences: [{orderId}]`) hasta que se acepte otra order.
 ### `fleet/order_response`
 
 ```json
-{ "headerId": 3, "timestamp": "…", "version": "3.0.0", "manufacturer": "MiR", "serialNumber": "fleet",
+{ "headerId": 3, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-3928d0aa", "orderUpdateId": 0,
   "status": "ASSIGNED", "assignedSerial": "mir-1", "description": "asignado a mir-1" }
 ```
 
 ```json
-{ "headerId": 4, "timestamp": "…", "version": "3.0.0", "manufacturer": "MiR", "serialNumber": "fleet",
+{ "headerId": 4, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-43912315", "orderUpdateId": 0,
   "status": "REJECTED", "errorType": "NO_MOBILE_ROBOT_AVAILABLE",
   "errorDescription": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" }

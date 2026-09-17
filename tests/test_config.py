@@ -7,7 +7,7 @@ from fm.adapters.mir.config import parse_config
 from fm.config import ConfigError, load_config
 
 YAML = """
-mqtt: { manufacturer: MiR }
+mqtt: { fleet_manufacturer: imperial_fleet }
 auto_charge: { battery_floor: 20 }
 drivers:
   mir:
@@ -41,6 +41,7 @@ def test_core_solo_lee_lo_generico(tmp_path):
     assert r1.raw["host"] == "10.0.0.1"          # el core no lo interpreta
     assert cfg.driver_defaults("mir") == {"mission_group": "g", "charge_mission": "Carga"}
     assert cfg.auto_charge.battery_floor == 20 and not hasattr(cfg.auto_charge, "mission")
+    assert cfg.mqtt.fleet_manufacturer == "imperial_fleet"
 
 
 def test_driver_fusiona_defaults_y_entorno(tmp_path):
@@ -72,6 +73,7 @@ def test_registro_make_driver(tmp_path):
     ("mission_group: g\nrobots: {}", "drivers.mir.mission_group"),
     ("positions_allowlist: [a]\nrobots: {}", "drivers.mir.positions_allowlist"),
     ("auto_charge: { mission: Carga }\nrobots: {}", "drivers.mir.charge_mission"),
+    ("mqtt: { manufacturer: MiR }\nrobots: {}", "fleet_manufacturer"),
 ])
 def test_yaml_antiguo_falla_con_pista(tmp_path, bad, hint):
     with pytest.raises(ConfigError, match=hint):

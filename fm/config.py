@@ -56,7 +56,10 @@ class AutoChargeConfig:
 class MqttConfig:
     host: str = "localhost"
     port: int = 1883
-    manufacturer: str = "MiR"
+    # Segmento <manufacturer> de los topics `fleet/*`. Cada robot publica bajo
+    # el manufacturer de su driver (norma §6.2); `fleet` no es un robot, así
+    # que lleva un nombre de flota propio (decisión 30).
+    fleet_manufacturer: str = "imperial_fleet"
 
 
 @dataclass
@@ -107,10 +110,14 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
     )
 
     mq = raw.get("mqtt") or {}
+    if "manufacturer" in mq:
+        raise ConfigError("'mqtt.manufacturer' ya no existe: cada robot publica bajo el manufacturer "
+                          "de su driver (o 'robots.<serial>.manufacturer'); para fleet/* usa "
+                          "'mqtt.fleet_manufacturer'")
     mqtt = MqttConfig(
         host=os.environ.get("MQTT_HOST", mq.get("host", "localhost")),
         port=int(os.environ.get("MQTT_PORT", mq.get("port", 1883))),
-        manufacturer=str(mq.get("manufacturer", "MiR")),
+        fleet_manufacturer=str(mq.get("fleet_manufacturer", "imperial_fleet")),
     )
 
     cfg = FleetConfig(

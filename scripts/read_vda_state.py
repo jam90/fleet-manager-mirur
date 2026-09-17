@@ -11,7 +11,7 @@ import sys
 
 import paho.mqtt.client as mqtt
 
-from _common import load, setup_logging
+from _common import load, manufacturer_for, setup_logging
 from fm.vda5050.header import parse_topic, topic
 from fm.vda5050.schemas import validation_errors
 
@@ -33,7 +33,7 @@ def main() -> None:
     setup_logging()
     cfg = load()
     serial = sys.argv[1] if len(sys.argv) > 1 else "+"
-    man = cfg.mqtt.manufacturer
+    man = "+" if serial == "+" else manufacturer_for(cfg, serial)
 
     def on_message(client, userdata, msg):
         pt = parse_topic(msg.topic)
