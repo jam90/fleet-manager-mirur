@@ -1,0 +1,171 @@
+{
+  "mission": {
+    "guid": "c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+    "url": "/v2.0.0/missions/c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+    "name": "Ir a zona de espera"
+  },
+  "actions": [
+    {
+      "guid": "a6da05cf-0045-18ac-b6cd-0d1a9db89482",
+      "url": "/v2.0.0/mission_actions/a6da05cf-0045-18ac-b6cd-0d1a9db89482",
+      "action_type": "try_catch",
+      "priority": 2,
+      "mission_id": "c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+      "parameters": [
+        {
+          "id": "try",
+          "value": "",
+          "input_name": null,
+          "guid": "a53d78be-acb6-0c40-8f9b-7ae634915aea"
+        },
+        {
+          "id": "catch",
+          "value": "",
+          "input_name": null,
+          "guid": "9a28ad14-967b-d39f-4bd6-7fa96744f2b9"
+        }
+      ]
+    },
+    {
+      "guid": "ad12b8d3-3065-489d-127b-354ef8bdab38",
+      "url": "/v2.0.0/mission_actions/ad12b8d3-3065-489d-127b-354ef8bdab38",
+      "action_type": "move",
+      "priority": 3,
+      "mission_id": "c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+      "parameters": [
+        {
+          "id": "position",
+          "value": "e02acb8a-54fd-11f1-b54b-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "6a73e60e-24ec-fca4-743a-d0030156dd5c"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "709d4cdf-9eaf-23f3-cc78-e1f850675649"
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "a1b591c1-2cbe-09dc-b322-a87daece4e51"
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null,
+          "guid": "e7973bd9-84da-5c04-74c9-02b6b2708675"
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 5.0,
+          "input_name": null,
+          "guid": "6f0b0bb7-2086-56cf-03fd-58e4adb0271d"
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null,
+          "guid": "10ec66a8-609f-b3e0-eab2-9004c6cac691"
+        }
+      ]
+    },
+    {
+      "guid": "d5450426-20bc-c9f1-57db-db6a673816c5",
+      "url": "/v2.0.0/mission_actions/d5450426-20bc-c9f1-57db-db6a673816c5",
+      "action_type": "move",
+      "priority": 4,
+      "mission_id": "c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+      "parameters": [
+        {
+          "id": "position",
+          "value": "fbdb0a63-54fd-11f1-b54b-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "36afc786-c9b2-d681-a54c-737180e887a2"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "2df598c0-9aa8-fe5d-b82e-fdaf2a42010e"
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "9ce280df-6bcd-cde5-4fd5-0512b6131b9e"
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null,
+          "guid": "15da180f-99ed-8f0f-560a-1237ea99d2cd"
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null,
+          "guid": "3395944f-2623-0f68-cb21-05cdfd2b3529"
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null,
+          "guid": "fb132c5a-cfe6-4324-134d-9e31d42bca74"
+        }
+      ]
+    },
+    {
+      "guid": "4a4c3920-c54a-295a-e74b-fbd4fb9a6de6",
+      "url": "/v2.0.0/mission_actions/4a4c3920-c54a-295a-e74b-fbd4fb9a6de6",
+      "action_type": "move",
+      "priority": 1,
+      "mission_id": "c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+      "parameters": [
+        {
+          "id": "position",
+          "value": "6999e6bc-58df-11f1-b2f5-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "6c22e733-373f-93fe-caaa-f90b34e7f6d8"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "4ccf2283-23a4-714a-81fb-c097555878eb"
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "2f4080ef-2f19-553c-adad-205300320e15"
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null,
+          "guid": "d7107749-5aec-34d0-cf1f-5c2d054090b8"
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null,
+          "guid": "443d231c-0ca2-7fe5-7874-0b5eecad1b51"
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null,
+          "guid": "fa0c9605-0a79-dd9e-8ade-4bee86d6b5d8"
+        }
+      ]
+    }
+  ],
+  "_backup": {
+    "robot": "mir-2",
+    "host": "192.168.15.15",
+    "group": "all",
+    "timestamp": "2026-09-04T07:30:38+00:00"
+  }
+}

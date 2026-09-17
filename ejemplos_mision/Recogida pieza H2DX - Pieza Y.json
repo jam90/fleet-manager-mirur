@@ -1,0 +1,551 @@
+{
+  "mission": {
+    "guid": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+    "url": "/v2.0.0/missions/ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+    "name": "Recogida pieza H2DX - Pieza Y"
+  },
+  "actions": [
+    {
+      "guid": "2df2a6af-6302-b280-a08a-1aea68cdd3c0",
+      "url": "/v2.0.0/mission_actions/2df2a6af-6302-b280-a08a-1aea68cdd3c0",
+      "action_type": "adjust_localization",
+      "priority": 1,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": []
+    },
+    {
+      "guid": "11e9eacb-a370-1c3b-bc96-8c6acc0205ed",
+      "url": "/v2.0.0/mission_actions/11e9eacb-a370-1c3b-bc96-8c6acc0205ed",
+      "action_type": "docking",
+      "priority": 2,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "marker",
+          "value": "16c92756-3718-11f1-85f5-000e8eb5b8fb",
+          "input_name": "target_pos",
+          "guid": "c129e9ee-a11d-3c83-76a3-3f4d7fccac42"
+        },
+        {
+          "id": "marker_type",
+          "value": null,
+          "input_name": null,
+          "guid": "b8f9ff53-9d80-cd7a-b472-da71b0de4bd3"
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null,
+          "guid": "818d16c9-f263-9127-5b3d-0df260953d0b"
+        },
+        {
+          "id": "blocked_docking_timeout",
+          "value": 60.0,
+          "input_name": null,
+          "guid": "4d9078f3-1a1b-dd18-583f-e6a9c640ea25"
+        },
+        {
+          "id": "max_linear_speed",
+          "value": 0.25,
+          "input_name": null,
+          "guid": "574fa737-d190-7c28-0bc7-df139ec966b5"
+        }
+      ]
+    },
+    {
+      "guid": "fb51b23b-21a0-a4db-df30-1ca7f8f44e3e",
+      "url": "/v2.0.0/mission_actions/fb51b23b-21a0-a4db-df30-1ca7f8f44e3e",
+      "action_type": "set_plc_register",
+      "priority": 3,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "3",
+          "input_name": null,
+          "guid": "f659e593-0320-bc69-cdf6-2667eaf2d26b"
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null,
+          "guid": "0dccd708-c67e-6d13-e7b7-97639298925b"
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": "pieza",
+          "guid": "9c837391-16c9-b3a1-2508-ceb397dbc0c3"
+        }
+      ]
+    },
+    {
+      "guid": "c9a5a63b-060b-6914-8c5c-8982343e7f48",
+      "url": "/v2.0.0/mission_actions/c9a5a63b-060b-6914-8c5c-8982343e7f48",
+      "action_type": "set_plc_register",
+      "priority": 5,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "1",
+          "input_name": null,
+          "guid": "7da4f08c-c614-9063-f8b6-0d364a0f19f9"
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null,
+          "guid": "8b9c59f9-f758-6a41-6357-766faf026625"
+        },
+        {
+          "id": "value",
+          "value": 30.0,
+          "input_name": null,
+          "guid": "c29c2cf4-facb-0e9b-0f8d-9e6e4774a51a"
+        }
+      ]
+    },
+    {
+      "guid": "f55aacc2-781d-1d66-dc33-07bb6d0fe11a",
+      "url": "/v2.0.0/mission_actions/f55aacc2-781d-1d66-dc33-07bb6d0fe11a",
+      "action_type": "wait_for_plc_register",
+      "priority": 6,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "7",
+          "input_name": null,
+          "guid": "f4bd61c9-7998-750f-c3c9-7b9fa87c82b2"
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": null,
+          "guid": "4750c795-6a59-0cbf-293f-b746f23ce115"
+        },
+        {
+          "id": "timeout",
+          "value": null,
+          "input_name": null,
+          "guid": "1848e23b-f163-ac0e-bd7a-026b77c1d358"
+        }
+      ]
+    },
+    {
+      "guid": "cfb201e0-1d68-32ca-7d0a-fd1bc89bc173",
+      "url": "/v2.0.0/mission_actions/cfb201e0-1d68-32ca-7d0a-fd1bc89bc173",
+      "action_type": "set_plc_register",
+      "priority": 7,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "1",
+          "input_name": null,
+          "guid": "9d566fdf-7461-7bc0-8b33-724b016c7929"
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null,
+          "guid": "340c6d6e-1dad-99d5-c82b-c4e6e4960423"
+        },
+        {
+          "id": "value",
+          "value": 0.0,
+          "input_name": null,
+          "guid": "53b58b36-1481-793a-0891-0e89d8a7cc7b"
+        }
+      ]
+    },
+    {
+      "guid": "9e14ee03-9e7d-aec6-87e0-3f89559696b7",
+      "url": "/v2.0.0/mission_actions/9e14ee03-9e7d-aec6-87e0-3f89559696b7",
+      "action_type": "wait_for_plc_register",
+      "priority": 8,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "8",
+          "input_name": null,
+          "guid": "d6fd43b9-8ba5-e4ad-026f-0f9945fa1ed2"
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": null,
+          "guid": "c80965d7-2a74-8828-bf86-33d0aade080b"
+        },
+        {
+          "id": "timeout",
+          "value": null,
+          "input_name": null,
+          "guid": "1b6419fd-20cb-2c99-e8b3-a7caa7dab5b4"
+        }
+      ]
+    },
+    {
+      "guid": "5375f3f3-af37-b8c5-ccf7-e1f0a019caae",
+      "url": "/v2.0.0/mission_actions/5375f3f3-af37-b8c5-ccf7-e1f0a019caae",
+      "action_type": "set_plc_register",
+      "priority": 9,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "3",
+          "input_name": null,
+          "guid": "581307f4-5fb3-184e-3cc7-6f5a5e86101f"
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null,
+          "guid": "a77522ad-c828-4fc2-e944-3d30df5ca064"
+        },
+        {
+          "id": "value",
+          "value": 0.0,
+          "input_name": null,
+          "guid": "393b00ac-6891-0755-2838-9aa5a60b472b"
+        }
+      ]
+    },
+    {
+      "guid": "d4aa73ec-d5d6-dff6-392a-3957e43eeb3b",
+      "url": "/v2.0.0/mission_actions/d4aa73ec-d5d6-dff6-392a-3957e43eeb3b",
+      "action_type": "set_plc_register",
+      "priority": 4,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "register",
+          "value": "9",
+          "input_name": null,
+          "guid": "5dfa0dad-d5e7-aa67-2cf2-57d53253cbc9"
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null,
+          "guid": "51167edf-4fa9-748d-f018-6f2c5d627d91"
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": "sumergir",
+          "guid": "2131c96e-64aa-7056-e813-cdd976888408"
+        }
+      ]
+    },
+    {
+      "guid": "2d21ebea-5149-52f3-fac4-5323abf0cfcc",
+      "url": "/v2.0.0/mission_actions/2d21ebea-5149-52f3-fac4-5323abf0cfcc",
+      "action_type": "if",
+      "priority": 10,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "compare",
+          "value": "plc_register",
+          "input_name": null,
+          "guid": "8762be31-bbaf-46e3-b1af-17db3007a19a"
+        },
+        {
+          "id": "module",
+          "value": null,
+          "input_name": null,
+          "guid": "9f07c50f-821d-9275-7881-0468c50b4b95"
+        },
+        {
+          "id": "io_port",
+          "value": "0",
+          "input_name": null,
+          "guid": "f9e80de0-acc3-9e23-0037-5e0762c56844"
+        },
+        {
+          "id": "register",
+          "value": "9",
+          "input_name": null,
+          "guid": "8cb2728f-3130-aa92-1d7c-70347d35406b"
+        },
+        {
+          "id": "operator",
+          "value": "==",
+          "input_name": null,
+          "guid": "5bae3abc-be63-f407-da77-bbfeb3b4a379"
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": null,
+          "guid": "cc0aba5b-9dca-82d8-8c01-1b57e8f765e4"
+        },
+        {
+          "id": "true",
+          "value": "",
+          "input_name": null,
+          "guid": "b0dca820-b30d-3ce7-7216-99ab8683ba21"
+        },
+        {
+          "id": "false",
+          "value": "",
+          "input_name": null,
+          "guid": "8600a78b-8d06-ab17-b840-3a57c634b2b5"
+        }
+      ]
+    },
+    {
+      "guid": "e222715f-bc64-0ad1-582a-0dfa9c228b08",
+      "url": "/v2.0.0/mission_actions/e222715f-bc64-0ad1-582a-0dfa9c228b08",
+      "action_type": "move",
+      "priority": 11,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "position",
+          "value": "69e807fa-6bb9-11f1-82a7-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "51d8afa2-430d-6c4e-cd52-48519c964ee3"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "eb7260c2-2b93-84b3-c257-4d904f7f50cf"
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "efefbd29-f15d-1330-2bd6-94cb859a2a8c"
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null,
+          "guid": "e27574c1-6e5c-ceba-e3e3-9ccccc32d3c2"
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null,
+          "guid": "5075d210-69e4-145f-c9d5-3df4ac526df7"
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null,
+          "guid": "eab7b781-4799-69ab-8369-0ed72639d588"
+        }
+      ]
+    },
+    {
+      "guid": "eca1734c-2846-6d7e-d395-84c0dda9be71",
+      "url": "/v2.0.0/mission_actions/eca1734c-2846-6d7e-d395-84c0dda9be71",
+      "action_type": "if",
+      "priority": 13,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "compare",
+          "value": "plc_register",
+          "input_name": null,
+          "guid": "683b95d7-03b4-80ce-4aec-42825e18b32a"
+        },
+        {
+          "id": "module",
+          "value": null,
+          "input_name": null,
+          "guid": "7f94555e-0ff6-9058-779a-2ebaebc671a5"
+        },
+        {
+          "id": "io_port",
+          "value": "0",
+          "input_name": null,
+          "guid": "63b0733a-2879-bd61-e55c-693841c95226"
+        },
+        {
+          "id": "register",
+          "value": "9",
+          "input_name": null,
+          "guid": "69b559f3-fa58-f2ce-cfc0-5a317c6986dd"
+        },
+        {
+          "id": "operator",
+          "value": "==",
+          "input_name": null,
+          "guid": "3d252688-1ae2-51dc-c81f-30a4565c412d"
+        },
+        {
+          "id": "value",
+          "value": 0.0,
+          "input_name": null,
+          "guid": "7d846475-6a76-0162-d317-8e766c3f762d"
+        },
+        {
+          "id": "true",
+          "value": "",
+          "input_name": null,
+          "guid": "97c3a342-8423-0544-fb0d-be176b9a6cad"
+        },
+        {
+          "id": "false",
+          "value": "",
+          "input_name": null,
+          "guid": "c158a108-2328-49df-028e-e56397d28862"
+        }
+      ]
+    },
+    {
+      "guid": "19e35b12-228a-2335-f459-5b2e818245bb",
+      "url": "/v2.0.0/mission_actions/19e35b12-228a-2335-f459-5b2e818245bb",
+      "action_type": "move",
+      "priority": 14,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "position",
+          "value": "c98568fc-6bba-11f1-82a7-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "b9df7b00-8d64-c4b4-8c87-2733f4fcd471"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "08dfafd2-e8a1-8b1d-6f42-2ee255f0f4eb"
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null,
+          "guid": "f71cd7af-0a70-de83-4cd9-bae43f6ce530"
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null,
+          "guid": "fdbf6add-1b16-5a71-ca6d-df2fac51be2e"
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null,
+          "guid": "3803d8bc-67a4-6265-a104-d80b4d95bc28"
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null,
+          "guid": "845b06eb-da19-be10-f70f-6f956a303590"
+        }
+      ]
+    },
+    {
+      "guid": "b9cbbc09-6517-36af-04f3-5ce93975d60a",
+      "url": "/v2.0.0/mission_actions/b9cbbc09-6517-36af-04f3-5ce93975d60a",
+      "action_type": "create_autolog",
+      "priority": 16,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "description",
+          "value": "Valor de Sumergir incorrecto",
+          "input_name": null,
+          "guid": "99243f9e-a25a-297d-869a-3d5e3277ef81"
+        }
+      ]
+    },
+    {
+      "guid": "0ae7f59a-7376-25ab-2286-ade480fc8e3d",
+      "url": "/v2.0.0/mission_actions/0ae7f59a-7376-25ab-2286-ade480fc8e3d",
+      "action_type": "load_mission",
+      "priority": 17,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "mission_id",
+          "value": "c47a103b-54fe-11f1-b54b-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "6063ae2d-24ef-702c-2f7c-dc090f2bfd6c"
+        }
+      ]
+    },
+    {
+      "guid": "4ee54b44-89de-8bff-05b5-9198bb3ab44a",
+      "url": "/v2.0.0/mission_actions/4ee54b44-89de-8bff-05b5-9198bb3ab44a",
+      "action_type": "sound",
+      "priority": 12,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "sound",
+          "value": "3ff16965-6bbb-11f1-82a7-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "6ce4ea18-5f24-e3f8-2f3a-d5db790a1c2b"
+        },
+        {
+          "id": "volume",
+          "value": 100.0,
+          "input_name": null,
+          "guid": "6ce0b048-a456-b48a-1d87-2b927036230f"
+        },
+        {
+          "id": "mode",
+          "value": "full",
+          "input_name": null,
+          "guid": "29bd9480-de18-3f07-8785-7eff06f4aa8a"
+        },
+        {
+          "id": "duration",
+          "value": "00:00:01.000000",
+          "input_name": null,
+          "guid": "3f768209-5910-d017-3007-5873d19123f3"
+        }
+      ]
+    },
+    {
+      "guid": "961c927c-c0f9-3981-d602-968d52ab5ec3",
+      "url": "/v2.0.0/mission_actions/961c927c-c0f9-3981-d602-968d52ab5ec3",
+      "action_type": "sound",
+      "priority": 15,
+      "mission_id": "ec3a5138-3a79-5650-e12c-93b29fd2eba9",
+      "parameters": [
+        {
+          "id": "sound",
+          "value": "2e50b898-6bbb-11f1-82a7-000e8eb5b8fb",
+          "input_name": null,
+          "guid": "9150548d-8137-b903-d083-2e30089df4dd"
+        },
+        {
+          "id": "volume",
+          "value": 100.0,
+          "input_name": null,
+          "guid": "78080d99-d58f-29c8-805b-25dc762c02b9"
+        },
+        {
+          "id": "mode",
+          "value": "full",
+          "input_name": null,
+          "guid": "119c328f-873a-fcd8-8a70-a003afcd9d97"
+        },
+        {
+          "id": "duration",
+          "value": "00:00:01.000000",
+          "input_name": null,
+          "guid": "bf062f47-22de-a6d9-e357-c3b3b09625ce"
+        }
+      ]
+    }
+  ],
+  "_backup": {
+    "robot": "mir-2",
+    "host": "192.168.15.15",
+    "group": "all",
+    "timestamp": "2026-09-04T07:30:38+00:00"
+  }
+}
