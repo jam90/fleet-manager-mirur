@@ -1,34 +1,25 @@
-"""Traducción pura MiR ↔ VDA 5050. Sin I/O: recibe snapshots e índices.
+"""Traducción pura MiR ↔ core. Sin I/O: recibe snapshots e índices.
 
-- `to_vda_state`: `MirStatus` (+ lo que el FM sabe de la order en curso) → `State`.
-- `from_vda_order` (H2): `Order` + índices nombre → GUID → body de `/mission_queue`.
+- `to_telemetry`: `MirStatus` (GET /status) → `Telemetry` normalizado.
+- `from_vda_order` (H2): `Action` + índices nombre → GUID → body de `/mission_queue`.
+
+El `state` VDA lo construye el core (`fm/vda5050/state_builder.py`) a partir
+del `Telemetry`; aquí solo se interpreta lo que dice el MiR.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+from fm.adapters.base import Telemetry
+from fm.config import RobotConfig
 from fm.mir_client import (STATE_EMERGENCY_STOP, STATE_ERROR, STATE_EXECUTING,
                            STATE_MANUAL, STATE_PAUSE, MirStatus)
-from fm.vda5050.state import (E_MIR_UNREACHABLE, ActionState, Error, Info,
-                              MobileRobotPosition, PowerSupply, SafetyState, State)
+from fm.vda5050.order import Action, OrderRejected
+from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET,
+                              E_VALIDATION_FAILURE, Error, Info)
 
-
-@dataclass
-class StateOverlay:
-    """Lo que el `/status` del MiR no sabe y el FM sí: la order VDA en curso,
-    las actions, los errores de rechazo y la auto-carga. H1 lo deja vacío;
-    H2/H4/H5 lo rellenan desde el tracker de cada robot."""
-    order_id: str = ""
-    order_update_id: int = 0
-    action_states: list[ActionState] = field(default_factory=list)
-    instant_action_states: list[ActionState] = field(default_factory=list)
-    errors: list[Error] = field(default_factory=list)
-    information: list[Info] = field(default_factory=list)
-    charging: bool | None = None     # None = deducir del /status (pendiente de validar, §5.2)
-
-
-def _operating_mode(state_id: int) -> str:
-    return "MANUAL" if state_id == STATE_MANUAL else "AUTOMATIC"
+# state_id del MiR en los que NO se aceptan orders (decisión 16/18).
+UNAVAILABLE_STATES = (STATE_MANUAL, STATE_ERROR, STATE_EMERGENCY_STOP)
 
 
 def _mir_errors(st: MirStatus) -> list[Error]:
@@ -45,53 +36,33 @@ def _mir_errors(st: MirStatus) -> list[Error]:
     return out
 
 
-def _charging(st: MirStatus, overlay: StateOverlay) -> bool:
-    """Prioridad: (a) el FM sabe que su mission de carga está Executing;
-    (b) heurística sobre /status. La (b) está PENDIENTE DE VALIDAR con robot
-    real en el dock (CLAUDE.md §5.2): de momento, `charging` solo es True por (a).
-    """
-    if overlay.charging is not None:
-        return overlay.charging
-    return False
-
-
-def to_vda_state(header: dict, st: MirStatus | None, overlay: StateOverlay | None = None,
-                 rest_error: str | None = None) -> State:
-    """Construye el `state` VDA. Si `st` es None (REST caído) se publica igual
-    con `MIR_REST_UNREACHABLE` en `errors[]` y sin posición."""
-    overlay = overlay or StateOverlay()
-    s = State(**header)
-    s.orderId = overlay.order_id
-    s.orderUpdateId = overlay.order_update_id
-    s.actionStates = list(overlay.action_states)
-    s.instantActionStates = list(overlay.instant_action_states)
-    s.errors = list(overlay.errors)
-    s.information = list(overlay.information)
-
-    if st is None:
-        s.errors.append(Error(E_MIR_UNREACHABLE, "URGENT", rest_error or "sin respuesta REST"))
-        s.powerSupply = PowerSupply(0.0, False)
-        return s
-
-    s.driving = st.state_id == STATE_EXECUTING
-    s.paused = st.state_id == STATE_PAUSE
-    s.operatingMode = _operating_mode(st.state_id)
-    s.mobileRobotPosition = MobileRobotPosition(st.x, st.y, st.theta, st.map_id, localized=True)
-    s.powerSupply = PowerSupply(st.battery_percentage, _charging(st, overlay))
-    s.safetyState = SafetyState(
-        activeEmergencyStop="MANUAL" if st.state_id == STATE_EMERGENCY_STOP else "NONE",
-        fieldViolation=False)   # el MiR no lo expone en /status
-    s.errors.extend(_mir_errors(st))
-    if st.mission_text:
-        s.information.append(Info("MISSION", "INFO", st.mission_text))
-    return s
+def to_telemetry(st: MirStatus, own_queue_id: int | None = None) -> Telemetry:
+    """`MirStatus` → `Telemetry`. `own_queue_id` es la entrada de `mission_queue`
+    que lanzó el FM (si hay): cualquier otra mission en marcha es ajena
+    (lanzada desde la web) y bloquea el robot (decisión 16)."""
+    running = st.mission_queue_id is not None or st.state_id == STATE_EXECUTING
+    foreign = running and (own_queue_id is None or st.mission_queue_id != own_queue_id)
+    info = [Info("MISSION", "INFO", st.mission_text)] if st.mission_text else []
+    return Telemetry(
+        battery=st.battery_percentage,
+        pose=(st.x, st.y, st.theta),
+        map_id=st.map_id,
+        driving=st.state_id == STATE_EXECUTING,
+        paused=st.state_id == STATE_PAUSE,
+        # Heurística sobre /status PENDIENTE DE VALIDAR en el dock (CLAUDE.md
+        # §5.2): de momento el MiR no informa y decide el overlay (auto-carga).
+        charging=None,
+        operating_mode="MANUAL" if st.state_id == STATE_MANUAL else "AUTOMATIC",
+        emergency_stop=st.state_id == STATE_EMERGENCY_STOP,
+        available=st.state_id not in UNAVAILABLE_STATES,
+        foreign_busy=foreign,
+        unavailable_reason=f"robot en estado {st.state_text} (state_id={st.state_id})",
+        errors=_mir_errors(st),
+        information=info,
+    )
 
 
 # ---------------------------------------------------------------- order → mission
-from fm.config import RobotConfig  # noqa: E402
-from fm.vda5050.order import Action, Order, OrderRejected  # noqa: E402
-from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET,  # noqa: E402
-                              E_VALIDATION_FAILURE)
 
 
 @dataclass
@@ -102,19 +73,6 @@ class MissionRequest:
     mission_guid: str
     parameters: list[dict]          # [{"id": input_name, "value": ...}]
 
-
-def pick_action(order: Order, done_action_ids: set[str] = frozenset()) -> Action:
-    """La única action a ejecutar (decisión 10/11): entre las de los nodos
-    released, la primera cuyo actionId no esté ya FINISHED. Más de una
-    pendiente → VALIDATION_FAILURE (mejor rechazar que ejecutar a medias)."""
-    pending = [a for a in order.released_actions() if a.actionId not in done_action_ids]
-    if not pending:
-        raise OrderRejected(E_VALIDATION_FAILURE, "la order no contiene ninguna action que ejecutar")
-    if len(pending) > 1:
-        raise OrderRejected(E_VALIDATION_FAILURE,
-                            f"solo se admite una action por order; llegan {len(pending)}: "
-                            + ", ".join(f"{a.actionType}/{a.actionId}" for a in pending))
-    return pending[0]
 
 
 def from_vda_order(action: Action, robot: RobotConfig, missions: dict[str, str],

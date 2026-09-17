@@ -10,7 +10,7 @@ import logging
 from fm.assigner import assign
 from fm.config import FleetConfig
 from fm.mqtt_bus import FLEET, MqttBus
-from fm.orders import IgnoreOrder
+from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
 from fm.vda5050.header import parse_topic, validate_header
 from fm.vda5050.order import Order, OrderRejected, parse_order
@@ -105,7 +105,6 @@ class Dispatcher:
     def _assign_and_execute(self, order: Order) -> Robot:
         # Una sola action por order (se valida aquí para que el rechazo sea
         # VALIDATION_FAILURE y no un rechazo por robot).
-        from fm.adapters.mir import pick_action
         action = pick_action(order)
         snaps = {s: r.snapshot() for s, r in self.robots.items()}
         result = assign(action.actionType, snaps, self.cfg)

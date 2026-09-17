@@ -1,11 +1,13 @@
 """El `state` que genera el FM debe validar contra el schema oficial v3.0.0."""
 import math
 
-from fm.adapters.mir import StateOverlay, to_vda_state
+from fm.adapters.base import Telemetry
+from fm.adapters.mir import to_telemetry
 from fm.mir_client import MirStatus
 from fm.vda5050.header import HeaderCounter, make_header
 from fm.vda5050.schemas import assert_valid, validation_errors
-from fm.vda5050.state import ActionState, Error, error_for_order
+from fm.vda5050.state import ActionState, error_for_order
+from fm.vda5050.state_builder import StateOverlay, to_vda_state
 
 STATUS = {
     "state_id": 5, "state_text": "Executing", "battery_percentage": 54.9,
@@ -20,9 +22,13 @@ def _header(serial="mir-2"):
     return make_header(HeaderCounter(), "MiR", serial, "state")
 
 
+def _tel(**over):
+    """Telemetría MiR de ejemplo, pasando por el traductor real del adapter."""
+    return to_telemetry(MirStatus.from_json({**STATUS, **over}))
+
+
 def test_state_valida_contra_schema():
-    st = MirStatus.from_json(STATUS)
-    s = to_vda_state(_header(), st)
+    s = to_vda_state(_header(), _tel())
     d = s.to_dict()
     assert_valid("state", d)
     assert d["driving"] is True and d["paused"] is False
@@ -37,21 +43,22 @@ def test_state_valida_contra_schema():
 
 
 def test_state_sin_rest_valida_y_lleva_error():
-    d = to_vda_state(_header(), None, rest_error="timeout").to_dict()
+    d = to_vda_state(_header(), None, error="timeout").to_dict()
     assert_valid("state", d)
-    assert d["errors"][0]["errorType"] == "MIR_REST_UNREACHABLE"
+    assert d["errors"][0] == {"errorType": "ROBOT_UNREACHABLE", "errorLevel": "URGENT",
+                              "errorDescription": "timeout", "errorReferences": []}
     assert "mobileRobotPosition" not in d
 
 
 def test_state_pause_manual_error_emergencia():
-    d = to_vda_state(_header(), MirStatus.from_json({**STATUS, "state_id": 4})).to_dict()
+    d = to_vda_state(_header(), _tel(state_id=4)).to_dict()
     assert d["paused"] is True and d["driving"] is False
-    d = to_vda_state(_header(), MirStatus.from_json({**STATUS, "state_id": 11})).to_dict()
+    d = to_vda_state(_header(), _tel(state_id=11)).to_dict()
     assert d["operatingMode"] == "MANUAL"
-    d = to_vda_state(_header(), MirStatus.from_json({**STATUS, "state_id": 10})).to_dict()
+    d = to_vda_state(_header(), _tel(state_id=10)).to_dict()
     assert d["safetyState"]["activeEmergencyStop"] == "MANUAL"
-    d = to_vda_state(_header(), MirStatus.from_json(
-        {**STATUS, "state_id": 12, "errors": [{"code": 10050, "description": "Localization lost", "module": "AMCL"}]})).to_dict()
+    d = to_vda_state(_header(), _tel(
+        state_id=12, errors=[{"code": 10050, "description": "Localization lost", "module": "AMCL"}])).to_dict()
     assert_valid("state", d)
     assert d["errors"] == [{"errorType": "MIR_10050", "errorLevel": "FATAL",
                             "errorDescription": "Localization lost", "errorHint": "AMCL",
@@ -63,13 +70,21 @@ def test_overlay_order_y_errores_valida():
                       action_states=[ActionState("act-1", "RUNNING", "abrir_puerta")],
                       errors=[error_for_order("VALIDATION_FAILURE", "más de una action", "ord-2")],
                       charging=True)
-    d = to_vda_state(_header(), MirStatus.from_json(STATUS), ov).to_dict()
+    d = to_vda_state(_header(), _tel(), ov).to_dict()
     assert_valid("state", d)
     assert d["orderId"] == "ord-1" and d["powerSupply"]["charging"] is True
     assert d["errors"][0]["errorReferences"] == [{"referenceKey": "orderId", "referenceValue": "ord-2"}]
 
 
+def test_telemetria_minima_sin_pose_valida():
+    """Un driver que no sabe posicionarse (p.ej. sim) debe poder publicar state."""
+    d = to_vda_state(_header(), Telemetry(battery=80.0, charging=True)).to_dict()
+    assert_valid("state", d)
+    assert "mobileRobotPosition" not in d
+    assert d["powerSupply"] == {"stateOfCharge": 80.0, "charging": True}
+
+
 def test_schema_detecta_estado_invalido():
-    d = to_vda_state(_header(), MirStatus.from_json(STATUS)).to_dict()
+    d = to_vda_state(_header(), _tel()).to_dict()
     d["operatingMode"] = "AUTO"
     assert validation_errors("state", d)

@@ -73,7 +73,7 @@ y `MIR_HOST_<SERIAL>` como override por robot, `MQTT_HOST`, `MQTT_PORT`.
 ```
 
 Arranca aunque un robot no responda: publica `state` con
-`MIR_REST_UNREACHABLE` y reintenta los índices en cada tick. Ctrl-C / SIGTERM →
+`ROBOT_UNREACHABLE` y reintenta los índices en cada tick. Ctrl-C / SIGTERM →
 `connection: OFFLINE`; muerte brusca → el broker publica `CONNECTION_BROKEN`.
 
 Log (una línea por robot y tick, filtrable por `[serial]`):
@@ -184,7 +184,7 @@ Predefinidos v3: `VALIDATION_FAILURE`, `INVALID_ORDER_ACTION`,
 `MOBILE_ROBOT_NOT_AVAILABLE`. Propios (mismo estilo):
 `NO_MOBILE_ROBOT_AVAILABLE` (asignador sin candidatos),
 `ORDER_EXECUTION_FAILED` (mission Aborted/Cancelled), `MIR_<code>` (errores
-del MiR), `MIR_REST_UNREACHABLE`.
+del MiR), `ROBOT_UNREACHABLE`.
 
 ## Scripts (`scripts/`)
 

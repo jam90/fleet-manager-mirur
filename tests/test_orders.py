@@ -1,9 +1,9 @@
 import pytest
 
-from fm.adapters.mir import MissionRequest, from_vda_order, pick_action
+from fm.adapters.base import Telemetry
+from fm.adapters.mir import MissionRequest, from_vda_order
 from fm.config import ActionConfig, RobotConfig
-from fm.mir_client import MirStatus
-from fm.orders import IgnoreOrder, OrderTracker
+from fm.orders import IgnoreOrder, OrderTracker, pick_action
 from fm.vda5050.order import OrderRejected, parse_order
 
 ROBOT = RobotConfig("mir-1", "h", "a", 25, {
@@ -25,7 +25,7 @@ def order(action_type="coger", params=None, order_id="o1", update_id=0, actions=
 
 
 def ready():
-    return MirStatus.from_json({"state_id": 3})
+    return Telemetry(battery=50.0)
 
 
 def test_parse_valida_estructura():
@@ -115,8 +115,8 @@ def test_ciclo_order_update_id():
 def test_robot_no_disponible_y_fallo_ejecucion():
     t = OrderTracker("mir-1")
     with pytest.raises(OrderRejected) as e:
-        t.check_new(order(), MirStatus.from_json({"state_id": 11}))
-    assert e.value.error_type == "MOBILE_ROBOT_NOT_AVAILABLE"
+        t.check_new(order(), Telemetry(battery=50.0, available=False, unavailable_reason="Manual"))
+    assert e.value.error_type == "MOBILE_ROBOT_NOT_AVAILABLE" and "Manual" in e.value.description
     _accept(t, order())
     t.poll(FakeClient(["Executing", "Aborted"]))
     assert t.overlay().action_states[0].actionStatus == "RUNNING" and t.busy

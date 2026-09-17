@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import logging
 
-from fm.adapters.mir import MissionRequest, from_vda_order, pick_action
+from fm.adapters.base import Telemetry
+from fm.adapters.mir import MissionRequest, from_vda_order, to_telemetry
 from fm.assigner import RobotSnapshot
 from fm.config import FleetConfig, RobotConfig
-from fm.mir_client import STATE_EMERGENCY_STOP, STATE_ERROR, STATE_EXECUTING, STATE_MANUAL, MirClient, MirStatus
-from fm.orders import OrderTracker
+from fm.mir_client import MirClient, MirStatus
+from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
 from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE
 
@@ -30,6 +31,7 @@ class Robot:
         self.mission_inputs: dict[str, set[str]] = {}   # GUID mission → input_names
         self.indexed = False
         self.last_status: MirStatus | None = None
+        self.last_telemetry: Telemetry | None = None
         self.last_error: str | None = None
         self.orders = OrderTracker(self.serial)
 
@@ -57,8 +59,8 @@ class Robot:
             self.log.warning("no se pudieron cargar los índices: %s", e)
             return False
 
-    def poll(self) -> MirStatus | None:
-        """GET /status tolerante. Devuelve None si falla (y guarda el motivo)."""
+    def poll(self) -> Telemetry | None:
+        """GET /status tolerante → `Telemetry`. None si falla (y guarda el motivo)."""
         try:
             self.last_status = self.client.status_get()
             self.last_error = None
@@ -66,38 +68,38 @@ class Robot:
             # Resumen corto: el detalle completo de requests es ilegible en state.errors
             self.last_error = f"{type(e).__name__}: {str(e)[:160]}"
             self.log.warning("GET /status falló: %s", self.last_error)
+            self.last_telemetry = None
             return None
-        return self.last_status
+        own = self.orders.active.queue_id if self.orders.busy else None
+        self.last_telemetry = to_telemetry(self.last_status, own)
+        return self.last_telemetry
 
     # ---------------------------------------------------------------- orders
     @property
     def busy(self) -> bool:
-        """Ocupado = mission del FM viva, o el MiR tiene una mission en curso
-        que no es nuestra (lanzada desde la web) — decisión 16. Se detecta por
-        `/status.mission_queue_id` (también vale en Pause) o por Executing."""
+        """Ocupado = job del FM vivo, o el robot ejecuta algo que no es nuestro
+        (lanzado desde la web) — decisión 16. Lo segundo lo decide el driver."""
         return self.orders.busy or self.foreign_mission
 
     @property
     def foreign_mission(self) -> bool:
-        st = self.last_status
-        if st is None or self.orders.busy:
-            return False
-        return st.mission_queue_id is not None or st.state_id == STATE_EXECUTING
+        t = self.last_telemetry
+        return t is not None and t.foreign_busy
 
     @property
     def available(self) -> bool:
-        st = self.last_status
-        return st is not None and st.state_id not in (STATE_MANUAL, STATE_ERROR, STATE_EMERGENCY_STOP)
+        t = self.last_telemetry
+        return t is not None and t.available
 
     def snapshot(self, charging: bool = False) -> RobotSnapshot:
-        st = self.last_status
-        return RobotSnapshot(self.serial, st.battery_percentage if st else 0.0, self.busy,
-                             self.available, charging, (st.x, st.y) if st else None)
+        t = self.last_telemetry
+        return RobotSnapshot(self.serial, t.battery if t else 0.0, self.busy,
+                             self.available, charging, t.pose[:2] if t and t.pose else None)
 
     def translate_order(self, order: Order, cfg: FleetConfig) -> MissionRequest:
         """Valida reglas de ciclo de vida + traduce a mission. Sin red.
         Lanza IgnoreOrder / OrderRejected."""
-        self.orders.check_new(order, self.last_status)
+        self.orders.check_new(order, self.last_telemetry)
         if self.foreign_mission:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE,
                                 "el robot ejecuta una mission ajena al FM (lanzada desde la web)")

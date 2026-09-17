@@ -98,7 +98,7 @@ missions de ejemplo de `ejemplos_mision/`.
   `mobileRobotKinematics`. Arreglado en local; ver `schemas/README.md`.
 - `dev/3.0.1` ya corrige el de `order`.
 
-### Lo que dicen las missions de ejemplo (`ejemplos_mision/`)
+### Lo que dicen las missions de ejemplo (`ejemplos_mision/`, retirados del repo el 2026-09-17: eran referencia, no parte del proyecto)
 
 | Mission | Inputs (`input_name`) | Notas |
 |---|---|---|
@@ -302,3 +302,50 @@ Escenario: mir-2 en Pause con mission de la web (`queue_id=337`); mir-1 Ready 74
 - Duplicados `*-VL` con `type_id` 11/12 en el mapa activo: hoy se elige el
   primero (11). Confirmar con el usuario cuál debe recibir `target_pos`
   cuando lleguen los parámetros.
+
+## 2026-09-17 — Drivers enchufables, fase 1: tipos y frontera
+
+Plan completo en `docs/plan-drivers.md` (aprobado ese mismo día). Esta fase
+formaliza la frontera core ↔ marca sin cambiar comportamiento: `pytest` en
+verde (34 tests) y el flujo con los MiR idéntico.
+
+### Código
+
+- `fm/adapters/base.py` (nuevo): `Telemetry`, `Job`, `JobStatus` y el
+  `Protocol` `RobotDriver`. Es lo único que el core conocerá de un robot.
+- `fm/vda5050/state_builder.py` (nuevo): `StateOverlay` y `to_vda_state`
+  pasan al core y reciben `Telemetry`, no `MirStatus`. Un driver ya no puede
+  publicar un `state` mal formado: solo aporta telemetría.
+- `fm/adapters/mir.py`: solo traducción MiR. Nueva `to_telemetry(MirStatus,
+  own_queue_id)` (absorbe `_mir_errors`, `operating_mode`, `foreign_busy`);
+  se va `to_vda_state`. `pick_action` se muda a `fm/orders.py` (es regla VDA).
+- `OrderTracker.check_new(order, telemetry)` usa `telemetry.available` y
+  `unavailable_reason`; ya no mira `state_id`.
+- `Robot`: `poll()` devuelve `Telemetry` y guarda `last_telemetry`;
+  `busy`/`available`/`snapshot` leen de ahí. Aún crea `MirClient` y
+  mantiene los índices (fase 2).
+- `run_fm.py` ya no importa nada de `fm.adapters.mir`; el log del tick imprime
+  `mode=`/`drv=` en vez de `state_id`.
+- Tests: `tests/adapters/test_mir.py` (MirStatus → Telemetry);
+  `test_vda_state.py` pasa por `to_telemetry` y añade un caso de telemetría
+  mínima sin pose (lo que publicará un driver `sim`).
+
+### Decisiones nuevas
+
+22. **`MIR_REST_UNREACHABLE` → `ROBOT_UNREACHABLE`** (`E_ROBOT_UNREACHABLE`).
+    El error lo genera el core cuando `driver.poll()` devuelve None; con
+    varias marcas no puede llevar "MIR" en el nombre. Es un errorType propio
+    (no de la norma), así que solo afecta a quien lo filtre aguas arriba.
+23. **`Telemetry.charging` es `bool | None`**: None = el driver no lo sabe y
+    manda el overlay (auto-carga del FM). El MiR devuelve None hasta validar
+    la heurística en el dock (§5.2). Prioridad en `to_vda_state`: overlay →
+    driver → False.
+24. **`foreign_busy` lo calcula el driver**, no el core: la traducción MiR
+    recibe `own_queue_id` (la entrada de `mission_queue` que lanzó el FM) y
+    marca ajena cualquier otra mission en marcha o en Pause (decisiones 16/18).
+
+### Nota de entorno
+
+`pytest` en este WSL carga plugins de ROS Jazzy del site-packages del sistema
+y falla al importar `lark`. Ejecutar con
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest`.

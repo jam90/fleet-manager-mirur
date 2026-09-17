@@ -10,13 +10,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from fm.adapters.mir import MissionRequest, StateOverlay
-from fm.mir_client import (QUEUE_ALIVE, STATE_EMERGENCY_STOP, STATE_ERROR, STATE_MANUAL,
-                           MirClient, MirStatus)
-from fm.vda5050.order import Order, OrderRejected
+from fm.adapters.base import Telemetry
+from fm.adapters.mir import MissionRequest
+from fm.mir_client import QUEUE_ALIVE, MirClient
+from fm.vda5050.order import Action, Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
                               E_OTHER_ORDER_ACTIVE, E_OUTDATED_ORDER_UPDATE, E_VALIDATION_FAILURE,
-                              ActionState, Error, Info, error_for_order)
+                              ActionState, Error, error_for_order)
+from fm.vda5050.state_builder import StateOverlay
 
 log = logging.getLogger("fm.orders")
 
@@ -27,6 +28,21 @@ QUEUE_TO_ACTION = {"Pending": "WAITING", "Executing": "RUNNING", "Done": "FINISH
 
 class IgnoreOrder(Exception):
     """Order repetida (mismo orderId/orderUpdateId): se descarta en silencio."""
+
+
+def pick_action(order: Order, done_action_ids: set[str] = frozenset()) -> Action:
+    """La única action a ejecutar (decisión 10/11): entre las de los nodos
+    released, la primera cuyo actionId no esté ya FINISHED. Más de una
+    pendiente → VALIDATION_FAILURE (mejor rechazar que ejecutar a medias).
+    Regla VDA del FM, independiente de la marca."""
+    pending = [a for a in order.released_actions() if a.actionId not in done_action_ids]
+    if not pending:
+        raise OrderRejected(E_VALIDATION_FAILURE, "la order no contiene ninguna action que ejecutar")
+    if len(pending) > 1:
+        raise OrderRejected(E_VALIDATION_FAILURE,
+                            f"solo se admite una action por order; llegan {len(pending)}: "
+                            + ", ".join(f"{a.actionType}/{a.actionId}" for a in pending))
+    return pending[0]
 
 
 @dataclass
@@ -57,15 +73,15 @@ class OrderTracker:
     def busy(self) -> bool:
         return self.active is not None and self.active.alive
 
-    def check_new(self, order: Order, status: MirStatus | None) -> None:
+    def check_new(self, order: Order, telemetry: Telemetry | None) -> None:
         """Reglas §6.1.4 sobre `orderId`/`orderUpdateId` y disponibilidad del
         robot. Lanza `IgnoreOrder` o `OrderRejected`; si no lanza, se puede
         traducir y postear."""
-        if status is None:
-            raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, "sin telemetría REST del robot")
-        if status.state_id in (STATE_MANUAL, STATE_ERROR, STATE_EMERGENCY_STOP):
+        if telemetry is None:
+            raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, "sin telemetría del robot")
+        if not telemetry.available:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE,
-                                f"robot en estado {status.state_text} (state_id={status.state_id})")
+                                telemetry.unavailable_reason or "robot no disponible")
         a = self.active
         if a is None:
             return

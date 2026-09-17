@@ -30,7 +30,7 @@ E_ORDER_UPDATE_FOLLOWING_CANCEL = "ORDER_UPDATE_FOLLOWING_CANCEL"
 E_LOCALIZATION_ERROR = "LOCALIZATION_ERROR"
 E_NO_MOBILE_ROBOT_AVAILABLE = "NO_MOBILE_ROBOT_AVAILABLE"     # propio: asignador sin candidatos
 E_ORDER_EXECUTION_FAILED = "ORDER_EXECUTION_FAILED"           # propio: mission Aborted/Cancelled
-E_MIR_UNREACHABLE = "MIR_REST_UNREACHABLE"                    # propio: GET /status falló
+E_ROBOT_UNREACHABLE = "ROBOT_UNREACHABLE"                     # propio: el driver no alcanza al robot
 
 
 def _clean(d: Any) -> Any:

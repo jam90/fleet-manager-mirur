@@ -18,11 +18,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fm.adapters.mir import to_vda_state  # noqa: E402
 from fm.config import load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus  # noqa: E402
 from fm.robot import Robot  # noqa: E402
+from fm.vda5050.state_builder import to_vda_state  # noqa: E402
 
 log = logging.getLogger("fm")
 
@@ -67,8 +67,8 @@ def main(argv=None) -> int:
         r.poll()
 
     def publish_state(r: Robot) -> None:
-        state = to_vda_state(bus.next_header(r.serial, "state"), r.last_status, r.orders.overlay(),
-                             rest_error=r.last_error)
+        state = to_vda_state(bus.next_header(r.serial, "state"), r.last_telemetry, r.orders.overlay(),
+                             error=r.last_error)
         bus.publish_raw(r.serial, "state", state.to_dict())
 
     dispatcher = Dispatcher(cfg, robots, bus, publish_state)
@@ -89,20 +89,21 @@ def main(argv=None) -> int:
 
 
 def tick_robot(r: Robot, bus: MqttBus, cfg) -> None:
-    st = r.poll()
-    if st is not None and not r.indexed:
+    t = r.poll()
+    if t is not None and not r.indexed:
         r.refresh_indices(cfg.auto_charge.mission, cfg.mission_group)   # reintento tras un arranque sin red
     r.orders.poll(r.client)
     header = bus.next_header(r.serial, "state")
-    state = to_vda_state(header, st, r.orders.overlay(), rest_error=r.last_error)
+    state = to_vda_state(header, t, r.orders.overlay(), error=r.last_error)
     bus.publish_raw(r.serial, "state", state.to_dict())
-    if st is not None:
+    if t is not None:
         acts = ",".join(f"{a.actionType}:{a.actionStatus}" for a in state.actionStates) or "-"
-        r.log.info("state hdr=%d pos=(%.2f,%.2f) bat=%.1f%% state_id=%d order=%s/%d acts=%s errs=%d",
-                   state.headerId, st.x, st.y, st.battery_percentage, st.state_id,
+        x, y = t.pose[:2] if t.pose else (float("nan"), float("nan"))
+        r.log.info("state hdr=%d pos=(%.2f,%.2f) bat=%.1f%% mode=%s drv=%d order=%s/%d acts=%s errs=%d",
+                   state.headerId, x, y, t.battery, t.operating_mode, t.driving,
                    state.orderId or "-", state.orderUpdateId, acts, len(state.errors))
     else:
-        r.log.info("state hdr=%d SIN /status errs=%d", state.headerId, len(state.errors))
+        r.log.info("state hdr=%d SIN telemetría errs=%d", state.headerId, len(state.errors))
 
 
 if __name__ == "__main__":
