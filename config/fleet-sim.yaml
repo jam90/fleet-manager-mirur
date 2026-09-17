@@ -1,0 +1,41 @@
+# Flota simulada: para arrancar el FM sin robots (demos, clase, probar el
+# core end-to-end).   python run_fm.py --config config/fleet-sim.yaml
+#
+# El driver `sim` "ejecuta" cualquier actionType listado en `actions`
+# durante `duration_s` segundos, gasta batería mientras trabaja y termina
+# FAILED los actionTypes de `fail_actions`. Publica bajo vda5050/v3/SIM/<serial>/…
+
+mqtt:
+  fleet_manufacturer: imperial_fleet
+
+auto_charge:
+  battery_floor: 20
+  priority: 10
+  abort_cooldown_s: 60
+
+assigner:
+  prefer_not_charging: true
+
+drivers:
+  sim:
+    duration_s: 8
+    drain_pct_per_s: 0.5
+
+robots:
+  sim-1:
+    driver: sim
+    battery: 90
+    battery_min: 25
+    pose: [1.0, 2.0, 0.0]
+    actions:
+      coger: {}
+      dejar: {}
+  sim-2:
+    driver: sim
+    battery: 60
+    battery_min: 25
+    pose: [5.0, 2.0, 3.14]
+    fail_actions: [dejar]        # para ver un ORDER_EXECUTION_FAILED
+    actions:
+      coger: {}
+      dejar: {}

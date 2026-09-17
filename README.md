@@ -79,6 +79,7 @@ y `MIR_HOST_<SERIAL>` como override por robot, `MQTT_HOST`, `MQTT_PORT`.
 ```bash
 .venv/bin/python run_fm.py                      # todos los robots, 1 Hz
 .venv/bin/python run_fm.py --robot mir-1 --period 0.5
+.venv/bin/python run_fm.py --config config/fleet-sim.yaml   # flota simulada, sin robots
 ```
 
 Arranca aunque un robot no responda: publica `state` con
@@ -88,9 +89,9 @@ Arranca aunque un robot no responda: publica `state` con
 Log (una línea por robot y tick, filtrable por `[serial]`):
 
 ```
-13:25:52,791 [mir-1] order fleet-3928d0aa/0 aceptada → 'coger' queue id=1311
+13:25:52,791 [mir-1] order fleet-3928d0aa/0 aceptada → mission 'coger' job=1311
 13:25:52,792 [fleet] fleet/order fleet-3928d0aa → mir-1
-13:26:24,666 [mir-1] state hdr=37 pos=(29.82,4.52) bat=74.9% state_id=5 order=fleet-3928d0aa/0 acts=coger:RUNNING errs=0
+13:26:24,666 [mir-1] state hdr=37 pos=(29.82,4.52) bat=74.9% mode=AUTOMATIC drv=1 order=fleet-3928d0aa/0 acts=coger:RUNNING errs=0
 ```
 
 ## Contrato MQTT
@@ -223,8 +224,12 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 ```
 
 Sin red: cliente REST, header/topic, `state` contra el schema oficial,
-traducción order → mission, ciclo `orderUpdateId`, asignador. (La variable
-evita que pytest cargue plugins de ROS presentes en el entorno.)
+traducción order → mission, ciclo `orderUpdateId`, asignador, configuración,
+Dispatcher con bus falso. `tests/adapters/test_contract.py` ejecuta el mismo
+escenario (connect → poll → translate → execute → job_status → cancel) contra
+cada driver (`sim` y `mir` con cliente falso): es lo que debe pasar un driver
+nuevo. (La variable evita que pytest cargue plugins de ROS presentes en el
+entorno.)
 
 ## Smoke de integración
 
@@ -258,7 +263,8 @@ fm/assigner.py          assign(): función pura
 fm/fleet.py             Dispatcher: <serial>/order, fleet/order → order_response
 fm/mqtt_bus.py          paho: publish, LWT por robot, inbox (cola) de entrantes
 fm/adapters/base.py     frontera core ↔ marca: Telemetry, Job, RobotDriver (Protocol)
-fm/adapters/mir/        driver MiR250: client.py (REST), translate.py (puro), driver.py
+fm/adapters/mir/        driver MiR250: client.py (REST), translate.py (puro), driver.py, config.py
+fm/adapters/sim/        driver simulado (sin hardware): config/fleet-sim.yaml
 fm/mir_client.py        shim: re-exporta fm/adapters/mir/client.py (lo usan scripts/)
 fm/vda5050/             header.py (topic≡header), state.py, state_builder.py, order.py, schemas.py
 schemas/                JSON Schemas oficiales v3.0.0 (con parches, ver schemas/README.md)

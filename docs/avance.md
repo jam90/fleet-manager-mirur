@@ -469,3 +469,35 @@ ningún flujo Node-RED que actualizar (confirmado con el usuario).
     manufacturer equivocado no genera rechazo (nadie lo escucharía) sino un
     log DEBUG. Un mismo serial bajo dos manufacturers no colisiona porque
     `HeaderCounter` y `is_known` indexan por el par.
+
+## 2026-09-17 — Drivers fase 5: driver `sim` y tests de contrato
+
+`pytest`: 57 en verde. Probado end-to-end contra el Mosquitto local con
+`config/fleet-sim.yaml` (sin robots): `fleet/order coger` → ASSIGNED sim-1;
+`dejar` → ASSIGNED sim-2; tercera con ambos ocupados → `REJECTED
+NO_MOBILE_ROBOT_AVAILABLE`; a los 8 s `coger:FINISHED` en sim-1 y
+`dejar:FAILED` + `ORDER_EXECUTION_FAILED` en sim-2 (`fail_actions`); la
+batería baja mientras ejecutan; `state` bajo `vda5050/v3/SIM/sim-1/…`.
+
+### Código
+
+- `fm/adapters/sim/`: `SimDriver` + `SimRobotConfig` + `parse_config`.
+  Sin red: los jobs terminan por reloj (`duration_s`), inyectable en tests;
+  `drain_pct_per_s` descarga (o carga, si el job es de carga);
+  `fail_actions` fuerza FAILED; `cancel()` termina el job en FAILED;
+  `charge_job()` siempre disponible; sin `pose` no publica posición.
+  Registrado como `"sim"` en `fm/adapters/__init__.py`.
+- `config/fleet-sim.yaml`: dos sims; `fleet.yaml` lleva un bloque `sim-1`
+  comentado para mezclar con los reales en clase.
+- `tests/adapters/test_contract.py`: parametrizado `[sim, mir]`, es la
+  definición ejecutable de lo que el core exige a un driver.
+- `tests/adapters/test_sim_driver.py`: reloj, batería, fallos, registro.
+
+### Decisiones nuevas
+
+32. **El `sim` publica bajo manufacturer `SIM`**, no `MiR`: demuestra la
+    fase 4 (varios manufacturers en el mismo bus) y evita que un sim se
+    confunda con un robot real en `mosquitto_sub -t 'vda5050/#'`.
+33. **`Job.payload` del sim es un dict** (`duration_s`, `charge`): el core
+    no lo mira, y así `charge_job()` y `translate()` comparten `execute()`.
+    Confirma que `payload` opaco basta para dos marcas muy distintas.

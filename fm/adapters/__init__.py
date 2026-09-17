@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 # nombre del driver → módulo que expone `make_driver(serial, raw, defaults, env)`
 DRIVERS: dict[str, str] = {
     "mir": "fm.adapters.mir",
+    "sim": "fm.adapters.sim",
 }
 
 

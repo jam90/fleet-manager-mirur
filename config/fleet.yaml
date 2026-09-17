@@ -58,3 +58,11 @@ robots:
         mission: "coger"
       dejar:
         mission: "dejar"
+
+# Un robot simulado puede convivir con los reales (útil en clase; ojo: el
+# asignador lo tratará como uno más). Flota solo simulada: config/fleet-sim.yaml.
+#  sim-1:
+#    driver: sim
+#    battery: 90
+#    battery_min: 25
+#    actions: { coger: {}, dejar: {} }
