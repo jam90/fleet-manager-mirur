@@ -19,7 +19,8 @@ assigner:
 drivers:
   sim:
     duration_s: 8
-    drain_pct_per_s: 0.5
+    drain_pct_per_s: 1.0         # también es la velocidad de carga
+    charge_duration_s: 20
 
 robots:
   sim-1:
@@ -32,7 +33,7 @@ robots:
       dejar: {}
   sim-2:
     driver: sim
-    battery: 60
+    battery: 27                  # una 'coger' (8 s × 1 %/s) lo deja bajo el suelo (20) → auto-carga
     battery_min: 25
     pose: [5.0, 2.0, 3.14]
     fail_actions: [dejar]        # para ver un ORDER_EXECUTION_FAILED

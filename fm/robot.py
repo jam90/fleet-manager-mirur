@@ -8,7 +8,8 @@ import logging
 
 from fm.adapters.base import Job, RobotDriver, Telemetry
 from fm.assigner import RobotSnapshot
-from fm.config import RobotConfig
+from fm.charge import ChargeGuard
+from fm.config import AutoChargeConfig, RobotConfig
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
 from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE
@@ -17,7 +18,8 @@ log = logging.getLogger("fm.robot")
 
 
 class Robot:
-    def __init__(self, cfg: RobotConfig, driver: RobotDriver):
+    def __init__(self, cfg: RobotConfig, driver: RobotDriver,
+                 auto_charge: AutoChargeConfig | None = None):
         self.cfg = cfg
         self.serial = cfg.serial
         self.driver = driver
@@ -27,6 +29,7 @@ class Robot:
         self.connected = False
         self.last_telemetry: Telemetry | None = None
         self.orders = OrderTracker(self.serial)
+        self.charge = ChargeGuard(self.serial, auto_charge or AutoChargeConfig())
 
     @property
     def manufacturer(self) -> str:
@@ -48,14 +51,20 @@ class Robot:
         if self.last_telemetry is not None and not self.connected:
             self.connect()   # reintento tras un arranque sin red
         self.orders.poll(self.driver)
+        self.charge.tick(self.driver, self.last_telemetry)
         return self.last_telemetry
+
+    def overlay(self):
+        """Lo que el FM sabe de este robot y el driver no: order + auto-carga."""
+        return self.charge.decorate(self.orders.overlay())
 
     # ---------------------------------------------------------------- orders
     @property
     def busy(self) -> bool:
-        """Ocupado = job del FM vivo, o el robot ejecuta algo que no es nuestro
-        (lanzado desde la web) — decisión 16. Lo segundo lo decide el driver."""
-        return self.orders.busy or self.foreign_busy
+        """Ocupado = job del FM vivo (order o auto-carga), o el robot ejecuta
+        algo que no es nuestro (lanzado desde la web) — decisión 16. Lo último
+        lo decide el driver."""
+        return self.orders.busy or self.charge.active or self.foreign_busy
 
     @property
     def foreign_busy(self) -> bool:
@@ -67,8 +76,9 @@ class Robot:
         t = self.last_telemetry
         return t is not None and t.available
 
-    def snapshot(self, charging: bool = False) -> RobotSnapshot:
+    def snapshot(self) -> RobotSnapshot:
         t = self.last_telemetry
+        charging = self.charge.charging or bool(t and t.charging)
         return RobotSnapshot(self.serial, t.battery if t else 0.0, self.busy,
                              self.available, charging, t.pose[:2] if t and t.pose else None)
 

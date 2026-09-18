@@ -5,8 +5,9 @@ los robots y **MQTT (VDA 5050 v3.0.0)** con el resto del sistema. Sin ROS 2, sin
 MiR Fleet, sin Open-RMF. Pensado también como material didáctico: el código
 está comentado explicando el *por qué*.
 
-Estado actual: telemetría, order dirigida, asignador de flota — probado con
-dos robots reales. Pendiente: auto-carga, instantActions, factsheet. Detalle
+Estado actual: telemetría, order dirigida, asignador de flota, drivers por
+marca (MiR real + simulado) — probado con dos robots reales; auto-carga
+(probada con el simulador). Pendiente: instantActions, factsheet. Detalle
 y decisiones en [`docs/avance.md`](docs/avance.md); brief completo en
 [`CLAUDE.md`](CLAUDE.md).
 
@@ -282,6 +283,29 @@ Añadir una marca es crear una carpeta y registrarla:
 El `state` VDA lo construye siempre el core (`fm/vda5050/state_builder.py`)
 a partir de `Telemetry` + lo que sabe de la order: un driver no puede
 publicar un `state` mal formado.
+
+## Auto-carga
+
+En cada tick, por robot (`fm/charge.py`): si `battery < auto_charge.battery_floor`
+y el robot está disponible, el FM pide al driver su job de carga
+(`driver.charge_job()`; en MiR es `drivers.mir.charge_mission`) y lo encola
+con `auto_charge.priority`. Reglas:
+
+- **No aborta nada**: si hay una order en curso, la carga entra detrás y
+  arranca al terminar. `battery_min` del asignador evita que le lleguen
+  orders nuevas mientras tanto.
+- La carga del FM cuenta como **ocupado** para el asignador mientras viva.
+  Mientras tanto `state.information[]` lleva `AUTO_CHARGE` y, cuando el job
+  está en ejecución, `powerSupply.charging = true`.
+- Si la carga termina `FAILED` (abortada desde la web, dock ocupado…) o no
+  se puede postear, se espera `auto_charge.abort_cooldown_s` antes de reintentar.
+- Un driver que devuelva `None` en `charge_job()` desactiva la auto-carga
+  para ese robot (log al primer intento).
+
+La mission de carga del MiR debe terminar sola (porcentaje objetivo o tiempo
+mínimo, **no** "cargar hasta nueva mission"): si no, nunca pasa a `Done`, el
+robot queda ocupado para siempre y no sale del dock. La de `mirur-tknika`
+(`Carga en estación MIRUR`) carga hasta el 70 % y sale del dock.
 
 ## Limitaciones conocidas
 

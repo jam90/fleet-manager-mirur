@@ -580,3 +580,53 @@ mir-1 Ready 49.9 %, mir-2 Ready 36.6 %, ambos sin mission.
   terminada, `powerSupply.charging` en el dock.
 - H4 auto-carga sigue sin implementar: `charge_mission` se resuelve y
   `driver.charge_job()` existe, pero nada lo llama todavía.
+
+## 2026-09-18 — H4: auto-carga
+
+`pytest`: 62 en verde. Probado end-to-end con `config/fleet-sim.yaml` contra
+el Mosquitto local (sim-2 arranca al 27 %, una `coger` lo deja al 19.9 % →
+carga encolada detrás de la order `WAITING` → `RUNNING` con `chg=1` y
+`busy=0/1/0` → las orders siguientes van a sim-1 → `FINISHED` al 39 % →
+sim-2 vuelve a ser asignable). **No probado aún con los MiR reales**
+(requiere que un robot baje del 20 % o bajar el suelo en `fleet.yaml`).
+
+### Código
+
+- `fm/charge.py`: `ChargeGuard` por robot. `tick(driver, telemetry)`: si
+  hay carga activa la sigue con `driver.job_status()`; si no, con batería
+  bajo el suelo, robot disponible y fuera de cooldown, pide
+  `driver.charge_job()` y lo ejecuta con `priority`. `decorate(overlay)`
+  añade `AUTO_CHARGE` a `information[]` y `charging=True` si el job está
+  RUNNING.
+- `Robot`: `charge: ChargeGuard`; `busy` incluye `charge.active`;
+  `overlay()` = orders + carga; `snapshot().charging` = carga del FM en
+  ejecución o `telemetry.charging` del driver. `run_fm.py` pasa
+  `cfg.auto_charge` y el log del tick imprime `chg=` y `busy=order/carga/ajena`.
+- `SimDriver`: cola secuencial (un job arranca cuando termina el anterior,
+  como en un robot real) y batería integrada por solape de cada job con el
+  intervalo entre polls. Antes los jobs corrían en paralelo y la batería
+  se atribuía al job "actual" en el momento del poll, lo que daba cifras
+  incoherentes en los tests de carga.
+- `config/fleet-sim.yaml`: sim-2 al 27 % y `drain_pct_per_s: 1.0` para
+  ver la auto-carga en una demo de un minuto.
+- Tests: `tests/test_charge.py` (guard con driver falso: suelo, latch,
+  cooldown tras FAILED y tras error de red, driver sin carga; end-to-end
+  con el sim incluyendo `state` válido contra el schema y el asignador).
+
+### Decisiones nuevas
+
+34. **La auto-carga no comprueba `foreign_busy`**: si el robot ejecuta una
+    mission de la web, la carga se encola detrás igual que detrás de una
+    order del FM ("no aborta nada", §7). Sí exige `available` (no Manual /
+    Error / E-stop) y telemetría.
+35. **`charging` se aproxima con "job de carga RUNNING"**, que incluye el
+    docking y la salida del dock. La heurística sobre `/status` sigue
+    pendiente (§5.2); cuando exista, `Telemetry.charging` del driver la
+    aportará y `to_vda_state` ya la combina (overlay → driver → False).
+36. **Error al postear la carga → mismo cooldown que un FAILED**: evita
+    martillear un robot sin red o que rechaza la mission (p.ej. GUID
+    inexistente) a 1 Hz.
+37. **Mission de carga del MiR verificada** (2026-09-18, mir-2):
+    docking → charging (`minimum_percentage: 70`, `charge_until_new_mission:
+    false`) → relative_move → if/load_mission. Termina `Done` sola: se elige
+    la opción "porcentaje objetivo" de la trampa del deadlock (§7).

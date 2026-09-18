@@ -73,6 +73,8 @@ class _SimJob:
     charge: bool = False
 
     def status(self, now: float) -> JobStatus:
+        if now < self.started:
+            return "WAITING"          # en cola detrás de otro job
         if now < self.ends:
             return "RUNNING"
         return "FAILED" if self.fail else "FINISHED"
@@ -98,13 +100,15 @@ class SimDriver:
     def poll(self) -> Telemetry | None:
         now = self.clock()
         current = self._current(now)
-        # Descarga mientras ejecuta; carga mientras el job es de carga.
-        dt = max(0.0, now - self._last_tick)
+        # Batería: por cada job, el tiempo que ha estado en marcha dentro de
+        # [último tick, ahora] descarga (o carga, si es un job de carga).
+        rate = self.cfg.drain_pct_per_s
+        for j in self._jobs.values():
+            overlap = min(now, j.ends) - max(self._last_tick, j.started)
+            if overlap > 0:
+                self.battery += rate * overlap if j.charge else -rate * overlap
+        self.battery = min(100.0, max(0.0, self.battery))
         self._last_tick = now
-        if current is not None:
-            rate = self.cfg.drain_pct_per_s
-            self.battery += rate * dt if current.charge else -rate * dt
-            self.battery = min(100.0, max(0.0, self.battery))
         return Telemetry(
             battery=round(self.battery, 2),
             pose=self.cfg.pose,
@@ -130,15 +134,20 @@ class SimDriver:
         return Job(action, f"sim '{action.actionType}'", {"duration_s": self.cfg.duration_s})
 
     def execute(self, job: Job, priority: int = 0) -> str:
+        """Cola secuencial como la de un robot real: el job arranca cuando
+        termina el anterior vivo (`priority` se ignora: un solo job en cola
+        a la vez es lo habitual en el FM)."""
         now = self.clock()
         job_id = str(self._next_id)
         self._next_id += 1
         payload = job.payload or {}
+        start = max([now, *(j.ends for j in self._jobs.values() if j.status(now) in ("WAITING", "RUNNING"))])
         self._jobs[job_id] = _SimJob(
-            job, now, now + float(payload.get("duration_s", self.cfg.duration_s)),
+            job, start, start + float(payload.get("duration_s", self.cfg.duration_s)),
             fail=job.action.actionType in self.cfg.fail_actions,
             charge=bool(payload.get("charge", False)))
-        log.info("[%s] job %s (%s) arranca, termina en %.1fs", self.serial, job_id, job.label,
+        log.info("[%s] job %s (%s) %s, termina en %.1fs", self.serial, job_id, job.label,
+                 "arranca" if start == now else f"en cola (arranca en {start - now:.1f}s)",
                  self._jobs[job_id].ends - now)
         return job_id
 
@@ -148,8 +157,8 @@ class SimDriver:
 
     def cancel(self, job_id: str) -> None:
         j = self._jobs.get(job_id)
-        if j is not None and j.status(self.clock()) == "RUNNING":
-            j.ends = self.clock()
+        if j is not None and j.status(self.clock()) in ("WAITING", "RUNNING"):
+            j.started = j.ends = self.clock()
             j.fail = True
 
     def charge_job(self) -> Job | None:

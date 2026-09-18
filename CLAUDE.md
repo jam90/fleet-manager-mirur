@@ -411,6 +411,14 @@ en `fleet.yaml`.
 
 ## 7. Auto-carga (`charge.py`)
 
+> Implementado el 2026-09-18 como `fm/charge.py::ChargeGuard(serial, cfg)`,
+> genérico sobre el driver: `tick(driver, telemetry)` cada tick, `active`
+> (cuenta como busy), `charging`, `decorate(overlay)`. El job lo da
+> `driver.charge_job()`; en MiR es `drivers.mir.charge_mission`. La mission
+> real `Carga en estación MIRUR` carga hasta el 70 % (`charge_until_new_mission:
+> false`) y sale del dock: sin riesgo de deadlock. Lo de abajo es el diseño
+> original en términos REST; la semántica se mantiene.
+
 Independiente del bus MQTT — es un mínimo de seguridad local que se evalúa
 **en cada tick**, después de leer `/status`:
 

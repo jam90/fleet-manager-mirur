@@ -53,7 +53,7 @@ def main(argv=None) -> int:
         log.error("robots desconocidos: %s (en fleet.yaml: %s)", unknown, sorted(cfg.robots))
         return 2
     try:
-        robots = {s: Robot(cfg.robots[s], make_driver(cfg.robots[s], cfg)) for s in serials}
+        robots = {s: Robot(cfg.robots[s], make_driver(cfg.robots[s], cfg), cfg.auto_charge) for s in serials}
     except ConfigError as e:
         log.error("configuración inválida: %s", e)
         return 2
@@ -77,7 +77,7 @@ def main(argv=None) -> int:
         r.poll()
 
     def publish_state(r: Robot) -> None:
-        state = to_vda_state(bus.next_header(r.serial, "state"), r.last_telemetry, r.orders.overlay(),
+        state = to_vda_state(bus.next_header(r.serial, "state"), r.last_telemetry, r.overlay(),
                              error=r.last_error)
         bus.publish_raw(r.serial, "state", state.to_dict())
 
@@ -101,16 +101,16 @@ def main(argv=None) -> int:
 def tick_robot(r: Robot, bus: MqttBus) -> None:
     t = r.poll()
     header = bus.next_header(r.serial, "state")
-    state = to_vda_state(header, t, r.orders.overlay(), error=r.last_error)
+    state = to_vda_state(header, t, r.overlay(), error=r.last_error)
     bus.publish_raw(r.serial, "state", state.to_dict())
     if t is not None:
         acts = ",".join(f"{a.actionType}:{a.actionStatus}" for a in state.actionStates) or "-"
         x, y = t.pose[:2] if t.pose else (float("nan"), float("nan"))
         dbg = " ".join(i.infoDescriptor or "" for i in t.information if i.infoLevel == "DEBUG")
-        r.log.info("state hdr=%d pos=(%.2f,%.2f) bat=%.1f%% mode=%s drv=%d busy=%d/%d order=%s/%d acts=%s errs=%d %s",
+        r.log.info("state hdr=%d pos=(%.2f,%.2f) bat=%.1f%% mode=%s drv=%d chg=%d busy=%d/%d/%d order=%s/%d acts=%s errs=%d %s",
                    state.headerId, x, y, t.battery, t.operating_mode, t.driving,
-                   r.orders.busy, t.foreign_busy, state.orderId or "-", state.orderUpdateId,
-                   acts, len(state.errors), dbg)
+                   state.powerSupply.charging, r.orders.busy, r.charge.active, t.foreign_busy,
+                   state.orderId or "-", state.orderUpdateId, acts, len(state.errors), dbg)
     else:
         r.log.info("state hdr=%d SIN telemetría errs=%d", state.headerId, len(state.errors))
 
