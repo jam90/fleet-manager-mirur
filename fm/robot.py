@@ -5,6 +5,8 @@ ejecución del FM. No sabe de qué marca es el robot: todo pasa por `driver`.
 from __future__ import annotations
 
 import logging
+import time
+from typing import Callable
 
 from fm.adapters.base import Job, RobotDriver, Telemetry
 from fm.assigner import RobotSnapshot
@@ -16,11 +18,17 @@ from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE
 
 log = logging.getLogger("fm.robot")
 
+# Backoff tras fallos de red consecutivos: 1, 2, 4, 8, 8, ... segundos entre
+# intentos. Un robot apagado deja de costar un timeout por tick (decisión 42).
+BACKOFF_MAX_S = 8.0
+
 
 class Robot:
     def __init__(self, cfg: RobotConfig, driver: RobotDriver,
-                 auto_charge: AutoChargeConfig | None = None):
+                 auto_charge: AutoChargeConfig | None = None,
+                 clock: Callable[[], float] = time.monotonic):
         self.cfg = cfg
+        self.clock = clock
         self.serial = cfg.serial
         self.driver = driver
         # Prefijo [serial] en cada línea para poder filtrar el log por robot.
@@ -28,6 +36,8 @@ class Robot:
         self.log.process = lambda msg, kw: (f"[{self.serial}] {msg}", kw)
         self.connected = False
         self.last_telemetry: Telemetry | None = None
+        self.poll_failures = 0           # fallos de red consecutivos
+        self.next_poll_at = 0.0          # no volver a preguntar al robot antes de esto
         self.orders = OrderTracker(self.serial)
         self.charge = ChargeGuard(self.serial, auto_charge or AutoChargeConfig())
 
@@ -46,9 +56,28 @@ class Robot:
         return self.connected
 
     def poll(self) -> Telemetry | None:
-        """Telemetría del driver (None = inalcanzable) y avance del job en curso."""
+        """Telemetría del driver (None = inalcanzable) y avance del job en
+        curso. Solo toca red de ESTE robot: `run_fm` la ejecuta en paralelo
+        para todos los robots (un hilo por robot) y luego sigue en el hilo
+        principal. Con el robot inalcanzable se aplica backoff: entre
+        intentos se conserva `last_telemetry = None` y se publica igual."""
+        now = self.clock()
+        if now < self.next_poll_at:
+            return None
         self.last_telemetry = self.driver.poll()
-        if self.last_telemetry is not None and not self.connected:
+        if self.last_telemetry is None:
+            self.poll_failures += 1
+            wait = min(2.0 ** (self.poll_failures - 1), BACKOFF_MAX_S)
+            self.next_poll_at = now + wait
+            if self.poll_failures >= 2:
+                self.log.info("sin respuesta (%d seguidos): próximo intento en %.0fs",
+                              self.poll_failures, wait)
+            return None
+        if self.poll_failures:
+            self.log.info("vuelve a responder tras %d fallos", self.poll_failures)
+        self.poll_failures = 0
+        self.next_poll_at = 0.0
+        if not self.connected:
             self.connect()   # reintento tras un arranque sin red
         self.orders.poll(self.driver)
         self.charge.tick(self.driver, self.last_telemetry)

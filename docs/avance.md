@@ -700,3 +700,40 @@ mission, `coger:FAILED` sin errores, `instantActionStates` con los dos
     sin excepción: una marca puede no implementar la pausa y el FM sigue.
 41. **`factsheetRequest` → FAILED**: `factsheet` sigue fuera de alcance
     (§1); si se implementa, aquí es donde se publicaría retained.
+
+## 2026-09-18 — Poll en paralelo con backoff (cadencia con robot apagado)
+
+`pytest`: 68 en verde. Medido con `sim-1` + un "MiR" en una IP inexistente
+(timeout de conexión 2–3 s): antes, el `state` de sim-1 salía cada 2–3 s;
+ahora cada 1.00 s sin excepción, y el robot caído se consulta cada 8 s.
+
+### Código
+
+- `Robot.poll()`: backoff exponencial tras fallos consecutivos (1, 2, 4, 8,
+  8… s, `BACKOFF_MAX_S`); entre intentos devuelve None sin tocar la red y el
+  `state` sigue publicándose con `ROBOT_UNREACHABLE`. Log "sin respuesta (N
+  seguidos): próximo intento en Xs" y "vuelve a responder tras N fallos".
+  `clock` inyectable (tests).
+- `run_fm.py`: `ThreadPoolExecutor` (un hilo por robot) para `Robot.poll()`.
+  `poll_all(grace)`: lanza el poll de cada robot que no tenga uno pendiente,
+  espera como mucho `grace = min(0.5, period/2)` s **solo a los robots que
+  respondían** (los que están en backoff no retrasan nada), y recoge los
+  terminados. Un poll que tarda más sigue en su hilo; ese robot publica su
+  último estado conocido y se actualiza en el tick en que vuelva.
+  `tick_robot()` ya no llama a `poll()`: solo construye y publica.
+- `tests/test_robot_backoff.py`.
+
+### Decisiones nuevas
+
+42. **Paralelismo acotado a `Robot.poll()`**. Cada hilo toca solo el estado
+    de su robot (telemetría, tracker, auto-carga); el hilo principal lee ese
+    estado para publicar y para despachar orders. No hay locks porque:
+    (a) las orders a un robot solo llegan al driver si `last_telemetry` no
+    es None, y un robot con poll pendiente está inalcanzable (None) o es un
+    poll normal de ~50 ms que `grace` ya ha esperado; (b) las asignaciones
+    de atributos son atómicas bajo el GIL y `overlay()` copia las listas.
+    Si algún día el poll de un robot alcanzable pudiera superar `grace` de
+    forma habitual (Wi-Fi malo), habría que revisar (a).
+43. **Un poll pendiente no se apila**: si el anterior no ha vuelto, no se
+    lanza otro; así un robot apagado consume como mucho un hilo y una
+    conexión en curso.

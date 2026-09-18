@@ -84,7 +84,10 @@ y `MIR_HOST_<SERIAL>` como override por robot, `MQTT_HOST`, `MQTT_PORT`.
 ```
 
 Arranca aunque un robot no responda: publica `state` con
-`ROBOT_UNREACHABLE` y reintenta los índices en cada tick. Ctrl-C / SIGTERM →
+`ROBOT_UNREACHABLE` y lo reintenta con backoff (1, 2, 4, 8, 8… s). La parte
+de red de cada robot (`Robot.poll`) corre en un hilo propio y el tick espera
+como mucho 0,5 s a los robots que respondían: un robot apagado no altera la
+cadencia de 1 Hz de los demás. Ctrl-C / SIGTERM →
 `connection: OFFLINE`; muerte brusca → el broker publica `CONNECTION_BROKEN`.
 
 Log (una línea por robot y tick, filtrable por `[serial]`):

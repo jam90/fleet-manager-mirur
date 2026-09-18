@@ -171,9 +171,13 @@ Principios:
 - **Traducción pura y testeable.** `adapters/mir/translate.py`,
   `vda5050/state_builder.py` y `assigner.py` no hacen I/O; reciben índices
   precalculados y snapshots.
-- **Un hilo principal** con bucle a 1 Hz por robot; paho solo encola en
-  `bus.inbox` desde su hilo y el principal drena al inicio de cada tick
-  (decisión 14): sin locks.
+- **Un hilo principal** con bucle a 1 Hz; paho solo encola en `bus.inbox`
+  desde su hilo y el principal drena al inicio de cada tick (decisión 14).
+  La única otra concurrencia es `Robot.poll()` (red de UN robot) en un hilo
+  por robot, con espera acotada (decisión 42): el hilo solo toca el estado de
+  su robot, y el principal no despacha orders a un robot cuyo poll no ha
+  vuelto (está inalcanzable → `last_telemetry = None` → rechazo sin red).
+  Sin locks.
 - **Fallos de red tolerantes:** `driver.poll()`/`connect()`/`job_status()`
   nunca lanzan; devuelven None/False y el core reintenta al tick siguiente
   publicando `state` con `ROBOT_UNREACHABLE`.

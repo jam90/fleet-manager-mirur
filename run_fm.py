@@ -3,7 +3,8 @@
 
     python run_fm.py [--period 1.0] [--robot mir-1 --robot mir-2] [--config config/fleet.yaml]
 
-Bucle principal (un hilo): cada `period` segundos, por robot: `driver.poll()` →
+Bucle principal: cada `period` segundos, `Robot.poll()` de todos los robots en
+paralelo (solo red), y después, en el hilo principal, por robot: Telemetry →
 `state` VDA → publicar. Los mensajes MQTT entrantes llegan por `bus.inbox`
 y se drenan al principio de cada tick (H2+).
 """
@@ -14,6 +15,7 @@ import logging
 import signal
 import sys
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -72,9 +74,30 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGINT, _on_signal)
     signal.signal(signal.SIGTERM, _on_signal)
 
-    for r in robots.values():
-        r.connect()
-        r.poll()
+    # Un hilo por robot SOLO para la parte de red (`Robot.poll`). El tick
+    # espera como mucho `grace` s: el poll de un robot lento (apagado → timeout
+    # de 2 s) sigue en su hilo y ese robot publica su último estado conocido
+    # hasta que vuelva. El resto del tick sigue en el hilo principal, sin
+    # locks (decisión 42).
+    pool = ThreadPoolExecutor(max_workers=max(1, len(robots)), thread_name_prefix="poll")
+    pending: dict[str, Future] = {}
+    grace = min(0.5, args.period / 2)
+
+    def poll_all(timeout: float) -> None:
+        for s, r in robots.items():
+            if s not in pending:                 # el anterior aún no ha vuelto: no apilar
+                pending[s] = pool.submit(r.poll)
+        # Solo se espera a los robots que respondían: uno en backoff (apagado)
+        # no retrasa el tick ni siquiera los `grace` s.
+        awaited = [f for s, f in pending.items() if robots[s].poll_failures == 0]
+        wait(awaited, timeout=timeout)
+        for s in [s for s, f in pending.items() if f.done()]:
+            exc = pending.pop(s).exception()
+            if exc is not None:                  # un driver que lanza es un bug; no tumba el FM
+                robots[s].log.error("poll() lanzó %s: %s", type(exc).__name__, exc)
+
+    list(pool.map(lambda r: r.connect(), robots.values()))
+    poll_all(timeout=10.0)
 
     def publish_state(r: Robot) -> None:
         state = to_vda_state(bus.next_header(r.serial, "state"), r.last_telemetry, r.overlay(),
@@ -88,18 +111,21 @@ def main(argv=None) -> int:
         while not stop:
             t0 = time.monotonic()
             dispatcher.drain()
+            poll_all(grace)
             for r in robots.values():
                 tick_robot(r, bus)
             # Dormir lo que falte del periodo, en trozos cortos para reaccionar a señales.
             while not stop and (time.monotonic() - t0) < args.period:
                 time.sleep(min(0.1, args.period))
     finally:
+        pool.shutdown(wait=False)
         bus.stop()
     return 0
 
 
 def tick_robot(r: Robot, bus: MqttBus) -> None:
-    t = r.poll()
+    """Parte del tick sin red: construir y publicar el `state` (tras `poll_all`)."""
+    t = r.last_telemetry
     header = bus.next_header(r.serial, "state")
     state = to_vda_state(header, t, r.overlay(), error=r.last_error)
     bus.publish_raw(r.serial, "state", state.to_dict())
