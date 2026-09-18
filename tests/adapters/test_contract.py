@@ -61,10 +61,11 @@ def test_ciclo_completo(driver):
     assert d.job_status("no-existe") is None
 
 
-def test_cancel_y_charge_job(driver):
+def test_cancel_pause_y_charge_job(driver):
     d, _ = driver
     d.connect()
     job_id = d.execute(d.translate(Action("coger", "a1")))
+    d.pause(); d.resume()                 # no deben lanzar
     d.cancel(job_id)                      # no debe lanzar
     cj = d.charge_job()
     assert cj is None or (isinstance(cj, Job) and cj.action.actionType == "charge")

@@ -651,3 +651,52 @@ mir-1 apagado, FM con `--robot mir-2`):
 
 Nota de uso: los valores de `AutoChargeConfig` en `fm/config.py` son solo
 defaults de Python por si `fleet.yaml` no trae la clave; el yaml manda.
+
+## 2026-09-18 — H5: instantActions
+
+`pytest`: 67 en verde. Probado con el sim contra el broker y con **mir-2
+real** (09:09): `send_order.py mir-2 coger` → `startPause` → el MiR pasa a
+`state_id=4 (Pause)` a 6.8 m del objetivo, la mission sigue en cola
+(`coger:RUNNING`, `busy=1/0/0`) → `stopPause` → `state_id=5`, reanuda →
+`cancelOrder` + `stateRequest` → `DELETE /mission_queue/349`, robot Ready sin
+mission, `coger:FAILED` sin errores, `instantActionStates` con los dos
+`FINISHED`. mir-1 no participó (en uso para otra cosa).
+
+### Código
+
+- `fm/vda5050/order.py`: `parse_action` (compartido) y
+  `parse_instant_actions(dict) -> list[Action]`.
+- `fm/adapters/base.py`: `pause()` / `resume()` en el `Protocol`.
+  `MirDriver`: `PUT /status 4|3`. `SimDriver`: reloj "de trabajo" `_now()`
+  que no avanza en pausa (los jobs se congelan; `paused=True`,
+  `driving=False` en la telemetría).
+- `fm/instant.py`: `apply_instant_actions(robot, actions, publish_state)`.
+  Cada action → `FINISHED`/`FAILED` en `tracker.instant_states`; fallos en
+  `tracker.instant_errors` con `errorReferences` a `actionId` (y `orderId`
+  si hay order activa). Excepciones del driver (red, 4xx) → `FAILED` +
+  `INVALID_INSTANT_ACTION` con el mensaje.
+- `OrderTracker.cancel()`: la order activa pasa a `FAILED` sin
+  `exec_errors`.
+- `Dispatcher.handle_instant_actions`: header ≠ topic o JSON sin `actions`
+  → `VALIDATION_FAILURE` suelto en `errors[]` + `state` inmediato.
+- `scripts/send_instant_action.py <serial> <actionType>…`.
+- Tests: `tests/test_instant.py` (unidad con driver falso, Dispatcher, sim
+  en pausa); contrato ampliado con `pause()/resume()`; `_FakeClient` del
+  MiR con `PUT /status`.
+
+### Decisiones nuevas
+
+38. **`cancelOrder` no es un fallo de ejecución**: la action de la order
+    queda `FAILED` (la norma no tiene "CANCELLED" en `actionStatus`) pero no
+    se añade `ORDER_EXECUTION_FAILED` a `errors[]`; el brief §5.5 decía
+    "con orderError", se descarta porque el operador pidió la cancelación.
+    `orderId` se conserva en el `state` hasta la siguiente order (§6.6).
+39. **`instantActionStates` y sus errores se conservan hasta el siguiente
+    mensaje `instantActions`**, no se limpian al aceptar una order (a
+    diferencia de los errores de rechazo de order, decisión 2). Así un
+    `NO_ORDER_TO_CANCEL` sigue visible aunque después llegue una order.
+40. **Driver sin `pause()`/`resume()`** (atributo ausente o None) →
+    `FAILED` + `INVALID_INSTANT_ACTION "el driver X no soporta 'pause'"`,
+    sin excepción: una marca puede no implementar la pausa y el FM sigue.
+41. **`factsheetRequest` → FAILED**: `factsheet` sigue fuera de alcance
+    (§1); si se implementa, aquí es donde se publicaría retained.

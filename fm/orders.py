@@ -109,6 +109,15 @@ class OrderTracker:
         log.info("[%s] order %s/%d aceptada → %s job=%s", self.serial, order.orderId,
                  order.orderUpdateId, job.label, job_id)
 
+    def cancel(self) -> None:
+        """`cancelOrder` (H5): la order activa pasa a FAILED sin error de
+        ejecución (es una cancelación pedida, no un fallo — decisión 38).
+        El driver ya ha recibido `cancel(job_id)`."""
+        a = self.active
+        if a is not None and a.alive:
+            log.info("[%s] order %s cancelada (%s job=%s)", self.serial, a.order.orderId, a.job.label, a.job_id)
+            a.job_status = "FAILED"
+
     def reject(self, order_id: str | None, err: OrderRejected) -> Error:
         e = error_for_order(err.error_type, err.description, order_id, level="WARNING")
         self.order_errors.append(e)

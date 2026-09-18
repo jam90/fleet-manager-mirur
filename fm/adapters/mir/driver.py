@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from fm.adapters.base import Job, JobStatus, Telemetry
-from fm.adapters.mir.client import MirClient, MirStatus
+from fm.adapters.mir.client import STATE_PAUSE, STATE_READY, MirClient, MirStatus
 from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, to_telemetry
 from fm.vda5050.order import Action, OrderRejected
@@ -117,6 +117,12 @@ class MirDriver:
 
     def cancel(self, job_id: str) -> None:
         self.client.mission_queue_id_delete(int(job_id))
+
+    def pause(self) -> None:
+        self.client.status_put(STATE_PAUSE)
+
+    def resume(self) -> None:
+        self.client.status_put(STATE_READY)
 
     def charge_job(self) -> Job | None:
         """Job de auto-carga (H4): la mission configurada, sin parámetros."""

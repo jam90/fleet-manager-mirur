@@ -47,6 +47,9 @@ class _FakeClient(MirClient):
         if method == "DELETE" and path.startswith("mission_queue/"):
             self.deleted.append(int(path.split("/")[1]))
             return None
+        if method == "PUT" and path == "status":
+            self.status["state_id"] = json["state_id"]
+            return self.status
         raise AssertionError(f"llamada inesperada {method} {path}")
 
 
@@ -100,6 +103,10 @@ def test_execute_job_status_y_propia_vs_ajena():
     assert d.poll().foreign_busy
     d.cancel(jid)
     assert c.deleted == [101]
+    d.pause()
+    assert c.status["state_id"] == 4 and d.poll().paused
+    d.resume()
+    assert c.status["state_id"] == 3
 
 
 def test_job_status_none_si_falla_y_estado_raro():

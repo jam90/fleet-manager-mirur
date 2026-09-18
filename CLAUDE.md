@@ -322,6 +322,9 @@ Reglas (§6.1.4 del estándar, obligatorias para poder decir "cumple VDA 5050"):
 
 ### 5.5. `instantActions` (bus → FM)
 
+> Implementado el 2026-09-18 (`fm/instant.py`), probado con mir-2 real. El
+> `Protocol` gana `pause()`/`resume()`; `cancelOrder` usa `driver.cancel()`.
+
 ```json
 { "headerId": 1, "timestamp": "…", "version": "3.0.0", "manufacturer": "MiR",
   "serialNumber": "mir-2",

@@ -7,7 +7,7 @@ está comentado explicando el *por qué*.
 
 Estado actual: telemetría, order dirigida, asignador de flota, drivers por
 marca (MiR real + simulado) — probado con dos robots reales; auto-carga
-(probada con el simulador). Pendiente: instantActions, factsheet. Detalle
+e instantActions — probados con robots reales. Pendiente: factsheet. Detalle
 y decisiones en [`docs/avance.md`](docs/avance.md); brief completo en
 [`CLAUDE.md`](CLAUDE.md).
 
@@ -108,7 +108,7 @@ el nombre de flota `mqtt.fleet_manufacturer` (`imperial_fleet`).
 | `vda5050/v3/MiR/<serial>/state` | FM → bus, 1 Hz + al aceptar/rechazar order | 0 | no |
 | `vda5050/v3/MiR/<serial>/connection` | FM → bus | 1 | sí + Last Will |
 | `vda5050/v3/MiR/<serial>/order` | bus → FM | 1 | no |
-| `vda5050/v3/MiR/<serial>/instantActions` | bus → FM (pendiente) | 1 | no |
+| `vda5050/v3/MiR/<serial>/instantActions` | bus → FM | 1 | no |
 | `vda5050/v3/imperial_fleet/fleet/order` | bus → FM | 1 | no |
 | `vda5050/v3/imperial_fleet/fleet/order_response` | FM → bus | 1 | no |
 
@@ -216,6 +216,7 @@ header con la misma función que el servicio.
 | `run_mission.py <serial> <mission> [k=v…]` | encola una mission por REST y la sigue hasta terminar (**mueve el robot**) |
 | `send_order.py <serial> <actionType> [k=v…]` | publica `<serial>/order` y muestra el `state` resultante |
 | `send_fleet_order.py <actionType> [k=v…]` | publica `fleet/order` y espera `order_response` |
+| `send_instant_action.py <serial> <actionType>…` | publica `instantActions` y muestra `instantActionStates` (**`stopPause` mueve el robot**) |
 | `read_vda_state.py [serial]` | resume `state`/`connection` por línea y valida contra el schema |
 
 ## Tests
@@ -283,6 +284,24 @@ Añadir una marca es crear una carpeta y registrarla:
 El `state` VDA lo construye siempre el core (`fm/vda5050/state_builder.py`)
 a partir de `Telemetry` + lo que sabe de la order: un driver no puede
 publicar un `state` mal formado.
+
+### `instantActions` (bus → FM)
+
+Mismo header que la order, campo `actions[]` con la misma forma que las
+actions de una order. Soportadas:
+
+| `actionType` | Efecto | Resultado |
+|---|---|---|
+| `startPause` | el robot se detiene sin abortar (MiR: `PUT /status {state_id: 4}`) | `FINISHED` |
+| `stopPause` | reanuda (`state_id: 3`) | `FINISHED` |
+| `cancelOrder` | aborta el job de la order activa (MiR: `DELETE /mission_queue/<id>`); la action pasa a `FAILED` sin error de ejecución | `FINISHED`, o `FAILED` + `NO_ORDER_TO_CANCEL` si no hay order |
+| `stateRequest` | publica un `state` inmediatamente | `FINISHED` |
+| `factsheetRequest`, otros | no soportado | `FAILED` + `INVALID_INSTANT_ACTION` |
+
+El resultado va en `state.instantActionStates[]` y los fallos en
+`state.errors[]` con `errorReferences: [{actionId}]`; se conservan hasta el
+siguiente mensaje `instantActions`. Un mensaje malformado deja un
+`VALIDATION_FAILURE` suelto en `errors[]`.
 
 ## Auto-carga
 

@@ -77,6 +77,13 @@ class RobotDriver(Protocol):
     def cancel(self, job_id: str) -> None:
         """Aborta el job (H5, instantActions/cancelOrder)."""
 
+    def pause(self) -> None:
+        """instantAction `startPause`: detener el robot sin abortar el job.
+        Lanza `NotImplementedError` si la marca no lo soporta."""
+
+    def resume(self) -> None:
+        """instantAction `stopPause`: reanudar tras `pause()`."""
+
     def charge_job(self) -> Job | None:
         """Job de auto-carga (H4). None = la marca no lo soporta."""
 

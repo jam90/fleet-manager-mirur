@@ -10,11 +10,12 @@ import logging
 from fm.assigner import assign
 from fm.config import FleetConfig
 from fm.mqtt_bus import FLEET, MqttBus
+from fm.instant import apply_instant_actions
 from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
 from fm.vda5050.header import parse_topic, validate_header
-from fm.vda5050.order import Order, OrderRejected, parse_order
-from fm.vda5050.state import E_VALIDATION_FAILURE
+from fm.vda5050.order import Order, OrderRejected, parse_instant_actions, parse_order
+from fm.vda5050.state import E_VALIDATION_FAILURE, error_for_order
 
 log = logging.getLogger("fm.fleet")
 
@@ -61,7 +62,7 @@ class Dispatcher:
         elif pt.subtopic == "order":
             self.handle_robot_order(pt.serial, data, header_err)
         elif pt.subtopic == "instantActions":
-            log.warning("[%s] instantActions aún no implementadas (H5)", pt.serial)
+            self.handle_instant_actions(pt.serial, data, header_err)
 
     def handle_robot_order(self, serial: str, data, header_err: str | None) -> None:
         robot = self.robots.get(serial)
@@ -81,6 +82,23 @@ class Dispatcher:
         except OrderRejected as e:
             robot.orders.reject(order_id, e)
         self.publish_state(robot)
+
+    def handle_instant_actions(self, serial: str, data, header_err: str | None) -> None:
+        robot = self.robots.get(serial)
+        if robot is None:
+            log.warning("[fleet] instantActions para robot desconocido '%s'", serial)
+            return
+        try:
+            if header_err:
+                raise OrderRejected(E_VALIDATION_FAILURE, header_err)
+            actions = parse_instant_actions(data)
+        except OrderRejected as e:
+            # Mensaje inválido: no hay actionId al que referirse; error suelto en state.
+            robot.orders.instant_errors = [error_for_order(e.error_type, e.description, level="WARNING")]
+            log.warning("[%s] instantActions rechazadas: %s", serial, e)
+            self.publish_state(robot)
+            return
+        apply_instant_actions(robot, actions, self.publish_state)
 
     def handle_fleet_order(self, data, header_err: str | None) -> None:
         order_id = data.get("orderId") if isinstance(data, dict) else None

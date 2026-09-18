@@ -71,6 +71,24 @@ def _req(d: dict, key: str, typ, where: str):
     return v
 
 
+def parse_action(a: object, where: str) -> Action:
+    if not isinstance(a, dict):
+        raise OrderRejected(E_VALIDATION_FAILURE, f"{where} no es un objeto")
+    params = [ActionParameter(_req(p, "key", str, where), p.get("value"))
+              for p in (a.get("actionParameters") or [])]
+    return Action(_req(a, "actionType", str, where), _req(a, "actionId", str, where),
+                  a.get("blockingType", "HARD"), a.get("actionDescription"), params)
+
+
+def parse_instant_actions(d: object) -> list[Action]:
+    """Mensaje `instantActions` (§6.4) → lista de `Action`. Misma validación
+    estructural que `parse_order`; lanza `OrderRejected(VALIDATION_FAILURE)`."""
+    if not isinstance(d, dict):
+        raise OrderRejected(E_VALIDATION_FAILURE, "el payload no es un objeto JSON")
+    raw = _req(d, "actions", list, "instantActions")
+    return [parse_action(a, f"actions[{i}]") for i, a in enumerate(raw)]
+
+
 def parse_order(d: dict) -> Order:
     """dict JSON → `Order`. Lanza `OrderRejected(VALIDATION_FAILURE)` si la
     estructura no cumple lo mínimo (decisión 10 de docs/avance.md)."""
@@ -91,13 +109,7 @@ def parse_order(d: dict) -> Order:
         where = f"nodes[{i}]"
         if not isinstance(n, dict):
             raise OrderRejected(E_VALIDATION_FAILURE, f"{where} no es un objeto")
-        actions = []
-        for j, a in enumerate(n.get("actions") or []):
-            aw = f"{where}.actions[{j}]"
-            params = [ActionParameter(_req(p, "key", str, aw), p.get("value"))
-                      for p in (a.get("actionParameters") or [])]
-            actions.append(Action(_req(a, "actionType", str, aw), _req(a, "actionId", str, aw),
-                                  a.get("blockingType", "HARD"), a.get("actionDescription"), params))
+        actions = [parse_action(a, f"{where}.actions[{j}]") for j, a in enumerate(n.get("actions") or [])]
         nodes.append(Node(_req(n, "nodeId", str, where), _req(n, "sequenceId", int, where),
                           _req(n, "released", bool, where), actions))
 
