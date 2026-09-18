@@ -33,19 +33,31 @@ class _FakeClient(MirClient):
 def test_positions_duplicadas_prefiere_mapa_activo():
     c = _FakeClient(positions=[
         {"name": "Charging station", "guid": "g-otro", "type_id": 20, "map_id": "m-otro"},
-        {"name": "Charging station", "guid": "g-activo", "type_id": 21, "map_id": "m-activo"},
-        {"name": "H2D1-VL", "guid": "g-h2d1", "type_id": 0, "map_id": "m-activo"},
+        {"name": "Charging station", "guid": "g-activo", "type_id": 20, "map_id": "m-activo"},
+        {"name": "H2D1", "guid": "g-h2d1", "type_id": 0, "map_id": "m-activo"},
     ])
     idx = c.index_positions_by_name(active_map_id="m-activo")
-    assert idx == {"Charging station": "g-activo", "H2D1-VL": "g-h2d1"}
+    assert idx == {"Charging station": "g-activo", "H2D1": "g-h2d1"}
 
 
 def test_positions_duplicadas_sin_mapa_se_queda_con_la_primera():
     c = _FakeClient(positions=[
-        {"name": "P", "guid": "g1", "type_id": 20},
-        {"name": "P", "guid": "g2", "type_id": 21},
+        {"name": "P", "guid": "g1", "type_id": 0},
+        {"name": "P", "guid": "g2", "type_id": 0},
     ])
     assert c.index_positions_by_name() == {"P": "g1"}
+
+
+def test_entry_positions_de_marcadores_se_ignoran():
+    """Un VL-marker (11) y un cargador (20) traen su entry (12/21) con el
+    mismo nombre: el destino es siempre el marcador (decisión 48)."""
+    c = _FakeClient(positions=[
+        {"name": "H2D1-VL", "guid": "g-entry", "type_id": 12},
+        {"name": "H2D1-VL", "guid": "g-marker", "type_id": 11},
+        {"name": "Charging station", "guid": "g-ch-entry", "type_id": 21},
+        {"name": "Charging station", "guid": "g-ch", "type_id": 20},
+    ])
+    assert c.index_positions_by_name() == {"H2D1-VL": "g-marker", "Charging station": "g-ch"}
 
 
 def test_missions_duplicadas_primera():

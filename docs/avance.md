@@ -762,8 +762,8 @@ Prueba (10:00, FM con `--robot mir-2`):
 
 Con esto quedan probados con robot todos los caminos de `from_vda_order`
 salvo `required_inputs` (no hay mission con inputs no-position) y la
-`positions_allowlist` (cubiertos por tests). Sigue pendiente decidir qué
-`type_id` (11/12) recibe `target_pos` para las positions `*-VL` duplicadas.
+`positions_allowlist` (cubiertos por tests). Lo de las positions `*-VL`
+"duplicadas" se cierra en la decisión 48.
 
 ## 2026-09-18 — Interfaz web (docs/plan-ui.md)
 
@@ -815,3 +815,22 @@ tarjeta ("en pausa") en ~1 s.
     no tener internet y la página debe abrir igual.
 47. **Sin autenticación** (decisión del usuario, LAN de clase); si sale de
     ahí, un token en los `POST` es el mínimo.
+
+## 2026-09-18 — Positions "duplicadas": entry positions de marcadores
+
+Aclarado con `GET /positions/<guid>` en mir-2 y con el usuario. No son
+duplicados: cada VL-marker (`type_id` 11) y cada cargador (20) lleva una
+**entry position** automática (12 / 21) con el mismo nombre y `parent_id`
+apuntando al marcador, ~1.3 m delante (p.ej. `H2D1-VL`: marcador en
+(28.68, 4.82), entry en (30.00, 4.83)). En la web del MiR solo se elige el
+marcador y el robot pasa por su entry él solo; la entry no es un destino.
+
+### Decisiones nuevas
+
+48. **El índice de positions ignora las entry positions** (`type_id` 12 y
+    21, `POSITION_ENTRY_TYPES` en `client.py`): `target_pos=H2D1-VL` →
+    GUID del marcador (11), igual que al elegirlo en la web. Es lo que ya
+    pasaba de facto ("se usa la primera"), pero ahora es explícito, sin
+    warnings de "position duplicada" al arrancar, y el desplegable de la UI
+    lista cada marcador una sola vez. Los warnings de duplicado quedan para
+    duplicados reales (mismo nombre en varios mapas, decisión 15).

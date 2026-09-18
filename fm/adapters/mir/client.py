@@ -28,6 +28,12 @@ STATE_EMERGENCY_STOP = 10
 STATE_MANUAL = 11
 STATE_ERROR = 12
 
+# `type_id` de positions que son la "entry position" automática de un marcador
+# (12 = de un VL-marker, 21 = de un cargador). Comparten nombre con su marcador
+# (`parent_id`) y no son un destino: al mandar el marcador el MiR ya pasa por su
+# entry, igual que al elegirlo en la web. Ver docs/avance.md, decisión 48.
+POSITION_ENTRY_TYPES = {12, 21}
+
 # Estados de una entrada de `/mission_queue/<id>`.
 QUEUE_ALIVE = {"Pending", "Executing"}
 QUEUE_FINISHED = {"Done", "Aborted", "Cancelled", "Canceled"}
@@ -198,14 +204,17 @@ class MirClient:
         return idx
 
     def index_positions_by_name(self, active_map_id: str | None = None) -> dict[str, str]:
-        """nombre → GUID de positions (incluye markers de docking).
+        """nombre → GUID de positions (incluye markers de docking, no sus
+        entry positions: `POSITION_ENTRY_TYPES`).
 
-        Con nombres duplicados (p.ej. dos 'Charging station' con type_id
-        distinto) se prefiere la del mapa activo; si persiste el empate, la
-        primera + warning. Ver docs/avance.md, decisión 15.
+        Con nombres duplicados (p.ej. la misma position en dos mapas) se
+        prefiere la del mapa activo; si persiste el empate, la primera +
+        warning. Ver docs/avance.md, decisiones 15 y 48.
         """
         by_name: dict[str, list[dict]] = {}
         for p in self.positions_get():
+            if p.get("type_id") in POSITION_ENTRY_TYPES:
+                continue
             # El listado no trae `map_id`, solo `map` = "/v2.0.0/maps/<guid>".
             p = {**p, "map_id": position_map_id(p)}
             by_name.setdefault(p.get("name", ""), []).append(p)
