@@ -1,26 +1,32 @@
-# Fleet Manager MiR250 — VDA 5050 v3.0.0
+# Fleet Manager — VDA 5050 v3.0.0
 
-Servicio Python autónomo que gestiona una flota de MiR250 hablando **REST** con
-los robots y **MQTT (VDA 5050 v3.0.0)** con el resto del sistema. Sin ROS 2, sin
-MiR Fleet, sin Open-RMF. Pensado también como material didáctico: el código
-está comentado explicando el *por qué*.
+Servicio Python autónomo que gestiona una flota de robots móviles hablando
+**MQTT (VDA 5050 v3.0.0)** con el resto del sistema y, con cada robot, el
+protocolo de su marca a través de un **driver enchufable** (`fm/adapters/`):
+hoy MiR250 por REST y un robot simulado sin hardware; añadir otra marca es una
+carpeta más. Sin ROS 2, sin MiR Fleet, sin Open-RMF. Pensado también como
+material didáctico: el código está comentado explicando el *por qué*.
 
-Estado actual: telemetría, order dirigida, asignador de flota, drivers por
-marca (MiR real + simulado) — probado con dos robots reales; auto-carga
-e instantActions — probados con robots reales. Pendiente: factsheet. Detalle
-y decisiones en [`docs/avance.md`](docs/avance.md); brief completo en
-[`CLAUDE.md`](CLAUDE.md).
+Todo lo de abajo está probado con dos MiR250 reales. Pendiente: `factsheet`.
+Detalle y decisiones en [`docs/avance.md`](docs/avance.md); brief de arranque
+en [`CLAUDE.md`](CLAUDE.md).
 
 ## Qué hace
 
-1. Publica `state` (1 Hz) y `connection` (retained + Last Will) por robot.
+1. Publica `state` (1 Hz) y `connection` (retained + Last Will) por robot,
+   cada uno bajo el `manufacturer` de su marca.
 2. Acepta `order` dirigida a un robot (`<serial>/order`) o a la flota
    (`fleet/order`, extensión propia). En el segundo caso elige robot: no ocupado
    y con batería ≥ `battery_min`; entre varios, el de más batería.
-3. Traduce cada `actionType` a una **mission ya creada en la web del MiR** y
-   la encola por REST; sigue la cola y refleja el progreso en
-   `state.actionStates[]`.
-4. (Pendiente) Manda a cargar cuando la batería baja de `battery_floor`.
+3. Traduce cada `actionType` (con sus `actionParameters`) a un trabajo del
+   robot a través de su driver — en MiR, una **mission ya creada en la web**
+   con sus inputs — y sigue su progreso en `state.actionStates[]`.
+4. Manda a cargar cuando la batería baja de `battery_floor` (sin abortar lo
+   que esté en curso) y lo refleja en `powerSupply.charging`.
+5. Atiende `instantActions`: `startPause`, `stopPause`, `cancelOrder`,
+   `stateRequest`.
+6. Tolera robots apagados (`ROBOT_UNREACHABLE`, backoff, sin perder cadencia)
+   y missions lanzadas desde fuera del FM (el robot cuenta como ocupado).
 
 ## Instalación
 
