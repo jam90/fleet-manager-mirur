@@ -71,7 +71,7 @@ Endpoints:
 | `POST` | `/api/fleet/order` | `{actionType, params: {key: value}}` → publica `fleet/order`; responde `{orderId}`; el veredicto llega por WS (`order_response`) |
 | `POST` | `/api/robots/{serial}/instant` | `{actionType}` (`startPause`/`stopPause`/`cancelOrder`) → publica `instantActions`; resultado por WS en `state.instantActionStates` |
 
-`run_fm.py --web-port 8080` (0 = sin web, por defecto 8080). Escucha en
+`run_fm.py --web-port 8050` (0 = sin web, por defecto 8080). Escucha en
 `0.0.0.0` (LAN). Sin autenticación (decisión del usuario; misma política que
 la web del MiR).
 

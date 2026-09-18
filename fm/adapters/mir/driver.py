@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from fm.adapters.base import Job, JobStatus, Telemetry
+from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, Telemetry
 from fm.adapters.mir.client import STATE_PAUSE, STATE_READY, MirClient, MirStatus
 from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, to_telemetry
@@ -135,3 +135,14 @@ class MirDriver:
 
     def extra_state(self, s: State) -> None:
         """Nada que añadir: el MiR no expone más de lo que ya va en Telemetry."""
+
+    def describe_actions(self) -> list[ActionInfo]:
+        """Actions de `fleet.yaml` con sus inputs; las positions indexadas
+        (si ya hay índices) como opciones de los `position_inputs`."""
+        positions = sorted(self.positions) or None
+        out = []
+        for a in self.cfg.actions.values():
+            params = [ParamInfo(k, "position", True, positions) for k in a.position_inputs]
+            params += [ParamInfo(k, "text", True) for k in a.required_inputs]
+            out.append(ActionInfo(a.action_type, params, f"mission '{a.mission}'"))
+        return out

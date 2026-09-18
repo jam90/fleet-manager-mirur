@@ -52,6 +52,22 @@ class Job:
     payload: Any = None
 
 
+@dataclass
+class ParamInfo:
+    """Un parámetro de una action, para formularios (UI) y `factsheet.agvActions`."""
+    key: str
+    kind: str = "text"                   # "position" | "text"
+    required: bool = True
+    choices: list[str] | None = None     # valores admitidos, si el driver los conoce
+
+
+@dataclass
+class ActionInfo:
+    action_type: str
+    params: list[ParamInfo] = field(default_factory=list)
+    description: str = ""                # p.ej. el nombre de la mission en MiR
+
+
 class RobotDriver(Protocol):
     """Contrato que cumple cada marca. Todos los métodos de red son
     tolerantes: no lanzan, devuelven None/False y guardan `last_error`."""
@@ -89,3 +105,7 @@ class RobotDriver(Protocol):
 
     def extra_state(self, s: State) -> None:
         """Gancho opcional: campos del `state` que el core no puede deducir."""
+
+    def describe_actions(self) -> list[ActionInfo]:
+        """Gancho opcional: actionTypes que acepta y sus parámetros (UI,
+        factsheet). Sin él, el core usa solo los nombres de `actions:`."""

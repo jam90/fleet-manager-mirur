@@ -23,6 +23,7 @@ import json
 import logging
 import queue
 import threading
+from typing import Callable
 
 import paho.mqtt.client as mqtt
 
@@ -47,6 +48,8 @@ class MqttBus:
         self.counter = HeaderCounter()
         self.inbox: queue.Queue[tuple[str, bytes]] = queue.Queue()
         self._ready: dict[str, threading.Event] = {}
+        # Espejo de publicaciones (topic, payload) para la interfaz web; None = sin UI.
+        self.on_publish: Callable[[str, dict], None] | None = None
 
         self._main = self._new_client(f"{client_id}", FLEET)
         self._main.on_message = self._on_message
@@ -113,8 +116,10 @@ class MqttBus:
                     retain: bool = False) -> mqtt.MQTTMessageInfo:
         """Publica un payload que YA lleva header (generado con `next_header`)."""
         client = self._client_for(serial) if subtopic == "connection" else self._main
-        return client.publish(self.topic(serial, subtopic), json.dumps(payload),
-                              qos=QOS.get(subtopic, 0), retain=retain)
+        t = self.topic(serial, subtopic)
+        if self.on_publish is not None:
+            self.on_publish(t, payload)
+        return client.publish(t, json.dumps(payload), qos=QOS.get(subtopic, 0), retain=retain)
 
     def publish(self, serial: str, subtopic: str, body: dict, retain: bool = False) -> dict:
         """Añade el header (≡ topic) y publica. Devuelve el payload completo."""

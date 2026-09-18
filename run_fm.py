@@ -36,6 +36,7 @@ def parse_args(argv=None):
     p.add_argument("--robot", action="append", help="limitar a estos serials (repetible)")
     p.add_argument("--config", default="config/fleet.yaml")
     p.add_argument("--env", default=".env")
+    p.add_argument("--web-port", type=int, default=8050, help="puerto de la interfaz web (0 = sin web)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -62,6 +63,10 @@ def main(argv=None) -> int:
 
     bus = MqttBus(cfg.mqtt.host, cfg.mqtt.port, {s: robots[s].manufacturer for s in serials},
                   cfg.mqtt.fleet_manufacturer)
+    web = None
+    if args.web_port:
+        from fm.web.server import WebServer   # import tardío: fastapi solo si se usa
+        web = WebServer(cfg, robots, bus)     # instala el espejo antes de conectar al broker
     bus.start()
 
     stop = False
@@ -107,6 +112,9 @@ def main(argv=None) -> int:
     dispatcher = Dispatcher(cfg, robots, bus, publish_state)
     dispatcher.subscribe()
 
+    if web is not None:
+        web.start(port=args.web_port)
+
     try:
         while not stop:
             t0 = time.monotonic()
@@ -119,6 +127,8 @@ def main(argv=None) -> int:
                 time.sleep(min(0.1, args.period))
     finally:
         pool.shutdown(wait=False)
+        if web is not None:
+            web.stop()
         bus.stop()
     return 0
 

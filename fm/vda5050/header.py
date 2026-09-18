@@ -9,6 +9,7 @@ para que no puedan divergir del servicio.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -50,15 +51,18 @@ def parse_topic(t: str) -> ParsedTopic | None:
 
 
 class HeaderCounter:
-    """`headerId` monótono por topic (§7.2). Arranca en 1 en cada arranque."""
+    """`headerId` monótono por topic (§7.2). Arranca en 1 en cada arranque.
+    Con Lock: lo usan el hilo principal y el servidor web (`fm/web.py`)."""
 
     def __init__(self) -> None:
         self._next: dict[str, int] = {}
+        self._lock = threading.Lock()
 
     def next(self, topic_name: str) -> int:
-        n = self._next.get(topic_name, 1)
-        self._next[topic_name] = n + 1
-        return n
+        with self._lock:
+            n = self._next.get(topic_name, 1)
+            self._next[topic_name] = n + 1
+            return n
 
 
 def make_header(counter: HeaderCounter, manufacturer: str, serial: str,
