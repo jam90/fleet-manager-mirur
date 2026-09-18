@@ -7,7 +7,7 @@ FM elija el robot. Preparada para N robots y varias marcas: la UI no sabe
 nada de MiR; todo lo que pinta sale del contrato VDA 5050 que el FM ya
 publica.
 
-Estado: **aprobado el 2026-09-18, en implementación**.
+Estado: **implementado y probado con robots el 2026-09-18** (ver `docs/avance.md`).
 
 Decisiones tomadas con el usuario (2026-09-18): la UI la sirve el propio
 FM (no se toca Mosquitto); se envían `fleet/order` con parámetros (no

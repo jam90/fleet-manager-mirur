@@ -27,6 +27,8 @@ en [`CLAUDE.md`](CLAUDE.md).
    `stateRequest`.
 6. Tolera robots apagados (`ROBOT_UNREACHABLE`, backoff, sin perder cadencia)
    y missions lanzadas desde fuera del FM (el robot cuenta como ocupado).
+7. Interfaz web en `http://<pc>:8050/`: batería y misión de cada robot en
+   vivo, pausa / reanudar / cancelar, y envío de `fleet/order` con parámetros.
 
 ## Instalación
 
@@ -315,6 +317,24 @@ El resultado va en `state.instantActionStates[]` y los fallos en
 siguiente mensaje `instantActions`. Un mensaje malformado deja un
 `VALIDATION_FAILURE` suelto en `errors[]`.
 
+## Interfaz web
+
+`run_fm.py` sirve una página en `http://<pc>:8050/` (`--web-port`, 0 = sin
+web) para la LAN, sin login. Un fichero (`fm/web/static/index.html`, Vue 3
+incluida en el repo: funciona sin internet) que muestra por robot batería,
+estado, order y `actionStates`, texto de la misión y errores, con botones
+⏸ ▶ ✖, un panel "Enviar a la flota" (action + parámetros, con desplegable de
+positions cuando el driver las conoce) y una lista de eventos.
+
+La UI es **un cliente VDA más**: recibe por WebSocket (`/ws`) exactamente lo
+que el FM publica por MQTT (`{topic, payload}`), y lo que envía
+(`POST /api/fleet/order`, `POST /api/robots/<serial>/instant`) el servidor lo
+publica en el broker con header VDA; el FM lo recibe por su suscripción normal.
+Nada de lo que hace la UI es un camino aparte: se ve en `mosquitto_sub`.
+`GET /api/fleet` da el catálogo (robots, actions y parámetros, umbrales);
+`/api/docs` es el OpenAPI. Un robot de otra marca aparece solo: la página no
+sabe nada de MiR.
+
 ## Auto-carga
 
 En cada tick, por robot (`fm/charge.py`): si `battery < auto_charge.battery_floor`
@@ -362,6 +382,7 @@ fm/mqtt_bus.py          paho: publish, LWT por robot, inbox (cola) de entrantes
 fm/adapters/base.py     frontera core ↔ marca: Telemetry, Job, RobotDriver (Protocol)
 fm/adapters/mir/        driver MiR250: client.py (REST), translate.py (puro), driver.py, config.py
 fm/adapters/sim/        driver simulado (sin hardware): config/fleet-sim.yaml
+fm/web/                 interfaz web: server.py (FastAPI, espejo MQTT ↔ WebSocket), static/index.html
 fm/mir_client.py        shim: re-exporta fm/adapters/mir/client.py (lo usan scripts/)
 fm/vda5050/             header.py (topic≡header), state.py, state_builder.py, order.py, schemas.py
 schemas/                JSON Schemas oficiales v3.0.0 (con parches, ver schemas/README.md)

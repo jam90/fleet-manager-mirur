@@ -1,1 +1,413 @@
-<!doctype html><title>Fleet Manager</title><p>UI en construcción (fase 2)</p>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Manager</title>
+<!--
+  Interfaz del Fleet Manager. Un solo fichero, sin build: Vue 3 (vue.global.prod.js,
+  incluida en el repo para funcionar sin internet) + este HTML.
+
+  La página es un cliente VDA 5050 más: recibe por WebSocket exactamente lo que
+  el FM publica por MQTT ({topic, payload}) y envía órdenes por HTTP que el
+  servidor publica en el broker. No sabe nada de MiR: todo lo que pinta sale
+  del `state` VDA. Ver docs/plan-ui.md.
+-->
+<style>
+  :root {
+    --bg: #eef1f4;          /* gris frío, no neutro puro */
+    --surface: #ffffff;
+    --surface-2: #f6f8fa;
+    --ink: #1a2330;
+    --ink-2: #4b5766;
+    --ink-3: #7d8896;
+    --line: #d5dbe2;
+    --accent: #0f6e8c;      /* azul-verde industrial: botones y foco */
+    --accent-ink: #ffffff;
+    --ok: #2f8f5b;          /* libre / FINISHED */
+    --run: #2f6fd6;         /* ejecutando */
+    --warn: #c98a00;        /* pausado / cargando / WAITING */
+    --bad: #c63b3b;         /* error / sin conexión / FAILED */
+    --shadow: 0 1px 2px rgba(20, 30, 40, .06), 0 4px 14px rgba(20, 30, 40, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12171d; --surface: #1b222b; --surface-2: #222b35; --ink: #e6ebf0; --ink-2: #aab5c1;
+      --ink-3: #7f8b98; --line: #2f3a46; --accent: #4fb3d1; --accent-ink: #0c1a20;
+      --ok: #58b982; --run: #6c9cf0; --warn: #e0a626; --bad: #e46464;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12171d; --surface: #1b222b; --surface-2: #222b35; --ink: #e6ebf0; --ink-2: #aab5c1;
+    --ink-3: #7f8b98; --line: #2f3a46; --accent: #4fb3d1; --accent-ink: #0c1a20;
+    --ok: #58b982; --run: #6c9cf0; --warn: #e0a626; --bad: #e46464;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+  body { padding-block: 0 32px; }
+  code, .mono { font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, monospace; font-size: .92em; }
+  .num { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  [hidden], [v-cloak] { display: none !important; }
+
+  /* ---- cabecera ---- */
+  header { position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--line);
+    padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: .01em; }
+  header .sub { color: var(--ink-3); font-size: 13px; }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+
+  .banner { background: var(--bad); color: #fff; padding: 8px 24px; font-size: 14px; }
+
+  main { padding: 20px 24px 0; display: grid; gap: 20px; }
+
+  /* ---- tarjetas de robot ---- */
+  .robots { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); border-top: 4px solid var(--ink-3);
+    padding: 14px 16px 12px; display: grid; gap: 10px; }
+  .card.st-libre { border-top-color: var(--ok); }
+  .card.st-ejecutando { border-top-color: var(--run); }
+  .card.st-pausado, .card.st-cargando, .card.st-encola { border-top-color: var(--warn); }
+  .card.st-error, .card.st-sinconexion, .card.st-manual { border-top-color: var(--bad); }
+  .card-head { display: flex; align-items: baseline; gap: 10px; }
+  .card-head h2 { margin: 0; font-size: 20px; font-weight: 650; }
+  .chip { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  .pill { margin-left: auto; font-size: 12px; font-weight: 600; letter-spacing: .03em; padding: 2px 9px; border-radius: 999px;
+    color: #fff; background: var(--ink-3); white-space: nowrap; }
+  .pill.libre { background: var(--ok); } .pill.ejecutando { background: var(--run); }
+  .pill.pausado, .pill.cargando, .pill.encola { background: var(--warn); }
+  .pill.error, .pill.sinconexion, .pill.manual { background: var(--bad); }
+
+  .battery { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
+  .bar { height: 12px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--ok); transition: width .4s; }
+  .bar > i.low { background: var(--warn); } .bar > i.crit { background: var(--bad); }
+  .battery .pct { font-size: 22px; font-weight: 650; min-width: 4.2ch; text-align: right; }
+  .battery small { color: var(--ink-3); font-size: 12px; display: block; }
+
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 14px; }
+  .kv dt { color: var(--ink-3); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .act { font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: var(--surface-2); }
+  .act b { font-weight: 600; } .act .s { margin-left: 6px; font-size: 11px; letter-spacing: .05em; }
+  .s-RUNNING { color: var(--run); } .s-FINISHED { color: var(--ok); } .s-FAILED { color: var(--bad); }
+  .s-WAITING, .s-PAUSED, .s-INITIALIZING { color: var(--warn); }
+
+  .errs { display: grid; gap: 4px; font-size: 13px; }
+  .err { border-left: 3px solid var(--bad); padding: 2px 8px; background: var(--surface-2); border-radius: 0 4px 4px 0; }
+  .err.warn { border-left-color: var(--warn); }
+  .err code { font-weight: 600; }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--line); }
+  .btn { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 7px;
+    padding: 6px 12px; cursor: pointer; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.danger { color: var(--bad); }
+  .feedback { font-size: 12px; color: var(--ink-3); align-self: center; }
+
+  /* ---- paneles inferiores ---- */
+  .panels { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.3fr); gap: 16px; }
+  @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } header, main, .banner { padding-inline: 16px; } }
+  .panel { background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
+  .panel h3 { margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+  .form { display: grid; gap: 8px; }
+  .field { display: grid; gap: 3px; font-size: 13px; color: var(--ink-2); }
+  .field input, .field select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; }
+  .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--ink-3); }
+  .resp { font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); border-left: 3px solid var(--ink-3); }
+  .resp.ASSIGNED { border-left-color: var(--ok); } .resp.REJECTED { border-left-color: var(--bad); } .resp.pending { border-left-color: var(--warn); }
+
+  .events { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; max-height: 340px; overflow: auto; }
+  .events li { display: grid; grid-template-columns: 7ch 7ch 1fr; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .events .t { color: var(--ink-3); } .events .who { color: var(--ink-2); font-weight: 600; }
+  .empty { color: var(--ink-3); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header>
+    <h1>Fleet Manager</h1>
+    <span class="sub">VDA 5050 v3 · flota <code>{{ fleet.fleet_manufacturer || '…' }}</code></span>
+    <span class="conn"><i class="dot" :class="wsOk ? 'ok' : 'bad'"></i>{{ wsOk ? 'conectado al FM' : 'sin conexión con el FM' }}</span>
+  </header>
+  <div class="banner" v-if="!wsOk">No hay conexión con el Fleet Manager. Reintentando… (¿está arrancado <code>run_fm.py</code>?)</div>
+
+  <main>
+    <section class="robots">
+      <article v-for="r in robotsView" :key="r.serial" class="card" :class="'st-' + r.status.key">
+        <div class="card-head">
+          <h2>{{ r.serial }}</h2>
+          <span class="chip">{{ r.manufacturer }}</span>
+          <i class="dot" :class="r.connection === 'ONLINE' ? 'ok' : (r.connection ? 'bad' : '')" :title="'connection: ' + (r.connection || '?')"></i>
+          <span class="pill" :class="r.status.key">{{ r.status.label }}</span>
+        </div>
+
+        <div class="battery" v-if="r.state">
+          <div>
+            <div class="bar"><i :style="{ width: r.battery + '%' }" :class="r.battery < r.battery_min ? (r.battery < fleet.auto_charge.battery_floor ? 'crit' : 'low') : ''"></i></div>
+            <small>mínimo para trabajar {{ r.battery_min }} % · a cargar bajo {{ fleet.auto_charge.battery_floor }} %</small>
+          </div>
+          <div class="pct num">{{ r.battery.toFixed(0) }}&thinsp;%<span v-if="r.charging" title="cargando">⚡</span></div>
+        </div>
+        <p class="empty" v-else>Sin telemetría todavía.</p>
+
+        <dl class="kv" v-if="r.state">
+          <dt>Order</dt>
+          <dd>
+            <template v-if="r.state.orderId"><code>{{ r.state.orderId }}</code>/{{ r.state.orderUpdateId }}</template>
+            <span v-else class="empty">—</span>
+          </dd>
+          <dt>Actions</dt>
+          <dd>
+            <div class="acts" v-if="r.state.actionStates.length">
+              <span class="act" v-for="a in r.state.actionStates" :key="a.actionId"><b>{{ a.actionType }}</b><span class="s" :class="'s-' + a.actionStatus">{{ a.actionStatus }}</span></span>
+            </div>
+            <span v-else class="empty">—</span>
+          </dd>
+          <dt>Robot</dt>
+          <dd>{{ r.missionText || r.state.operatingMode }}<span v-if="r.state.paused"> · en pausa</span></dd>
+          <dt v-if="r.pose">Posición</dt>
+          <dd v-if="r.pose" class="num">({{ r.pose.x.toFixed(2) }}, {{ r.pose.y.toFixed(2) }})</dd>
+        </dl>
+
+        <div class="errs" v-if="r.errors.length">
+          <div class="err" :class="e.errorLevel === 'WARNING' ? 'warn' : ''" v-for="(e, i) in r.errors" :key="i">
+            <code>{{ e.errorType }}</code> {{ e.errorDescription }}
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="btn" :id="'pause-' + r.serial" :disabled="!r.canPause" @click="instant(r.serial, 'startPause')">⏸ Pausa</button>
+          <button class="btn" :id="'resume-' + r.serial" :disabled="!r.canResume" @click="instant(r.serial, 'stopPause')">▶ Reanudar</button>
+          <button class="btn danger" :id="'cancel-' + r.serial" :disabled="!r.canCancel" @click="instant(r.serial, 'cancelOrder')">✖ Cancelar order</button>
+          <span class="feedback" v-if="r.feedback">{{ r.feedback }}</span>
+        </div>
+      </article>
+      <p class="empty" v-if="!robotsView.length">Ningún robot configurado.</p>
+    </section>
+
+    <section class="panels">
+      <div class="panel">
+        <h3>Enviar a la flota</h3>
+        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, entre varios, el de más batería.</p>
+        <form class="form" @submit.prevent="sendOrder">
+          <label class="field">action
+            <select id="order-action" v-model="form.actionType" required>
+              <option v-for="a in actionCatalog" :key="a.action_type" :value="a.action_type">
+                {{ a.action_type }} — {{ a.robots.join(', ') }}
+              </option>
+            </select>
+          </label>
+          <label class="field" v-for="p in currentParams" :key="p.key">
+            {{ p.key }} <span v-if="p.kind === 'position'">(position)</span>
+            <select v-if="p.choices" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
+              <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <input v-else type="text" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
+          </label>
+          <button class="btn primary" id="order-send" type="submit" :disabled="!form.actionType || sending">Enviar fleet/order</button>
+        </form>
+        <div class="resp" v-for="o in fleetOrders" :key="o.orderId" :class="o.status || 'pending'">
+          <code>{{ o.orderId }}</code> <b>{{ o.actionType }}</b>
+          <template v-if="!o.status"> · esperando respuesta…</template>
+          <template v-else-if="o.status === 'ASSIGNED'"> → <b>{{ o.assignedSerial }}</b> · {{ o.description }}</template>
+          <template v-else> · REJECTED <code>{{ o.errorType }}</code> {{ o.errorDescription }}</template>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Eventos</h3>
+        <ul class="events" v-if="events.length">
+          <li v-for="e in events" :key="e.id"><span class="t num">{{ e.t }}</span><span class="who">{{ e.who }}</span><span>{{ e.text }}</span></li>
+        </ul>
+        <p class="empty" v-else>Aquí aparecen los cambios de estado de las orders, las respuestas de la flota y los errores nuevos.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, computed } = Vue;
+
+// vda5050/v3/<manufacturer>/<serial>/<subtopic>
+function parseTopic(t) {
+  const p = t.split('/');
+  return p.length === 5 ? { manufacturer: p[2], serial: p[3], subtopic: p[4] } : null;
+}
+function hhmmss(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  return isNaN(d) ? '' : d.toTimeString().slice(0, 8);
+}
+
+createApp({
+  setup() {
+    const fleet = reactive({ robots: [], fleet_manufacturer: '', auto_charge: { battery_floor: 20 }, instant_actions: [] });
+    const live = reactive({});        // serial → { state, connection, feedback }
+    const ui = reactive({ wsOk: false, sending: false });
+    const form = reactive({ actionType: '', params: {} });
+    const fleetOrders = reactive([]); // los enviados desde aquí, con su order_response
+    const events = reactive([]);
+    let eventId = 0;
+    const prev = {};                  // serial → { acts: {actionId: status}, errs: Set, instant: {actionId: status} }
+
+    function addEvent(who, text, iso) {
+      events.unshift({ id: ++eventId, t: hhmmss(iso), who, text });
+      if (events.length > 60) events.pop();
+    }
+
+    // ---------------- entrada: espejo del bus MQTT
+    function onMessage(topic, payload) {
+      const pt = parseTopic(topic);
+      if (!pt) return;
+      if (pt.serial === 'fleet') {
+        if (pt.subtopic === 'order_response') onOrderResponse(payload);
+        return;
+      }
+      const r = live[pt.serial] || (live[pt.serial] = { state: null, connection: null, feedback: '' });
+      if (pt.subtopic === 'connection') {
+        if (r.connection && r.connection !== payload.connectionState) addEvent(pt.serial, 'connection ' + payload.connectionState, payload.timestamp);
+        r.connection = payload.connectionState;
+      } else if (pt.subtopic === 'state') {
+        diffState(pt.serial, r.state, payload);
+        r.state = payload;
+      }
+    }
+
+    function diffState(serial, old, s) {
+      const p = prev[serial] || (prev[serial] = { acts: {}, errs: new Set(), instant: {} });
+      for (const a of s.actionStates || []) {
+        const before = p.acts[a.actionId];
+        if (before !== a.actionStatus) {
+          if (before !== undefined || a.actionStatus !== 'WAITING') addEvent(serial, `${a.actionType} ${before ? before + ' → ' : ''}${a.actionStatus}`, s.timestamp);
+          p.acts[a.actionId] = a.actionStatus;
+        }
+      }
+      const errs = new Set((s.errors || []).map(e => e.errorType + '|' + (e.errorDescription || '')));
+      for (const k of errs) if (!p.errs.has(k)) addEvent(serial, 'error ' + k.replace('|', ': '), s.timestamp);
+      p.errs = errs;
+      for (const a of s.instantActionStates || []) {
+        if (p.instant[a.actionId] !== a.actionStatus) {
+          p.instant[a.actionId] = a.actionStatus;
+          if (a.actionId.startsWith('ui-')) live[serial].feedback = `${a.actionType}: ${a.actionStatus}`;
+        }
+      }
+    }
+
+    function onOrderResponse(resp) {
+      const mine = fleetOrders.find(o => o.orderId === resp.orderId);
+      if (mine) Object.assign(mine, resp);
+      addEvent('fleet', resp.status === 'ASSIGNED'
+        ? `order ${resp.orderId} → ${resp.assignedSerial}`
+        : `order ${resp.orderId} REJECTED ${resp.errorType}: ${resp.errorDescription}`, resp.timestamp);
+    }
+
+    // ---------------- WebSocket con reconexión
+    let ws, retry = 1000;
+    function connect() {
+      ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+      ws.onopen = () => { ui.wsOk = true; retry = 1000; };
+      ws.onmessage = ev => { const m = JSON.parse(ev.data); onMessage(m.topic, m.payload); };
+      ws.onclose = () => { ui.wsOk = false; setTimeout(connect, retry); retry = Math.min(retry * 2, 10000); };
+      ws.onerror = () => ws.close();
+    }
+
+    async function loadFleet() {
+      try {
+        Object.assign(fleet, await (await fetch('/api/fleet')).json());
+        for (const r of fleet.robots) if (!live[r.serial]) live[r.serial] = { state: null, connection: null, feedback: '' };
+        if (!form.actionType && actionCatalog.value.length) form.actionType = actionCatalog.value[0].action_type;
+      } catch (e) { setTimeout(loadFleet, 3000); }
+    }
+
+    // ---------------- salida: HTTP → el servidor publica en el broker
+    async function instant(serial, actionType) {
+      live[serial].feedback = actionType + '…';
+      const r = await fetch(`/api/robots/${serial}/instant`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionType }) });
+      if (!r.ok) live[serial].feedback = 'error ' + r.status + ': ' + (await r.json()).detail;
+    }
+    async function sendOrder() {
+      ui.sending = true;
+      const params = {};
+      for (const p of currentParams.value) if (form.params[p.key] !== undefined && form.params[p.key] !== '') params[p.key] = form.params[p.key];
+      const r = await fetch('/api/fleet/order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionType: form.actionType, params }) });
+      ui.sending = false;
+      if (!r.ok) { addEvent('ui', 'no se pudo enviar: ' + (await r.json()).detail); return; }
+      fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null });
+      if (fleetOrders.length > 5) fleetOrders.pop();
+    }
+
+    // ---------------- vistas derivadas
+    const actionCatalog = computed(() => {
+      const byType = {};
+      for (const r of fleet.robots) for (const a of r.actions) {
+        const e = byType[a.action_type] || (byType[a.action_type] = { action_type: a.action_type, robots: [], params: {} });
+        e.robots.push(r.serial);
+        for (const p of a.params) {
+          const q = e.params[p.key] || (e.params[p.key] = { ...p, choices: p.choices ? [] : null });
+          if (p.choices && q.choices) for (const c of p.choices) if (!q.choices.includes(c)) q.choices.push(c);
+        }
+      }
+      return Object.values(byType).sort((a, b) => a.action_type.localeCompare(b.action_type));
+    });
+    const currentParams = computed(() => {
+      const a = actionCatalog.value.find(x => x.action_type === form.actionType);
+      return a ? Object.values(a.params).map(p => ({ ...p, choices: p.choices && p.choices.length ? p.choices.slice().sort() : null })) : [];
+    });
+
+    function statusOf(r, s) {
+      if (!s || r.connection === 'CONNECTIONBROKEN' || (s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE'))
+        return { key: 'sinconexion', label: 'sin conexión' };
+      if (s.operatingMode !== 'AUTOMATIC') return { key: 'manual', label: s.operatingMode.toLowerCase() };
+      if (s.safetyState && s.safetyState.activeEmergencyStop !== 'NONE') return { key: 'error', label: 'parada de emergencia' };
+      if ((s.errors || []).some(e => e.errorLevel === 'FATAL')) return { key: 'error', label: 'error' };
+      if (s.paused) return { key: 'pausado', label: 'en pausa' };
+      if (s.powerSupply && s.powerSupply.charging) return { key: 'cargando', label: 'cargando' };
+      const running = (s.actionStates || []).some(a => a.actionStatus === 'RUNNING');
+      if (s.driving || running) return { key: 'ejecutando', label: 'ejecutando' };
+      if ((s.actionStates || []).some(a => a.actionStatus === 'WAITING')) return { key: 'encola', label: 'en cola' };
+      return { key: 'libre', label: 'libre' };
+    }
+
+    const robotsView = computed(() => fleet.robots.map(cfg => {
+      const r = live[cfg.serial] || { state: null, connection: null, feedback: '' };
+      const s = r.state;
+      const alive = s && (s.actionStates || []).some(a => a.actionStatus === 'WAITING' || a.actionStatus === 'RUNNING');
+      const reachable = s && !(s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE');
+      const mission = s && (s.information || []).find(i => i.infoType === 'MISSION');
+      return {
+        serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
+        state: s, connection: r.connection, feedback: r.feedback,
+        status: statusOf(r, s),
+        battery: s ? s.powerSupply.stateOfCharge : 0,
+        charging: s ? s.powerSupply.charging : false,
+        pose: s && s.mobileRobotPosition ? s.mobileRobotPosition : null,
+        missionText: mission ? mission.infoDescriptor : '',
+        errors: s ? (s.errors || []).slice(-3) : [],
+        canPause: reachable && !s.paused, canResume: reachable && s.paused, canCancel: reachable && alive,
+      };
+    }));
+
+    loadFleet();
+    connect();
+    return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder,
+             wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

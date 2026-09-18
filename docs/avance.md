@@ -764,3 +764,54 @@ Con esto quedan probados con robot todos los caminos de `from_vda_order`
 salvo `required_inputs` (no hay mission con inputs no-position) y la
 `positions_allowlist` (cubiertos por tests). Sigue pendiente decidir qué
 `type_id` (11/12) recibe `target_pos` para las positions `*-VL` duplicadas.
+
+## 2026-09-18 — Interfaz web (docs/plan-ui.md)
+
+`pytest`: 71 en verde. Probada con el sim y con los MiR reales (12:13–12:18):
+desde el navegador `fleet/order abrir_puerta target_pos=H2D1-VL` → asignada a
+mir-2 (mir-1 en E-stop, tarjeta roja "parada de emergencia"), mission en
+cola y `RUNNING`; ✖ → `cancelOrder` FINISHED y mission abortada; `dejar` +
+⏸/▶ tres veces, cada `startPause`/`stopPause` FINISHED y reflejado en la
+tarjeta ("en pausa") en ~1 s.
+
+### Código
+
+- `fm/web/server.py` (FastAPI + uvicorn en hilo propio): `GET /` y
+  `/static`, `GET /api/fleet` (robots, actions con parámetros y opciones,
+  umbrales), `WS /ws` (al conectar, último `state`/`connection` de cada
+  robot; después cada publicación del FM `{topic, payload}`),
+  `POST /api/fleet/order` y `POST /api/robots/{serial}/instant` (publican en
+  el broker con header VDA). `--web-port` (8050; 8080 lo ocupa Airflow en
+  el PC del taller). Si el puerto está ocupado, log de error y el FM sigue
+  sin web.
+- `MqttBus.on_publish`: gancho espejo, instalado en `WebServer.__init__`
+  antes de `bus.start()` para capturar los `connection` ONLINE del arranque.
+  `HeaderCounter` con `Lock` (lo usan dos hilos).
+- `RobotDriver.describe_actions()` (opcional) → `ActionInfo`/`ParamInfo`;
+  MiR: actions de `fleet.yaml` + positions indexadas como opciones; sim:
+  sus actionTypes.
+- `fm/web/static/index.html`: Vue 3 (`vue.global.prod.js` 3.5.13 vendorizada,
+  sin internet ni build). Tarjeta por robot con estado derivado del `state`
+  (sin conexión / manual / E-stop / error / en pausa / cargando / ejecutando
+  / en cola / libre), batería con umbrales, order + `actionStates`, texto
+  `MISSION`, últimos 3 errores, botones habilitados según estado; panel de
+  flota con catálogo unificado (unión de actions de todos los robots,
+  parámetros con desplegable si hay opciones) y las últimas 5
+  `order_response`; eventos (cambios de actionStatus, respuestas, errores
+  nuevos, connection); reconexión del WS con backoff y banner.
+- `tests/test_web.py` (TestClient: catálogo, POSTs publican en el bus,
+  WS entrega el último estado).
+
+### Decisiones nuevas
+
+44. **La UI es un cliente VDA más** (plan §1): sin API paralela de estado;
+    lo que ve el navegador es el espejo de MQTT y lo que envía pasa por el
+    broker. Coste: la UI depende de que el broker esté; ventaja: cero
+    lógica duplicada y demostración viva del contrato.
+45. **El hilo web no lee el estado vivo de `Robot`**: solo configuración
+    (`fleet_info`) y el bus. Así no hay carrera con el hilo principal ni
+    con los hilos de `poll()`.
+46. **Vue vendorizada** en `fm/web/static/` en vez de CDN: el taller puede
+    no tener internet y la página debe abrir igual.
+47. **Sin autenticación** (decisión del usuario, LAN de clase); si sale de
+    ahí, un token en los `POST` es el mínimo.

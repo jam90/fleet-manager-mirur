@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from fm.adapters.base import ActionInfo
@@ -142,6 +143,8 @@ class WebServer:
             if body.actionType not in INSTANT_ALLOWED:
                 raise HTTPException(400, f"instantAction '{body.actionType}' no admitida; hay {INSTANT_ALLOWED}")
             return {"actionId": self.send_instant(serial, body.actionType)}
+
+        app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
         @app.websocket("/ws")
         async def ws(websocket: WebSocket):
