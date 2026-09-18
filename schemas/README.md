@@ -9,6 +9,8 @@ Parches locales (los originales no son JSON válido o son inconsistentes):
   (línea 314 del original).
 - `factsheet.schema.json`: eliminadas comas finales; en
   `typeSpecification.required` se sustituye `mobileRobotKinematic` por
-  `mobileRobotKinematics` (nombre real de la propiedad y del PDF §7.10).
+  `mobileRobotKinematics` (nombre real de la propiedad y del PDF §7.10);
+  `protocolFeatures.mobileRobotActions[].pauseAllowed` y `cancelAllowed`
+  pasan de `string` a `boolean`, que es lo que dice el PDF (§7.10, p. 97).
 
 `state`, `connection` e `instantActions` están sin modificar.

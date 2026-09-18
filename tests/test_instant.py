@@ -88,12 +88,19 @@ def test_cancel_order_con_y_sin_order():
 def test_no_soportadas_y_error_del_driver():
     r, d = _robot()
     d.pause = lambda: (_ for _ in ()).throw(ConnectionError("sin red"))
-    apply_instant_actions(r, _ia("factsheetRequest", "volar", "startPause"), lambda _: None)
+    apply_instant_actions(r, _ia("factsheetRequest", "volar", "startPause"), lambda _: None)   # sin factsheet
     assert [s.actionStatus for s in r.orders.instant_states] == ["FAILED"] * 3
     types = [e.errorType for e in r.orders.instant_errors]
     assert types == ["INVALID_INSTANT_ACTION"] * 3
     assert "sin red" in r.orders.instant_errors[2].errorDescription
     assert r.orders.instant_errors[1].errorReferences[0].referenceValue == "ia-1"
+
+
+def test_factsheet_request():
+    r, d = _robot()
+    published = []
+    apply_instant_actions(r, _ia("factsheetRequest"), lambda _: None, published.append)
+    assert published == [r] and r.orders.instant_states[0].actionStatus == "FINISHED"
     # driver sin pause() → FAILED, no excepción
     class Minimal(FakeDriver):
         pause = None

@@ -8,7 +8,7 @@ Soportadas (slugs literales de la norma, §6.10):
 | `stopPause`        | `driver.resume()`                                    |
 | `cancelOrder`      | `driver.cancel(job_id)` de la order activa           |
 | `stateRequest`     | publica un `state` ya (fuera del tick)               |
-| `factsheetRequest` | no implementado → FAILED (factsheet fuera de alcance)|
+| `factsheetRequest` | vuelve a publicar el `factsheet` retained             |
 
 El resultado de cada una va a `state.instantActionStates[]` (FINISHED /
 FAILED) y, si falla, a `state.errors[]` con `errorReferences: actionId`.
@@ -34,15 +34,17 @@ class InstantFailed(Exception):
 
 
 def apply_instant_actions(robot: Robot, actions: list[Action],
-                          publish_state: Callable[[Robot], None]) -> None:
+                          publish_state: Callable[[Robot], None],
+                          publish_factsheet: Callable[[Robot], None] | None = None) -> None:
     """Ejecuta las actions en orden y deja el resultado en el tracker del
-    robot. `publish_state` se llama al final (y en `stateRequest`)."""
+    robot. `publish_state` se llama al final (y en `stateRequest`);
+    `publish_factsheet` en `factsheetRequest` (None = no soportado)."""
     tr = robot.orders
     tr.instant_states = []
     tr.instant_errors = []
     for a in actions:
         try:
-            _apply_one(robot, a, publish_state)
+            _apply_one(robot, a, publish_state, publish_factsheet)
             status = "FINISHED"
             log.info("[%s] instantAction %s/%s FINISHED", robot.serial, a.actionType, a.actionId)
         except InstantFailed as e:
@@ -64,7 +66,8 @@ def _error(error_type: str, description: str, a: Action, robot: Robot) -> Error:
                            level="WARNING", action_id=a.actionId)
 
 
-def _apply_one(robot: Robot, a: Action, publish_state: Callable[[Robot], None]) -> None:
+def _apply_one(robot: Robot, a: Action, publish_state: Callable[[Robot], None],
+               publish_factsheet: Callable[[Robot], None] | None) -> None:
     d = robot.driver
     if a.actionType == "startPause":
         _require(d, "pause")()
@@ -79,7 +82,9 @@ def _apply_one(robot: Robot, a: Action, publish_state: Callable[[Robot], None]) 
     elif a.actionType == "stateRequest":
         publish_state(robot)
     elif a.actionType == "factsheetRequest":
-        raise InstantFailed(E_INVALID_INSTANT_ACTION, "factsheet no implementado en este FM")
+        if publish_factsheet is None:
+            raise InstantFailed(E_INVALID_INSTANT_ACTION, "factsheet no disponible")
+        publish_factsheet(robot)
     else:
         raise InstantFailed(E_INVALID_INSTANT_ACTION, f"actionType '{a.actionType}' no soportado")
 

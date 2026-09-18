@@ -96,6 +96,9 @@ missions de ejemplo de `ejemplos_mision/`.
 - `factsheet.schema`: varias comas finales; y `typeSpecification.required`
   pide `mobileRobotKinematic` mientras la propiedad se llama
   `mobileRobotKinematics`. Arreglado en local; ver `schemas/README.md`.
+- `factsheet.schema`: `mobileRobotActions[].pauseAllowed`/`cancelAllowed`
+  tipados como `string`; el PDF (§7.10, p. 97) dice `boolean`. Parcheado en
+  local (2026-09-18).
 - `dev/3.0.1` ya corrige el de `order`.
 
 ### Lo que dicen las missions de ejemplo (`ejemplos_mision/`, retirados del repo el 2026-09-17: eran referencia, no parte del proyecto)
@@ -834,3 +837,39 @@ marcador y el robot pasa por su entry él solo; la entry no es un destino.
     warnings de "position duplicada" al arrancar, y el desplegable de la UI
     lista cada marcador una sola vez. Los warnings de duplicado quedan para
     duplicados reales (mismo nombre en varios mapas, decisión 15).
+
+## 2026-09-18 — `factsheet` (§6.11)
+
+`pytest`: 76 en verde. Probado con el sim: retained al arrancar
+(`headerId 1`) y `factsheetRequest` → `FINISHED` + republicación (`headerId 2`).
+
+### Código
+
+- `fm/adapters/base.py`: `RobotSpec` y gancho opcional `describe_robot()`.
+  MiR: `MIR250_SPEC` (800×580×300 mm, 250 kg, 2.0 m/s, DIFF, CARRIER,
+  NATURAL/AUTONOMOUS). Sim: ficha genérica "SIM".
+- `fm/vda5050/factsheet.py`: `build_factsheet(header, actions, spec)` y
+  `factsheet_for(header, driver, ...)`. `mobileRobotActions` = actions del
+  driver (scope NODE, `actionParameters` STRING, `pauseAllowed`/
+  `cancelAllowed` true) + instantActions del core (scope INSTANT).
+  `protocolLimits`: `order.nodes` 1, `order.edges` 0, `node.actions` 1,
+  intervalos 0.5/1.0 s. `optionalParameters`: `actionParameters`,
+  `blockingType`. `mobileRobotGeometry`/`loadSpecification` vacíos.
+- `run_fm.py`: `publish_factsheet(r)` retained tras conectar;
+  `Dispatcher` lo recibe como callback y `factsheetRequest` lo llama
+  (antes → FAILED).
+- `schemas/factsheet.schema.json`: parche `pauseAllowed`/`cancelAllowed`
+  `string` → `boolean` (el PDF §7.10 p. 97 dice boolean).
+- Tests: `tests/test_factsheet.py` (MiR, sim, driver sin ganchos, sin
+  actions: todos validan contra el schema).
+
+### Decisiones nuevas
+
+49. **El factsheet lo construye el core**, como el `state`: el driver solo
+    aporta ficha y actions. Un driver sin ganchos obtiene un factsheet
+    válido con el nombre del driver como `seriesName` y las actions de
+    `fleet.yaml` sin parámetros.
+50. **`valueDataType` de todos los parámetros es `STRING`**: los
+    `position_inputs` son nombres de position y los `required_inputs` se
+    reenvían tal cual; el tipo real lo decide la mission de Blockly y el FM
+    no lo conoce. Si algún día hace falta, `ParamInfo.kind` puede crecer.

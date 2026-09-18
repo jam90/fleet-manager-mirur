@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, Telemetry
+from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, RobotSpec, Telemetry
 from fm.adapters.mir.client import STATE_PAUSE, STATE_READY, MirClient, MirStatus
 from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, to_telemetry
@@ -27,6 +27,13 @@ QUEUE_TO_JOB: dict[str, JobStatus] = {
 # 'Abort' durante un tick antes de 'Aborted'. No se sabe aún el resultado →
 # None (el core conserva el último estado y repregunta).
 QUEUE_TRANSIENT = {"Abort", "Cancel"}
+
+# Ficha del MiR250 (hoja de datos MiR): 800×580×300 mm, 250 kg, 2.0 m/s.
+MIR250_SPEC = RobotSpec("MiR250", kinematics="DIFF", robot_class="CARRIER", max_load_kg=250.0,
+                        localization_types=["NATURAL"], navigation_types=["AUTONOMOUS"],
+                        min_speed=0.0, max_speed=2.0, max_acceleration=1.0, max_deceleration=1.0,
+                        width=0.58, length=0.80, height=0.30,
+                        description="MiR250 vía REST API v2.0.0; cada actionType es una mission de la web")
 
 
 class MirDriver:
@@ -135,6 +142,9 @@ class MirDriver:
 
     def extra_state(self, s: State) -> None:
         """Nada que añadir: el MiR no expone más de lo que ya va en Telemetry."""
+
+    def describe_robot(self) -> RobotSpec:
+        return MIR250_SPEC
 
     def describe_actions(self) -> list[ActionInfo]:
         """Actions de `fleet.yaml` con sus inputs; las positions indexadas

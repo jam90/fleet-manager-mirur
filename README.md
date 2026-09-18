@@ -7,7 +7,7 @@ hoy MiR250 por REST y un robot simulado sin hardware; añadir otra marca es una
 carpeta más. Sin ROS 2, sin MiR Fleet, sin Open-RMF. Pensado también como
 material didáctico: el código está comentado explicando el *por qué*.
 
-Todo lo de abajo está probado con dos MiR250 reales. Pendiente: `factsheet`.
+Todo lo de abajo está probado con dos MiR250 reales.
 Detalle y decisiones en [`docs/avance.md`](docs/avance.md); brief de arranque
 en [`CLAUDE.md`](CLAUDE.md).
 
@@ -123,6 +123,7 @@ el nombre de flota `mqtt.fleet_manufacturer` (`imperial_fleet`).
 | `vda5050/v3/MiR/<serial>/connection` | FM → bus | 1 | sí + Last Will |
 | `vda5050/v3/MiR/<serial>/order` | bus → FM | 1 | no |
 | `vda5050/v3/MiR/<serial>/instantActions` | bus → FM | 1 | no |
+| `vda5050/v3/MiR/<serial>/factsheet` | FM → bus, al arrancar y en `factsheetRequest` | 0 | sí |
 | `vda5050/v3/imperial_fleet/fleet/order` | bus → FM | 1 | no |
 | `vda5050/v3/imperial_fleet/fleet/order_response` | FM → bus | 1 | no |
 
@@ -310,7 +311,8 @@ actions de una order. Soportadas:
 | `stopPause` | reanuda (`state_id: 3`) | `FINISHED` |
 | `cancelOrder` | aborta el job de la order activa (MiR: `DELETE /mission_queue/<id>`); la action pasa a `FAILED` sin error de ejecución | `FINISHED`, o `FAILED` + `NO_ORDER_TO_CANCEL` si no hay order |
 | `stateRequest` | publica un `state` inmediatamente | `FINISHED` |
-| `factsheetRequest`, otros | no soportado | `FAILED` + `INVALID_INSTANT_ACTION` |
+| `factsheetRequest` | vuelve a publicar el `factsheet` retained | `FINISHED` |
+| otros | no soportado | `FAILED` + `INVALID_INSTANT_ACTION` |
 
 El resultado va en `state.instantActionStates[]` y los fallos en
 `state.errors[]` con `errorReferences: [{actionId}]`; se conservan hasta el
@@ -334,6 +336,18 @@ Nada de lo que hace la UI es un camino aparte: se ve en `mosquitto_sub`.
 `GET /api/fleet` da el catálogo (robots, actions y parámetros, umbrales);
 `/api/docs` es el OpenAPI. Un robot de otra marca aparece solo: la página no
 sabe nada de MiR.
+
+### `factsheet` (FM → bus, retained)
+
+Ficha del robot y del protocolo (§6.11), construida por el core a partir de
+dos ganchos opcionales del driver: `describe_robot()` (serie, cinemática,
+carga, velocidades, dimensiones — para MiR250, los de la hoja de datos) y
+`describe_actions()`. `protocolFeatures.mobileRobotActions` lista los
+`actionType` de `fleet.yaml` (scope `NODE`, con sus `actionParameters`) y las
+instantActions soportadas (scope `INSTANT`); `protocolLimits` refleja los
+límites del FM (una action por order, sin edges). Válido contra el schema
+oficial (con el parche `pauseAllowed`/`cancelAllowed` → boolean, ver
+`schemas/README.md`).
 
 ## Auto-carga
 

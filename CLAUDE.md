@@ -342,7 +342,7 @@ Reglas (§6.1.4 del estándar, obligatorias para poder decir "cumple VDA 5050"):
 | `stopPause` | `PUT /status {"state_id": 3}` |
 | `cancelOrder` | `DELETE /mission_queue/<queue_id>` de la order activa + cerrar estado interno con `orderError` en `state.errors` |
 | `stateRequest` | publicar un `state` inmediatamente (fuera del tick) |
-| `factsheetRequest` | opcional; si se implementa, publicar `factsheet` retained |
+| `factsheetRequest` | republica el `factsheet` retained (implementado 2026-09-18, `fm/vda5050/factsheet.py`) |
 
 Publicar el resultado en `state.instantActionStates[]` (`actionStatus`
 FINISHED/FAILED). `cancelOrder` sin order activa → FAILED + log, no-op.

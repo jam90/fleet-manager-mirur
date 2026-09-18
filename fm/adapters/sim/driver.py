@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Mapping
 
-from fm.adapters.base import ActionInfo, Job, JobStatus, Telemetry
+from fm.adapters.base import ActionInfo, Job, JobStatus, RobotSpec, Telemetry
 from fm.config import ConfigError
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import E_INVALID_ORDER_ACTION, State
@@ -187,6 +187,9 @@ class SimDriver:
 
     def extra_state(self, s: State) -> None:
         """Nada que añadir."""
+
+    def describe_robot(self) -> RobotSpec:
+        return RobotSpec("SIM", description="robot simulado sin hardware (fm/adapters/sim)")
 
     def describe_actions(self) -> list[ActionInfo]:
         return [ActionInfo(t, [], f"sim {self.cfg.duration_s:.0f}s") for t in sorted(self.cfg.action_types)]

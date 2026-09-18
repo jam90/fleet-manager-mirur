@@ -21,11 +21,13 @@ log = logging.getLogger("fm.fleet")
 
 
 class Dispatcher:
-    def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus, publish_state):
+    def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus, publish_state,
+                 publish_factsheet=None):
         self.cfg = cfg
         self.robots = robots
         self.bus = bus
         self.publish_state = publish_state      # callback(robot) → publica state ya (§6.6 eventos)
+        self.publish_factsheet = publish_factsheet   # callback(robot) → factsheet retained (H5 factsheetRequest)
         self.last_fleet_order: tuple[str, int] | None = None
 
     def subscribe(self) -> None:
@@ -98,7 +100,7 @@ class Dispatcher:
             log.warning("[%s] instantActions rechazadas: %s", serial, e)
             self.publish_state(robot)
             return
-        apply_instant_actions(robot, actions, self.publish_state)
+        apply_instant_actions(robot, actions, self.publish_state, self.publish_factsheet)
 
     def handle_fleet_order(self, data, header_err: str | None) -> None:
         order_id = data.get("orderId") if isinstance(data, dict) else None

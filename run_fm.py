@@ -25,6 +25,7 @@ from fm.config import ConfigError, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus  # noqa: E402
 from fm.robot import Robot  # noqa: E402
+from fm.vda5050.factsheet import factsheet_for  # noqa: E402
 from fm.vda5050.state_builder import to_vda_state  # noqa: E402
 
 log = logging.getLogger("fm")
@@ -109,7 +110,15 @@ def main(argv=None) -> int:
                              error=r.last_error)
         bus.publish_raw(r.serial, "state", state.to_dict())
 
-    dispatcher = Dispatcher(cfg, robots, bus, publish_state)
+    def publish_factsheet(r: Robot) -> None:
+        fs = factsheet_for(bus.next_header(r.serial, "factsheet"), r.driver,
+                           sorted(r.cfg.action_types), r.cfg.driver)
+        bus.publish_raw(r.serial, "factsheet", fs, retain=True)   # §6.11: retained
+
+    for r in robots.values():
+        publish_factsheet(r)
+
+    dispatcher = Dispatcher(cfg, robots, bus, publish_state, publish_factsheet)
     dispatcher.subscribe()
 
     if web is not None:

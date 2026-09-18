@@ -68,6 +68,25 @@ class ActionInfo:
     description: str = ""                # p.ej. el nombre de la mission en MiR
 
 
+@dataclass
+class RobotSpec:
+    """Ficha técnica de la marca para el `factsheet` VDA (§6.11). Unidades SI."""
+    series_name: str                     # "MiR250"
+    kinematics: str = "DIFF"             # DIFF | OMNI | THREEWHEEL
+    robot_class: str = "CARRIER"         # FORKLIFT | CONVEYOR | TUGGER | CARRIER
+    max_load_kg: float = 0.0
+    localization_types: list[str] = field(default_factory=lambda: ["NATURAL"])
+    navigation_types: list[str] = field(default_factory=lambda: ["AUTONOMOUS"])
+    min_speed: float = 0.0               # m/s
+    max_speed: float = 1.0
+    max_acceleration: float = 0.5        # m/s²
+    max_deceleration: float = 0.5
+    width: float = 0.5                   # m
+    length: float = 0.5
+    height: float = 0.3
+    description: str = ""
+
+
 class RobotDriver(Protocol):
     """Contrato que cumple cada marca. Todos los métodos de red son
     tolerantes: no lanzan, devuelven None/False y guardan `last_error`."""
@@ -109,3 +128,7 @@ class RobotDriver(Protocol):
     def describe_actions(self) -> list[ActionInfo]:
         """Gancho opcional: actionTypes que acepta y sus parámetros (UI,
         factsheet). Sin él, el core usa solo los nombres de `actions:`."""
+
+    def describe_robot(self) -> RobotSpec:
+        """Gancho opcional: ficha técnica para el `factsheet`. Sin él, el
+        core publica una genérica con el nombre del driver."""
