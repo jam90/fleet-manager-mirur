@@ -36,7 +36,8 @@ def test_state_valida_contra_schema():
     assert d["mobileRobotPosition"]["mapId"] == "map-guid"
     assert math.isclose(d["mobileRobotPosition"]["theta"], math.radians(-0.8))
     assert d["powerSupply"] == {"stateOfCharge": 54.9, "charging": False}
-    assert d["information"] == [{"infoType": "MISSION", "infoLevel": "INFO", "infoDescriptor": "Ir a H2D1"}]
+    assert d["information"][0] == {"infoType": "MISSION", "infoLevel": "INFO", "infoDescriptor": "Ir a H2D1"}
+    assert d["information"][1]["infoLevel"] == "DEBUG"
     assert d["safetyState"] == {"activeEmergencyStop": "NONE", "fieldViolation": False}
     # header ≡ topic
     assert d["manufacturer"] == "MiR" and d["serialNumber"] == "mir-2" and d["headerId"] == 1

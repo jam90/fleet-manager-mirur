@@ -106,9 +106,11 @@ def tick_robot(r: Robot, bus: MqttBus) -> None:
     if t is not None:
         acts = ",".join(f"{a.actionType}:{a.actionStatus}" for a in state.actionStates) or "-"
         x, y = t.pose[:2] if t.pose else (float("nan"), float("nan"))
-        r.log.info("state hdr=%d pos=(%.2f,%.2f) bat=%.1f%% mode=%s drv=%d order=%s/%d acts=%s errs=%d",
+        dbg = " ".join(i.infoDescriptor or "" for i in t.information if i.infoLevel == "DEBUG")
+        r.log.info("state hdr=%d pos=(%.2f,%.2f) bat=%.1f%% mode=%s drv=%d busy=%d/%d order=%s/%d acts=%s errs=%d %s",
                    state.headerId, x, y, t.battery, t.operating_mode, t.driving,
-                   state.orderId or "-", state.orderUpdateId, acts, len(state.errors))
+                   r.orders.busy, t.foreign_busy, state.orderId or "-", state.orderUpdateId,
+                   acts, len(state.errors), dbg)
     else:
         r.log.info("state hdr=%d SIN telemetría errs=%d", state.headerId, len(state.errors))
 

@@ -46,6 +46,11 @@ def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetr
     running = st.mission_queue_id is not None or st.state_id == STATE_EXECUTING
     foreign = running and st.mission_queue_id not in own_queue_ids
     info = [Info("MISSION", "INFO", st.mission_text)] if st.mission_text else []
+    # Para depurar "ocupado por mission ajena" sin abrir la web del MiR:
+    # state_id y la entrada de cola en curso, tal cual los da /status.
+    info.append(Info("MIR_STATUS", "DEBUG",
+                     f"state_id={st.state_id} mission_queue_id={st.mission_queue_id}"
+                     + (" (propia)" if st.mission_queue_id in own_queue_ids else "")))
     return Telemetry(
         battery=st.battery_percentage,
         pose=(st.x, st.y, st.theta),

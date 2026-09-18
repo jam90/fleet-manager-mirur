@@ -17,7 +17,9 @@ def test_ready_disponible_y_libre():
     assert t.battery == 61.0 and t.map_id == "m" and t.pose[:2] == (1.0, 2.0)
     assert t.operating_mode == "AUTOMATIC" and not t.emergency_stop
     assert t.charging is None          # el MiR no lo dice: decide el overlay
-    assert t.errors == [] and t.information == []
+    assert t.errors == []
+    assert [i.infoType for i in t.information] == ["MIR_STATUS"]      # solo el DEBUG
+    assert t.information[0].infoLevel == "DEBUG" and "state_id=3" in t.information[0].infoDescriptor
 
 
 def test_estados_no_disponibles():

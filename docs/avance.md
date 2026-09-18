@@ -511,5 +511,72 @@ batería baja mientras ejecutan; `state` bajo `vda5050/v3/SIM/sim-1/…`.
   por robot, `imperial_fleet`), §5.6/5.7 (headers de `fleet/*`) y §8
   (`fleet.yaml` en formato nuevo). El resto del brief se deja como estaba:
   es el documento de arranque y su historia sigue siendo válida.
-- Pendiente (fase 6b): validación con los MiR reales, misma prueba que el
-  2026-09-16 13:25.
+- Fase 6b (validación con robots): ver la entrada siguiente.
+
+## 2026-09-17/18 — Drivers fase 6b: validación con los MiR reales
+
+Cierra el plan de drivers: el FM refactorizado se comporta con los dos
+MiR250 igual que el 2026-09-16, y además se han probado casos que entonces
+quedaron pendientes. `pytest`: 57 en verde.
+
+### Código (ajustes a raíz de la prueba)
+
+- `MirDriver.job_status`: `'Abort'` (y `'Cancel'`) son estados transitorios
+  de `mission_queue` vistos en robot real (un tick antes de `'Aborted'`);
+  ahora devuelven None sin warning ("estado desconocido") y el core conserva
+  el último estado hasta el tick siguiente.
+- `to_telemetry` añade una `Info("MIR_STATUS", "DEBUG", "state_id=… mission_queue_id=… (propia)")`
+  (nivel `DEBUG` es válido en el schema §7.8). Sirve para explicar un
+  "ocupado" sin abrir la web del MiR; el log del tick la imprime junto con
+  `busy=<propia>/<ajena>`.
+
+### Prueba 2026-09-17 12:43–12:49
+
+mir-1 Ready 49.9 %, mir-2 Ready 36.6 %, ambos sin mission.
+
+1. Arranque: índices 4 missions / 21 y 20 positions (mismos avisos de
+   duplicados que el 16/09); `state` bajo `vda5050/v3/MiR/<serial>/state`.
+2. `fleet/order coger` → `ASSIGNED mir-1` (mayor batería), job 1314 `RUNNING`.
+   Segunda → `ASSIGNED mir-2`, job 338 `RUNNING`.
+3. Tercera con ambos ocupados → `REJECTED NO_MOBILE_ROBOT_AVAILABLE: mir-1:
+   ocupado; mir-2: ocupado`. Reenvío con el `orderId` de la primera →
+   también rechazada (la idempotencia solo cubre la última order aceptada,
+   decisión 20).
+4. mir-2 abortada desde la web a los 27 s → `coger:FAILED` +
+   `ORDER_EXECUTION_FAILED` en `state.errors`; mir-1 abortada a los 3.5 min.
+5. Robots en **Pause** sin mission en cola → `fleet/order` aceptada
+   (`ASSIGNED mir-1`, job 1315 `WAITING` en la cola hasta reanudar). Es lo
+   previsto en las decisiones 16/18: Pause solo bloquea si hay mission ajena.
+6. Un rechazo "mir-2: ocupado" a las 12:46:54 con mir-2 aparentemente Ready
+   resultó ser una mission ajena en cola (mir-2 alternó Executing/Ready esos
+   minutos); de ahí la `Info MIR_STATUS` de arriba.
+
+### Prueba 2026-09-18 08:04–08:13
+
+7. Ctrl-C → `OFFLINE` retenido en `mir-1`, `mir-2` y `fleet/connection`
+   (`imperial_fleet`).
+8. `fleet/order coger` → mir-1, `RUNNING → FINISHED` a los 2 min 41 s
+   (primer `Done` real con el código nuevo); `orderId` se conserva en `state`.
+9. **Mission ajena**: con una mission lanzada desde la web en mir-1
+   (`busy=0/1`, queue 1319 no propia): `fleet/order` → `ASSIGNED mir-2`
+   pese a tener menos batería; segunda → `REJECTED` (mir-1 ajena, mir-2
+   propia); order **dirigida** a mir-1 → `MOBILE_ROBOT_NOT_AVAILABLE: el
+   robot ejecuta un trabajo ajeno al FM`, visible en `state.errors`.
+10. **Robot apagado** (mir-1): `state` sigue publicándose sin posición y con
+    `ROBOT_UNREACHABLE` (URGENT, `ConnectTimeout`); `fleet/order` →
+    `ASSIGNED mir-2` (mir-1 `available=False`); `GET /status` se reintenta
+    cada tick.
+
+### Observaciones / pendiente
+
+- **Cadencia con un robot apagado**: cada tick espera el timeout de
+  conexión (2 s) del robot caído, así que el `state` de TODOS baja de 1 Hz a
+  ~0,5 Hz. No es de esta refactorización (bucle secuencial de un hilo).
+  Solución propuesta: `poll()` de los robots en paralelo con un
+  `ThreadPoolExecutor` solo para esa llamada. Pendiente de decidir.
+- No probado aún: recuperación de un robot que vuelve a encenderse
+  (índices ya cargados; debería bastar con que `poll()` vuelva a responder),
+  order con parámetros (`position_inputs`), order update sobre order
+  terminada, `powerSupply.charging` en el dock.
+- H4 auto-carga sigue sin implementar: `charge_mission` se resuelve y
+  `driver.charge_job()` existe, pero nada lo llama todavía.

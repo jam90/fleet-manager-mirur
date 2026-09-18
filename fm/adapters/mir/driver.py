@@ -23,6 +23,10 @@ QUEUE_TO_JOB: dict[str, JobStatus] = {
     "Pending": "WAITING", "Executing": "RUNNING", "Done": "FINISHED",
     "Aborted": "FAILED", "Cancelled": "FAILED", "Canceled": "FAILED",
 }
+# Estados transitorios vistos en robot real (2026-09-17): el MiR responde
+# 'Abort' durante un tick antes de 'Aborted'. No se sabe aún el resultado →
+# None (el core conserva el último estado y repregunta).
+QUEUE_TRANSIENT = {"Abort", "Cancel"}
 
 
 class MirDriver:
@@ -105,7 +109,7 @@ class MirDriver:
             return None
         state = str(q.get("state", ""))
         status = QUEUE_TO_JOB.get(state)
-        if status is None:
+        if status is None and state not in QUEUE_TRANSIENT:
             self.log.warning("mission_queue/%s en estado desconocido '%s'", job_id, state)
         elif status in ("FINISHED", "FAILED"):
             self._own_queue_ids.discard(int(job_id))
