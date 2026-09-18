@@ -630,3 +630,24 @@ sim-2 vuelve a ser asignable). **No probado aún con los MiR reales**
     docking → charging (`minimum_percentage: 70`, `charge_until_new_mission:
     false`) → relative_move → if/load_mission. Termina `Done` sola: se elige
     la opción "porcentaje objetivo" de la trampa del deadlock (§7).
+
+### Prueba de auto-carga con mir-2 real (2026-09-18 08:37–08:49)
+
+`battery_floor` subido temporalmente a 32 en `fleet.yaml` (mir-2 al 30.5 %,
+mir-1 apagado, FM con `--robot mir-2`):
+
+1. Primer tick: `batería 30.5% < suelo 32%: auto-carga mission 'Carga en
+   estación MIRUR' job=347 (prioridad 10)` → `WAITING → RUNNING`; el robot
+   va al dock (`drv=1`, `chg=1`, `busy=0/1/0`, cola 347 "propia").
+2. `state`: `powerSupply.charging: true`, `information[]` con `AUTO_CHARGE
+   "mission 'Carga en estación MIRUR' (RUNNING)"` y `MISSION "Moving to
+   'Charging station 48V 35A' (0 meters to goal)"`.
+3. `fleet/order coger` mientras carga → `REJECTED NO_MOBILE_ROBOT_AVAILABLE:
+   mir-2: ocupado`.
+4. Carga abortada desde la web a los 10 min → `RUNNING → FAILED`, cooldown
+   60 s, `chg=0`, robot libre. Batería 30.5 → 52.4 % en el dock: el
+   `charging=true` aproximado (decisión 35) coincidió con la realidad.
+5. `battery_floor` devuelto a 20.
+
+Nota de uso: los valores de `AutoChargeConfig` en `fm/config.py` son solo
+defaults de Python por si `fleet.yaml` no trae la clave; el yaml manda.
