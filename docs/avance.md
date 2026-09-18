@@ -737,3 +737,30 @@ ahora cada 1.00 s sin excepción, y el robot caído se consulta cada 8 s.
 43. **Un poll pendiente no se apila**: si el anterior no ha vuelto, no se
     lanza otro; así un robot apagado consume como mucho un hilo y una
     conexión en curso.
+
+## 2026-09-18 — Orders con parámetros probadas con mir-2
+
+El usuario añadió al grupo `mirur-tknika` tres missions de prueba (copiadas
+de otro proyecto; las definitivas, tipo "coge 5 contactores y llévalos a la
+balda 3", están por desarrollar): `Ir a zona de espera MIRUR` (sin inputs),
+`Simular Apertura Puerta H2DX MIRUR` y `Simulacion Recogida pieza H2DX
+MIRUR` (input `target_pos`, position; esta última solo en mir-2).
+
+`fleet.yaml`: actions `ir_a_espera`, `abrir_puerta` y `recoger_pieza`
+(solo mir-2) con `position_inputs: [target_pos]`.
+
+Prueba (10:00, FM con `--robot mir-2`):
+
+1. `send_order.py mir-2 abrir_puerta` sin parámetro → `VALIDATION_FAILURE:
+   falta el parámetro obligatorio 'target_pos' (position)`.
+2. `target_pos=NoExiste` → `NO_ROUTE_TO_TARGET: [mir-2] position 'NoExiste'
+   no existe`.
+3. `target_pos=H2D2` → aceptada; en la cola del MiR (id 350)
+   `parameters: [{"id": "target_pos", "value": "c2625f33-…", "label": "H2D2"}]`
+   y el robot fue a H2D2 ("Moving to 'H2D2' (3.7 meters to goal)").
+   Abortada desde la web (la mission espera un registro PLC) → `FAILED`.
+
+Con esto quedan probados con robot todos los caminos de `from_vda_order`
+salvo `required_inputs` (no hay mission con inputs no-position) y la
+`positions_allowlist` (cubiertos por tests). Sigue pendiente decidir qué
+`type_id` (11/12) recibe `target_pos` para las positions `*-VL` duplicadas.

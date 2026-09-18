@@ -46,9 +46,14 @@ robots:
     battery_min: 25
     actions:
       coger:
-        mission: "coger"       # sin parámetros por ahora
+        mission: "coger"       # sin parámetros
       dejar:
         mission: "dejar"
+      ir_a_espera:
+        mission: "Ir a zona de espera MIRUR"
+      abrir_puerta:            # prueba de parámetros: target_pos = nombre de position
+        mission: "Simular Apertura Puerta H2DX MIRUR"
+        position_inputs: [target_pos]
   mir-2:
     driver: mir
     host: 192.168.15.15
@@ -58,6 +63,14 @@ robots:
         mission: "coger"
       dejar:
         mission: "dejar"
+      ir_a_espera:
+        mission: "Ir a zona de espera MIRUR"
+      abrir_puerta:
+        mission: "Simular Apertura Puerta H2DX MIRUR"
+        position_inputs: [target_pos]
+      recoger_pieza:           # solo existe en mir-2
+        mission: "Simulacion Recogida pieza H2DX MIRUR"
+        position_inputs: [target_pos]
 
 # Un robot simulado puede convivir con los reales (útil en clase; ojo: el
 # asignador lo tratará como uno más). Flota solo simulada: config/fleet-sim.yaml.

@@ -51,6 +51,9 @@ robots:
     actions:
       coger: { mission: "coger" }
       dejar: { mission: "dejar" }
+      abrir_puerta:
+        mission: "Simular Apertura Puerta H2DX MIRUR"
+        position_inputs: [target_pos]   # la order trae {"key": "target_pos", "value": "H2D2"}
 ```
 
 El core solo lee `driver`, `manufacturer` (opcional; por defecto el del
