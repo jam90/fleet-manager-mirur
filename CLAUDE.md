@@ -32,6 +32,46 @@
 - Cuando haya que probar contra hardware, **pregunta al usuario** antes de
   lanzar cualquier mission: los robots se mueven físicamente.
 
+### Estado y entorno (actualizado 2026-09-21)
+
+- **Estado del proyecto:** brief H0–H6 completo + factsheet + drivers por
+  marca + interfaz web. Todo probado con los dos MiR250. Lo abierto está al
+  final de `docs/avance.md` (p.ej. `required_inputs` con robot). Versiones en
+  GitHub (`jam90/fleet-manager-mirur`): tags `v0.1-mir-only`, `v0.2-drivers`,
+  `v0.3-ui`; después se sigue en `main` sin tag.
+- **Arquitectura real:** ver §4 (drivers en `fm/adapters/<marca>/`, core sin
+  imports de MiR, UI en `fm/web/`). Planes cerrados: `docs/plan-drivers.md`,
+  `docs/plan-ui.md`.
+- **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
+  (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
+  pytest peta al importar `lark`). Ejecutar Python siempre con
+  `env -u PYTHONPATH .venv/bin/python` por el mismo motivo.
+- **Arranque:** `run_fm.py` (robots reales, web en `:8050`);
+  `--config config/fleet-sim.yaml` para probar sin robots; `--robot mir-2`
+  para uno solo; `--web-port 0` sin web. Mosquitto local en `localhost:1883`
+  (sin websockets; el 9001 y el 8080 los ocupan otros servicios del PC).
+- **Robots:** mir-1 `192.168.15.5`, mir-2 `192.168.15.15`; token en `.env`.
+  Missions de prueba en el grupo `mirur-tknika`: `coger`, `dejar`,
+  `Ir a zona de espera MIRUR`, `Simular Apertura Puerta H2DX MIRUR`
+  (`target_pos`) y, solo en mir-2, `Simulacion Recogida pieza H2DX MIRUR`.
+  Las definitivas ("coge 5 contactores y llévalos a la balda 3") están por
+  crear en la web del MiR. Mission de carga: `Carga en estación MIRUR`
+  (hasta 70 %, termina sola).
+- **Al parar el FM desde un shell** usa `kill -INT <pid>` (Ctrl-C); un
+  `pkill -f` con el patrón dentro de la misma línea de comandos se mata a sí
+  mismo. Comprueba `OFFLINE` en `+/connection` retained.
+- **Acceso a la web desde otros equipos:** el FM corre en WSL2 (IP interna
+  `172.18.x.x`, no alcanzable desde la wifi). Pendiente de comprobar por el
+  usuario (2026-09-18): si WSL está en modo `mirrored` basta con
+  `http://<IP-Windows>:8050/`; si es NAT hay que hacer `netsh interface
+  portproxy add v4tov4 listenport=8050 listenaddress=0.0.0.0 connectport=8050
+  connectaddress=<IP-WSL>` + regla de firewall en PowerShell (admin).
+- **Node-RED:** no hay flujo aún; el emisor de `fleet/order` debe usar el
+  topic `vda5050/v3/imperial_fleet/fleet/order` y header
+  `manufacturer: "imperial_fleet", serialNumber: "fleet"`. `MIR-UR-Node-red/`
+  en el directorio padre es material de otro proyecto (UR + cámara), no de
+  este repo.
+
 ---
 
 ## 1. Objetivo
