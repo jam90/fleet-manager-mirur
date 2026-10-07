@@ -136,7 +136,13 @@
   .resp.ASSIGNED { border-left-color: var(--ok); } .resp.REJECTED { border-left-color: var(--bad); } .resp.pending { border-left-color: var(--warn); }
 
   .events { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; max-height: 340px; overflow: auto; }
-  .events li { display: grid; grid-template-columns: 7ch 7ch 1fr; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  /* 4.ª columna: resultado con que terminó la mission (actionResult); solo se rellena al terminar. */
+  .events li { display: grid; grid-template-columns: 7ch 7ch minmax(0, 1fr) minmax(0, 18ch); gap: 10px;
+    padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .events li.head { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+  .events .res { overflow-wrap: anywhere; }
+  .events .res.s-FAILED { font-weight: 600; }
   .events .t { color: var(--ink-3); } .events .who { color: var(--ink-2); font-weight: 600; }
   .empty { color: var(--ink-3); font-size: 13px; }
 </style>
@@ -249,7 +255,8 @@
       <div class="panel">
         <h3>Eventos</h3>
         <ul class="events" v-if="events.length">
-          <li v-for="e in events" :key="e.id"><span class="t num">{{ e.t }}</span><span class="who">{{ e.who }}</span><span>{{ e.text }}</span></li>
+          <li class="head"><span>hora</span><span>quién</span><span>evento</span><span>resultado</span></li>
+          <li v-for="e in events" :key="e.id"><span class="t num">{{ e.t }}</span><span class="who">{{ e.who }}</span><span>{{ e.text }}</span><span class="res" :class="e.status && 's-' + e.status">{{ e.result }}</span></li>
         </ul>
         <p class="empty" v-else>Aquí aparecen los cambios de estado de las orders, las respuestas de la flota y los errores nuevos.</p>
       </div>
@@ -282,8 +289,9 @@ createApp({
     let eventId = 0;
     const prev = {};                  // serial → { acts: {actionId: status}, errs: Set, instant: {actionId: status} }
 
-    function addEvent(who, text, iso) {
-      events.unshift({ id: ++eventId, t: hhmmss(iso), who, text });
+    // result/status: solo en los fines de mission (actionResult del MiR, coloreado por actionStatus).
+    function addEvent(who, text, iso, result = '', status = '') {
+      events.unshift({ id: ++eventId, t: hhmmss(iso), who, text, result, status });
       if (events.length > 60) events.pop();
     }
 
@@ -310,8 +318,8 @@ createApp({
       for (const a of s.actionStates || []) {
         const before = p.acts[a.actionId];
         if (before !== a.actionStatus) {
-          if (before !== undefined || a.actionStatus !== 'WAITING') addEvent(serial, `${a.actionType} ${before ? before + ' → ' : ''}${a.actionStatus}`
-                                                                    + (a.actionResult ? ` (${a.actionResult})` : ''), s.timestamp);
+          if (before !== undefined || a.actionStatus !== 'WAITING') addEvent(serial, `${a.actionType} ${before ? before + ' → ' : ''}${a.actionStatus}`,
+                                                                    s.timestamp, a.actionResult || '', a.actionStatus);
           p.acts[a.actionId] = a.actionStatus;
         }
       }

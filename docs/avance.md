@@ -1039,6 +1039,21 @@ dice si fue una parada o un fallo.
     cambian entre versiones. Se aplica también a `FINISHED` si el MiR
     trae `message`.
 
+## 2026-10-07 — Columna "resultado" en la tabla de eventos
+
+Petición del usuario: en vez del motivo entre paréntesis al final de la
+línea (`RUNNING → FAILED (Aborted - User Request)`), una columna propia en
+los eventos para reconocerlo de un vistazo, aunque solo se rellene en los
+fines de mission. Probado por el usuario en la web: se queda.
+
+- `fm/web/static/index.html`: eventos con cabecera (hora · quién · evento ·
+  resultado); `addEvent(who, text, iso, result, status)`; la columna lleva
+  `actionResult` coloreado por `actionStatus` (FAILED en rojo y negrita,
+  FINISHED en verde). La tarjeta del robot no cambia (motivo junto al
+  estado).
+- Comprobado en jsdom: parada a mano, "Unable to find path to goal." y fin
+  normal, cada uno en su fila; las filas sin resultado quedan vacías.
+
 ## Pendiente (a 2026-10-07)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
