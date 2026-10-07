@@ -3,7 +3,7 @@ import pytest
 
 from fm.adapters.base import ActionInfo
 from fm.adapters.mir import MirDriver
-from fm.adapters.mir.config import ActionConfig, MirRobotConfig
+from fm.adapters.mir.config import ActionConfig, MirRobotConfig, NumberRange
 from fm.adapters.sim import SimDriver, SimRobotConfig
 from fm.vda5050.factsheet import build_factsheet, factsheet_for
 from fm.vda5050.header import HeaderCounter, make_header
@@ -18,7 +18,9 @@ def test_mir_factsheet_valida_y_lista_actions():
     cfg = MirRobotConfig("mir-1", "h", "a", {
         "coger": ActionConfig("coger", "coger"),
         "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"], required_inputs=["pieza"],
-                             number_inputs=["n_piezas_pedidas"]),
+                             number_inputs=["n_piezas_pedidas"],
+                             number_ranges={"n_piezas_pedidas": NumberRange(1, 10, 1)},
+                             positions_allowlist={"Montaje", "Deshecho"}),
     })
     fs = factsheet_for(_header(), MirDriver(cfg), driver_name="mir")
     assert_valid("factsheet", fs)
@@ -27,6 +29,8 @@ def test_mir_factsheet_valida_y_lista_actions():
     assert acts["coger"]["actionScopes"] == ["NODE"] and "actionParameters" not in acts["coger"]
     assert [(p["key"], p["valueDataType"], p["isOptional"]) for p in acts["ir_a"]["actionParameters"]] == [
         ("target_pos", "STRING", False), ("pieza", "STRING", False), ("n_piezas_pedidas", "NUMBER", False)]
+    descr = [p["description"] for p in acts["ir_a"]["actionParameters"]]
+    assert descr == ["nombre de position: Deshecho, Montaje", "text", "number en [1, 10]"]
     assert acts["cancelOrder"]["actionScopes"] == ["INSTANT"] and acts["factsheetRequest"]["actionScopes"] == ["INSTANT"]
     assert fs["protocolLimits"]["maximumArrayLengths"]["node.actions"] == 1
     assert fs["manufacturer"] == "MiR" and fs["serialNumber"] == "mir-1"

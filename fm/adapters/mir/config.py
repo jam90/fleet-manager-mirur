@@ -13,6 +13,12 @@ robots:
     actions:
       ir_a: { mission: "Ir a posición", position_inputs: [target_pos], required_inputs: [pieza] }
       pedir: { mission: "Pedir piezas", number_inputs: [n_piezas_pedidas] }
+      llevar:
+        mission: "Llevar piezas"
+        position_inputs: [target_pos]
+        positions_allowlist: [Deshecho, Montaje]          # solo estas para ESTA action
+        number_inputs:                                    # forma con rango (deslizador en la UI)
+          n_piezas_pedidas: { min: 1, max: 10, step: 1 }
 ```
 
 `auth` sale del entorno: `MIR_AUTH_<SERIAL>`, si no `MIR_AUTH` (alias
@@ -30,6 +36,14 @@ log = logging.getLogger("fm.mir")
 
 
 @dataclass
+class NumberRange:
+    """Límites de un `number_inputs`. None = sin límite por ese lado."""
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+
+
+@dataclass
 class ActionConfig:
     """Cómo se traduce un `actionType` VDA a una mission del MiR."""
     action_type: str
@@ -37,6 +51,8 @@ class ActionConfig:
     position_inputs: list[str] = field(default_factory=list)   # inputs cuyo valor es un nombre de position
     required_inputs: list[str] = field(default_factory=list)   # inputs obligatorios (se reenvían tal cual)
     number_inputs: list[str] = field(default_factory=list)     # inputs obligatorios numéricos ("5" → 5)
+    number_ranges: dict[str, NumberRange] = field(default_factory=dict)   # límites opcionales por input
+    positions_allowlist: set[str] | None = None   # None = las que admita el robot
 
 
 @dataclass
@@ -48,6 +64,28 @@ class MirRobotConfig:
     mission_group: str | None = None              # None = todas las missions del robot
     charge_mission: str | None = None             # None = auto-carga desactivada
     positions_allowlist: set[str] | None = None   # None = cualquier position del robot
+
+
+def _parse_numbers(serial: str, atype: str, raw) -> dict:
+    """`number_inputs` admite dos formas: lista de nombres (sin límites) o
+    mapping nombre → `{min, max, step}` (cada clave opcional)."""
+    if not raw:
+        return {}
+    if not isinstance(raw, Mapping):
+        return {"number_inputs": [str(k) for k in raw]}
+    ranges: dict[str, NumberRange] = {}
+    for key, spec in raw.items():
+        spec = spec or {}
+        try:
+            r = NumberRange(*(None if spec.get(k) is None else float(spec[k]) for k in ("min", "max", "step")))
+        except (TypeError, ValueError, AttributeError):
+            raise ConfigError(f"[{serial}] actions.{atype}.number_inputs.{key}: min/max/step deben ser números") from None
+        if r.min is not None and r.max is not None and r.min > r.max:
+            raise ConfigError(f"[{serial}] actions.{atype}.number_inputs.{key}: min > max")
+        if r.step is not None and r.step <= 0:
+            raise ConfigError(f"[{serial}] actions.{atype}.number_inputs.{key}: step debe ser > 0")
+        ranges[str(key)] = r
+    return {"number_inputs": list(ranges), "number_ranges": ranges}
 
 
 def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str, str]) -> MirRobotConfig:
@@ -71,7 +109,8 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
             mission=str(a["mission"]),
             position_inputs=list(a.get("position_inputs") or []),
             required_inputs=list(a.get("required_inputs") or []),
-            number_inputs=list(a.get("number_inputs") or []),
+            **_parse_numbers(serial, atype, a.get("number_inputs")),
+            positions_allowlist=set(a["positions_allowlist"]) if a.get("positions_allowlist") else None,
         )
 
     allow = merged.get("positions_allowlist")

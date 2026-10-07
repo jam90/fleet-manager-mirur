@@ -55,6 +55,9 @@ class MirDriver:
         self.last_error: str | None = None
         # Entradas de mission_queue lanzadas por el FM: lo demás es "ajeno".
         self._own_queue_ids: set[int] = set()
+        # `message` de mission_queue/<id> al terminar: el MiR pone `Aborted`
+        # tanto si se para a mano como si falla, y solo el message lo distingue.
+        self._job_results: dict[str, str] = {}
 
     # ------------------------------------------------------------- conexión
     def connect(self) -> bool:
@@ -94,6 +97,10 @@ class MirDriver:
                 if key not in exposed:
                     self.log.warning("actions.%s: la mission '%s' no tiene el input '%s' (tiene %s)",
                                      a.action_type, a.mission, key, sorted(exposed))
+            for name in sorted(a.positions_allowlist or ()):
+                if name not in self.positions:
+                    self.log.warning("actions.%s: la position '%s' de la allowlist no existe en este robot",
+                                     a.action_type, name)
 
     def poll(self) -> Telemetry | None:
         """GET /status tolerante → `Telemetry`. None si falla (motivo en `last_error`)."""
@@ -135,7 +142,14 @@ class MirDriver:
             self.log.warning("mission_queue/%s en estado desconocido '%s'", job_id, state)
         elif status in ("FINISHED", "FAILED"):
             self._own_queue_ids.discard(int(job_id))
+            if q.get("message"):
+                self._job_results[job_id] = str(q["message"])
         return status
+
+    def job_result(self, job_id: str) -> str | None:
+        """P.ej. "Aborted - User Request" (parada desde la web) o el error de
+        la mission. Ver docs/avance.md, decisión 57."""
+        return self._job_results.pop(job_id, None)
 
     def cancel(self, job_id: str) -> None:
         self.client.mission_queue_id_delete(int(job_id))
@@ -161,14 +175,27 @@ class MirDriver:
     def describe_robot(self) -> RobotSpec:
         return MIR250_SPEC
 
+    def _position_choices(self, a) -> list[str] | None:
+        """Positions que se ofrecen en la UI para una action: las del robot
+        (si ya hay índices) filtradas por la allowlist del robot y la de la
+        action. Sin índices, la allowlist de la action tal cual (es config)."""
+        names = set(self.positions) if self.positions else None
+        for allow in (self.cfg.positions_allowlist, a.positions_allowlist):
+            if allow is not None:
+                names = set(allow) if names is None else names & allow
+        return sorted(names) if names else None
+
     def describe_actions(self) -> list[ActionInfo]:
         """Actions de `fleet.yaml` con sus inputs; las positions indexadas
         (si ya hay índices) como opciones de los `position_inputs`."""
-        positions = sorted(self.positions) or None
         out = []
         for a in self.cfg.actions.values():
-            params = [ParamInfo(k, "position", True, positions) for k in a.position_inputs]
+            choices = self._position_choices(a)
+            params = [ParamInfo(k, "position", True, choices) for k in a.position_inputs]
             params += [ParamInfo(k, "text", True) for k in a.required_inputs]
-            params += [ParamInfo(k, "number", True) for k in a.number_inputs]
+            for k in a.number_inputs:
+                r = a.number_ranges.get(k)
+                params.append(ParamInfo(k, "number", True, min=r and r.min, max=r and r.max,
+                                        step=r and r.step))
             out.append(ActionInfo(a.action_type, params, f"mission '{a.mission}'"))
         return out

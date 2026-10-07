@@ -574,7 +574,11 @@ Semántica de cada `action` (driver `mir`):
   (`0`/falsy es válido; solo cuenta ausente que la `key` no venga).
 - `number_inputs` (2026-10-07): obligatorios y numéricos; `"5"` → `5` antes
   de postear (no numérico → `validationError`). Ej.: `n_piezas_pedidas` →
-  registro PLC 22 en la mission `MIRUR-prueba-parámetros`.
+  registro PLC 22 en la mission `MIRUR-prueba-parámetros`. Forma con rango
+  `{n: {min, max, step}}` → validación + deslizador en la UI.
+- `positions_allowlist` por action (2026-10-07): restringe los
+  `position_inputs` de esa action (se suma a la del robot). Ej.:
+  `prueba_parametros_v2` solo admite `Deshecho`, `Montaje`, `Area_calidad`.
 - El resto de `actionParameters` se pasan tal cual **si la mission expone ese
   `input_name`**; si no, se ignoran en silencio (compatibilidad hacia delante).
 

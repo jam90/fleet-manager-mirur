@@ -57,6 +57,12 @@ robots:
       prueba_parametros:       # escribe n_piezas_pedidas en el registro PLC 22 del MiR
         mission: "MIRUR-prueba-parámetros"
         number_inputs: [n_piezas_pedidas]   # número; "5" → 5 antes de postear
+      prueba_parametros_v2:    # los dos parámetros de la mission final; MUEVE el robot
+        mission: "MIRUR-prueba-parámetros-v2"
+        position_inputs: [target_pos]
+        positions_allowlist: [Deshecho, Montaje, Area_calidad]   # solo estas en ESTA action
+        number_inputs:
+          n_piezas_pedidas: { min: 1, max: 10, step: 1 }        # rango → deslizador en la UI
   mir-2:
     driver: mir
     host: 192.168.15.15
@@ -74,6 +80,12 @@ robots:
       prueba_parametros:
         mission: "MIRUR-prueba-parámetros"
         number_inputs: [n_piezas_pedidas]
+      prueba_parametros_v2:
+        mission: "MIRUR-prueba-parámetros-v2"
+        position_inputs: [target_pos]
+        positions_allowlist: [Deshecho, Montaje, Area_calidad]
+        number_inputs:
+          n_piezas_pedidas: { min: 1, max: 10, step: 1 }
       recoger_pieza:           # solo existe en mir-2
         mission: "Simulacion Recogida pieza H2DX MIRUR"
         position_inputs: [target_pos]

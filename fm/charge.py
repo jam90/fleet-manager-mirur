@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry
+from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry, job_result
 from fm.config import AutoChargeConfig
 from fm.vda5050.state import Info
 from fm.vda5050.state_builder import StateOverlay
@@ -96,8 +96,9 @@ class ChargeGuard:
         self.status = status
         if status == "FAILED":
             self.cooldown_until = self.clock() + self.cfg.abort_cooldown_s
-            log.warning("[%s] la carga terminó FAILED: no se re-postea hasta dentro de %.0fs",
-                        self.serial, self.cfg.abort_cooldown_s)
+            why = job_result(driver, self.job_id)
+            log.warning("[%s] la carga terminó FAILED%s: no se re-postea hasta dentro de %.0fs",
+                        self.serial, f" ({why})" if why else "", self.cfg.abort_cooldown_s)
 
     # ---------------------------------------------------------------- salida
     def decorate(self, ov: StateOverlay) -> StateOverlay:

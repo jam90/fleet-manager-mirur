@@ -2,7 +2,7 @@ import pytest
 
 from fm.adapters.base import Job, Telemetry
 from fm.adapters.mir.translate import from_vda_order
-from fm.adapters.mir.config import ActionConfig, MirRobotConfig
+from fm.adapters.mir.config import ActionConfig, MirRobotConfig, NumberRange
 from fm.orders import IgnoreOrder, OrderTracker, pick_action
 from fm.vda5050.order import OrderRejected, parse_order
 
@@ -10,10 +10,13 @@ ROBOT = MirRobotConfig("mir-1", "h", "a", {
     "coger": ActionConfig("coger", "coger"),
     "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"], required_inputs=["pieza"]),
     "pedir": ActionConfig("pedir", "Pedir piezas", number_inputs=["n_piezas_pedidas"]),
+    "llevar": ActionConfig("llevar", "Ir a posición", position_inputs=["target_pos"],
+                           positions_allowlist={"H2D1-VL", "Montaje"}, number_inputs=["n_piezas_pedidas"],
+                           number_ranges={"n_piezas_pedidas": NumberRange(1, 10, 1)}),
 })
 MISSIONS = {"coger": "g-coger", "Ir a posición": "g-ir", "Pedir piezas": "g-pedir"}
-POSITIONS = {"H2D1-VL": "g-h2d1"}
-INPUTS = {"g-ir": {"target_pos", "pieza", "extra"}}
+POSITIONS = {"H2D1-VL": "g-h2d1", "H2D2-VL": "g-h2d2", "Montaje": "g-montaje"}
+INPUTS = {"g-ir": {"target_pos", "pieza", "extra", "n_piezas_pedidas"}}
 
 
 def order(action_type="coger", params=None, order_id="o1", update_id=0, actions=None, released=True):
@@ -75,6 +78,27 @@ def test_number_inputs_obligatorio():
     with pytest.raises(OrderRejected) as e:
         from_vda_order(pick_action(order("pedir")), ROBOT, MISSIONS, POSITIONS, INPUTS)
     assert e.value.error_type == "VALIDATION_FAILURE" and "n_piezas_pedidas" in e.value.description
+
+
+def test_allowlist_de_la_action_y_rango():
+    def tr(pos, n):
+        return from_vda_order(pick_action(order("llevar", {"target_pos": pos, "n_piezas_pedidas": n})),
+                              ROBOT, MISSIONS, POSITIONS, INPUTS)
+    assert tr("Montaje", "10").parameters == [{"id": "target_pos", "value": "g-montaje"},
+                                              {"id": "n_piezas_pedidas", "value": 10}]
+    assert tr("H2D1-VL", 1).parameters[1]["value"] == 1          # límites incluidos
+    with pytest.raises(OrderRejected) as e:
+        tr("H2D2-VL", 3)                                          # existe en el robot, pero no en la action
+    assert e.value.error_type == "NO_ROUTE_TO_TARGET" and "no admitida en 'llevar'" in e.value.description
+    for n in (0, 11, "10.5"):
+        with pytest.raises(OrderRejected) as e:
+            tr("Montaje", n)
+        assert e.value.error_type == "VALIDATION_FAILURE" and "fuera de rango [1, 10]" in e.value.description
+    # La allowlist del robot se suma: Montaje está en la de la action pero no en la del robot.
+    with pytest.raises(OrderRejected) as e:
+        from_vda_order(pick_action(order("llevar", {"target_pos": "Montaje", "n_piezas_pedidas": 2})),
+                       ROBOT, MISSIONS, POSITIONS, INPUTS, allowlist={"H2D1-VL"})
+    assert e.value.error_type == "NO_ROUTE_TO_TARGET"
 
 
 def test_errores_de_traduccion():
@@ -150,6 +174,27 @@ def test_robot_no_disponible_y_fallo_ejecucion():
     assert ov.action_states[0].actionStatus == "FAILED" and not t.busy
     assert ov.errors[0].errorType == "ORDER_EXECUTION_FAILED"
     assert {r.referenceKey for r in ov.errors[0].errorReferences} == {"orderId", "actionId"}
+
+
+def test_fallo_con_motivo_del_driver_va_a_action_result_y_al_error():
+    """El MiR pone `Aborted` también si se para a mano: el motivo distingue."""
+    class WithResult(FakeDriver):
+        def job_result(self, job_id):
+            return "Aborted - User Request"
+    t = OrderTracker("mir-1")
+    _accept(t, order())
+    t.poll(WithResult(["FAILED"]))
+    ov = t.overlay()
+    assert ov.action_states[0].actionResult == "Aborted - User Request"
+    assert ov.errors[0].errorDescription == "mission 'coger' terminó FAILED: Aborted - User Request"
+
+
+def test_cancel_order_deja_motivo():
+    t = OrderTracker("mir-1")
+    _accept(t, order())
+    t.cancel()
+    ov = t.overlay()
+    assert ov.action_states[0].actionResult == "cancelada por cancelOrder" and not ov.errors
 
 
 def test_rechazo_se_limpia_al_aceptar():

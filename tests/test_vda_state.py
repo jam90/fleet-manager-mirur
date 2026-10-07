@@ -89,3 +89,11 @@ def test_schema_detecta_estado_invalido():
     d = to_vda_state(_header(), _tel()).to_dict()
     d["operatingMode"] = "AUTO"
     assert validation_errors("state", d)
+
+
+def test_state_con_action_result_valida():
+    from fm.vda5050.state import ActionState
+    ov = StateOverlay(order_id="o1", action_states=[ActionState("a1", "FAILED", "coger", actionResult="Aborted - User Request")])
+    d = to_vda_state(_header(), _tel(), ov).to_dict()
+    assert_valid("state", d)
+    assert d["actionStates"][0]["actionResult"] == "Aborted - User Request"

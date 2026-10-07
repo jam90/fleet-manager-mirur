@@ -71,6 +71,7 @@ class _SimJob:
     ends: float
     fail: bool
     charge: bool = False
+    result: str = "fallo simulado (fail_actions)"
 
     def status(self, now: float) -> JobStatus:
         if now < self.started:
@@ -175,11 +176,16 @@ class SimDriver:
         j = self._jobs.get(job_id)
         return j.status(self._now()) if j else None
 
+    def job_result(self, job_id: str) -> str | None:
+        j = self._jobs.get(job_id)
+        return j.result if j is not None and j.status(self._now()) == "FAILED" else None
+
     def cancel(self, job_id: str) -> None:
         j = self._jobs.get(job_id)
         if j is not None and j.status(self._now()) in ("WAITING", "RUNNING"):
             j.started = j.ends = self._now()
             j.fail = True
+            j.result = "cancelado"
 
     def charge_job(self) -> Job | None:
         action = Action("charge", "auto-charge", actionDescription="auto-carga del FM")

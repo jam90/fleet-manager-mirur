@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry
+from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry, job_result
 from fm.vda5050.order import Action, Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
                               E_OTHER_ORDER_ACTIVE, E_OUTDATED_ORDER_UPDATE, E_VALIDATION_FAILURE,
@@ -47,6 +47,7 @@ class ActiveOrder:
     job: Job
     job_id: str
     job_status: JobStatus = "WAITING"     # = actionStatus VDA de la action ejecutada
+    result: str | None = None             # = actionResult VDA: motivo legible al terminar
     finished_action_ids: set[str] = field(default_factory=set)
 
     @property
@@ -117,6 +118,7 @@ class OrderTracker:
         if a is not None and a.alive:
             log.info("[%s] order %s cancelada (%s job=%s)", self.serial, a.order.orderId, a.job.label, a.job_id)
             a.job_status = "FAILED"
+            a.result = "cancelada por cancelOrder"
 
     def reject(self, order_id: str | None, err: OrderRejected) -> Error:
         e = error_for_order(err.error_type, err.description, order_id, level="WARNING")
@@ -136,11 +138,15 @@ class OrderTracker:
         log.info("[%s] order %s: %s job=%s %s → %s", self.serial, a.order.orderId,
                  a.job.label, a.job_id, a.job_status, status)
         a.job_status = status
+        if status in ("FINISHED", "FAILED"):
+            a.result = job_result(driver, a.job_id)
         if status == "FINISHED":
             a.finished_action_ids.add(a.job.action.actionId)
         elif status == "FAILED" and not self.exec_errors:
+            why = f": {a.result}" if a.result else ""
+            log.warning("[%s] order %s terminó FAILED%s", self.serial, a.order.orderId, why)
             self.exec_errors.append(error_for_order(
-                E_ORDER_EXECUTION_FAILED, f"{a.job.label} terminó FAILED",
+                E_ORDER_EXECUTION_FAILED, f"{a.job.label} terminó FAILED{why}",
                 a.order.orderId, level="WARNING", action_id=a.job.action.actionId))
 
     # -------------------------------------------------------------- salida
@@ -153,11 +159,12 @@ class OrderTracker:
             # Todas las actions de la order: la ejecutada con su fase, las
             # terminadas en updates anteriores FINISHED.
             for act in a.order.released_actions():
+                result = None
                 if act.actionId == a.job.action.actionId:
-                    st = a.job_status
+                    st, result = a.job_status, a.result
                 else:
                     st = "FINISHED" if act.actionId in a.finished_action_ids else "WAITING"
-                ov.action_states.append(ActionState(act.actionId, st, act.actionType))
+                ov.action_states.append(ActionState(act.actionId, st, act.actionType, actionResult=result))
         ov.errors = [*self.order_errors, *self.exec_errors, *self.instant_errors]
         ov.instant_action_states = list(self.instant_states)
         return ov

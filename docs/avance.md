@@ -929,6 +929,116 @@ valor en el registro 22.
     warning** (no error): coherente con missions inexistentes (§8), el FM
     arranca igual y el fallo saldría como 400 del MiR en esa order.
 
+## 2026-10-07 — Allowlist de positions por action y rango numérico (deslizador)
+
+Mission nueva `MIRUR-prueba-parámetros-v2` con los dos parámetros de la
+mission final: `target_pos` (paso *move*: **mueve el robot**, y luego lanza
+una submission) y `n_piezas_pedidas` (registro PLC 22). Comprobado con GETs
+en los dos robots: existe en `mirur-tknika` y las positions `Deshecho`,
+`Montaje` y `Area_calidad` existen en ambos (GUIDs distintos, como siempre).
+
+Peticiones del usuario: limitar `target_pos` a esas tres positions en la
+interfaz, y un deslizador para `n_piezas_pedidas` (uso desde tablet) que
+conviva con el recuadro numérico, sincronizados.
+
+Comprobado: `connect()` + `describe_actions()` + `translate()` contra los
+dos robots (sin postear): opciones = las tres positions, rango 1–10,
+`Montaje`/`"7"` → GUID de cada robot / `7`; `H2D1-VL` → `NO_ROUTE_TO_TARGET`,
+`12` → `VALIDATION_FAILURE`. UI comprobada en jsdom con la página real:
+opciones, valor inicial = mínimo, deslizador ↔ recuadro en los dos sentidos
+y POST con número. `pytest`: 93 en verde. Lanzada por el usuario desde la
+web en mir-2 (cola 381, 2026-10-07 10:15 UTC): el MiR recibió `target_pos`
+= GUID de `Montaje` (label "Montaje") y `n_piezas_pedidas = 4.0`; la paró
+él a mano (ver entrada siguiente). **Pendiente:** verla en una tablet.
+
+### Código
+
+- `fm/adapters/base.py`: `ParamInfo.min/max/step`.
+- `fm/adapters/mir/config.py`: `NumberRange`; `ActionConfig.number_ranges`
+  y `ActionConfig.positions_allowlist`; `number_inputs` acepta lista o
+  mapping con rango (`_parse_numbers`, valida min ≤ max y step > 0).
+- `fm/adapters/mir/translate.py`: allowlist de la action
+  (`NO_ROUTE_TO_TARGET`) y rango (`VALIDATION_FAILURE`).
+- `fm/adapters/mir/driver.py`: `_position_choices()` (positions del robot ∩
+  allowlist del robot ∩ allowlist de la action; sin índices, la de la
+  action); rango en `describe_actions`; warning al arrancar si una position
+  de la allowlist no existe en el robot.
+- `fm/vda5050/factsheet.py`: la descripción del parámetro lista las
+  positions admitidas (≤ 10) o el rango (`number en [1, 10]`).
+- `fm/web/static/index.html`: `type=range` + `type=number` con el mismo
+  `v-model.number`; al elegir action, los números con rango arrancan en
+  `min`; el recuadro lleva `min`/`max` (el navegador no deja enviar fuera).
+- `config/fleet.yaml`: action `prueba_parametros_v2` en mir-1 y mir-2.
+- Tests en `test_config.py`, `test_orders.py`, `adapters/test_mir_driver.py`,
+  `test_factsheet.py`.
+
+### Decisiones nuevas
+
+54. **La allowlist de la action es del FM, no solo de la UI**: el FM la
+    valida en `from_vda_order`, así que una order de Node-RED a otra
+    position también se rechaza (`NO_ROUTE_TO_TARGET`). Se suma a la del
+    robot (hay que pasar las dos); la UI ofrece la intersección.
+55. **El rango de un número se declara en `fleet.yaml`** y también lo valida
+    el FM (`VALIDATION_FAILURE`), por el mismo motivo. El deslizador solo
+    aparece con `min` y `max`; sin rango, solo recuadro. `step` no se
+    valida en el FM (solo guía la UI). Rango 1–10 para `n_piezas_pedidas`
+    elegido por Claude como valor razonable; **confirmado por el usuario** el 2026-10-07.
+56. **Un solo `v-model` para deslizador y recuadro**: la sincronización la
+    hace Vue sin código propio. Al elegir la action el valor arranca en
+    `min` para que los dos muestren lo mismo y no se envíe vacío.
+
+## 2026-10-07 — Motivo del FAILED (`actionResult`)
+
+El usuario vio en la UI la order de la cola 381 (mir-2) como `FAILED` sin
+saber si se había abortado a mano o había fallado. `GET mission_queue/381`:
+`state: "Aborted"`, `message: "Aborted - User Request"`. Otra entrada (381
+de mir-1, de enero) trae `message: "Aborted on startup"`. El MiR termina
+en `Aborted` tanto si se para a mano como si la mission falla; lo único que
+lo distingue es `message`, que el FM descartaba.
+
+VDA 5050 solo tiene `actionStatus: FAILED` (no hay ABORTED), pero
+`actionStates[].actionResult` es un texto libre para el resultado.
+
+`pytest`: 97 en verde. UI comprobada en jsdom (tarjeta y evento).
+
+Confirmado con fallos reales (el usuario lo vio en la UI; textos leídos
+con `GET mission_queue/<id>` el mismo día):
+
+| `state` | `message` | Caso |
+|---|---|---|
+| `Aborted` | `Aborted - User Request` | parada a mano (mir-2 381, mir-1 1387) |
+| `Aborted` | `Unable to find path to goal.` | sin camino al destino (mir-1 1385, 1388) |
+| `Aborted` | `Charging failed to start..` | la carga no arrancó en el dock (mir-2 377) |
+| `Aborted` | `Aborted on startup` | entrada viva al reiniciar el robot (mir-1 381) |
+| `Done` | `ActionList was executed without problems..` | fin normal (sale como `actionResult` del FINISHED) |
+
+Es decir: **todo lo que no acaba bien es `Aborted`**, y solo `message`
+dice si fue una parada o un fallo.
+
+### Código
+
+- `fm/adapters/base.py`: gancho opcional `job_result(job_id)` en el
+  `Protocol` y helper `job_result(driver, job_id)` (None si el driver no lo
+  implementa).
+- `fm/adapters/mir/driver.py`: `job_status` guarda `message` al terminar;
+  `job_result` lo entrega (una vez).
+- `fm/adapters/sim/driver.py`: "fallo simulado (fail_actions)" / "cancelado".
+- `fm/orders.py`: `ActiveOrder.result` → `actionResult`; el error
+  `ORDER_EXECUTION_FAILED` lleva el motivo (`… terminó FAILED: Aborted -
+  User Request`) y se loguea. `cancelOrder` → "cancelada por cancelOrder".
+- `fm/charge.py`: el motivo en el log de una carga FAILED.
+- `fm/web/static/index.html`: motivo junto al estado en la tarjeta y en
+  el evento.
+
+### Decisiones nuevas
+
+57. **El motivo viaja en `actionResult`, no como estado nuevo**: no se
+    inventa un `ABORTED` fuera del enum VDA; cualquier cliente VDA lo lee.
+    El FM no interpreta el texto (no decide "parada a mano" vs "fallo"):
+    lo pasa tal cual porque los textos del MiR no están documentados y
+    cambian entre versiones. Se aplica también a `FINISHED` si el MiR
+    trae `message`.
+
 ## Pendiente (a 2026-10-07)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -955,6 +1065,7 @@ robot después).
 
 **Menor**
 
-8. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
+8. `prueba_parametros_v2` desde una tablet (deslizador).
+9. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
    carga del FM en marcha" (decisión 35, coincidió en la prueba real). Solo
    haría falta si el robot carga sin que lo mande el FM.

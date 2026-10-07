@@ -97,6 +97,7 @@
   .acts { display: flex; flex-wrap: wrap; gap: 6px; }
   .act { font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: var(--surface-2); }
   .act b { font-weight: 600; } .act .s { margin-left: 6px; font-size: 11px; letter-spacing: .05em; }
+  .act .why { margin-left: 6px; font-size: 12px; color: var(--ink-2); }   /* actionResult: motivo del FAILED */
   .s-RUNNING { color: var(--run); } .s-FINISHED { color: var(--ok); } .s-FAILED { color: var(--bad); }
   .s-WAITING, .s-PAUSED, .s-INITIALIZING { color: var(--warn); }
 
@@ -124,6 +125,11 @@
   .field { display: grid; gap: 3px; font-size: 13px; color: var(--ink-2); }
   .field input, .field select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
     border-radius: 6px; padding: 6px 8px; }
+  /* Número con rango: deslizador (cómodo en tablet) + recuadro, mismo v-model. */
+  .numrow { display: grid; grid-template-columns: 1fr 5.5em; gap: 10px; align-items: center; }
+  .field input[type=range] { padding: 0; border: 0; background: none; height: 36px; accent-color: var(--accent); }
+  .field input[type=range]:focus { outline-offset: 2px; }
+  .field .range-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); }
   .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
   .hint { font-size: 12px; color: var(--ink-3); }
   .resp { font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); border-left: 3px solid var(--ink-3); }
@@ -172,7 +178,7 @@
           <dt>Actions</dt>
           <dd>
             <div class="acts" v-if="r.state.actionStates.length">
-              <span class="act" v-for="a in r.state.actionStates" :key="a.actionId"><b>{{ a.actionType }}</b><span class="s" :class="'s-' + a.actionStatus">{{ a.actionStatus }}</span></span>
+              <span class="act" v-for="a in r.state.actionStates" :key="a.actionId"><b>{{ a.actionType }}</b><span class="s" :class="'s-' + a.actionStatus">{{ a.actionStatus }}</span><span class="why" v-if="a.actionResult">{{ a.actionResult }}</span></span>
             </div>
             <span v-else class="empty">—</span>
           </dd>
@@ -215,7 +221,18 @@
             <select v-if="p.choices" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
               <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
             </select>
-            <input v-else-if="p.kind === 'number'" type="number" step="any" :id="'param-' + p.key"
+            <template v-else-if="p.kind === 'number' && hasRange(p)">
+              <!-- Los dos inputs comparten v-model: mover uno actualiza el otro. -->
+              <div class="numrow">
+                <input type="range" :id="'param-' + p.key + '-slider'" :min="p.min" :max="p.max" :step="p.step || 1"
+                       v-model.number="form.params[p.key]" :aria-label="p.key">
+                <input type="number" :id="'param-' + p.key" :min="p.min" :max="p.max" :step="p.step || 'any'"
+                       v-model.number="form.params[p.key]" :required="p.required">
+              </div>
+              <div class="range-ends"><span>{{ p.min }}</span><span>{{ p.max }}</span></div>
+            </template>
+            <input v-else-if="p.kind === 'number'" type="number" :step="p.step || 'any'" :id="'param-' + p.key"
+                   :min="p.min ?? undefined" :max="p.max ?? undefined"
                    v-model.number="form.params[p.key]" :required="p.required">
             <input v-else type="text" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
           </label>
@@ -242,7 +259,7 @@
 
 <script src="/static/vue.global.prod.js"></script>
 <script>
-const { createApp, reactive, computed } = Vue;
+const { createApp, reactive, computed, watch } = Vue;
 
 // vda5050/v3/<manufacturer>/<serial>/<subtopic>
 function parseTopic(t) {
@@ -293,7 +310,8 @@ createApp({
       for (const a of s.actionStates || []) {
         const before = p.acts[a.actionId];
         if (before !== a.actionStatus) {
-          if (before !== undefined || a.actionStatus !== 'WAITING') addEvent(serial, `${a.actionType} ${before ? before + ' → ' : ''}${a.actionStatus}`, s.timestamp);
+          if (before !== undefined || a.actionStatus !== 'WAITING') addEvent(serial, `${a.actionType} ${before ? before + ' → ' : ''}${a.actionStatus}`
+                                                                    + (a.actionResult ? ` (${a.actionResult})` : ''), s.timestamp);
           p.acts[a.actionId] = a.actionStatus;
         }
       }
@@ -371,6 +389,14 @@ createApp({
       return a ? Object.values(a.params).map(p => ({ ...p, choices: p.choices && p.choices.length ? p.choices.slice().sort() : null })) : [];
     });
 
+    const hasRange = p => p.min != null && p.max != null;
+    // Al cambiar de action: los números con rango arrancan en el mínimo, para
+    // que deslizador y recuadro muestren lo mismo y no se envíe un vacío.
+    watch(() => form.actionType, () => {
+      for (const p of currentParams.value)
+        if (p.kind === 'number' && hasRange(p) && typeof form.params[p.key] !== 'number') form.params[p.key] = p.min;
+    });
+
     function statusOf(r, s) {
       if (!s || r.connection === 'CONNECTIONBROKEN' || (s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE'))
         return { key: 'sinconexion', label: 'sin conexión' };
@@ -406,7 +432,7 @@ createApp({
 
     loadFleet();
     connect();
-    return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder,
+    return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');

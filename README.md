@@ -78,7 +78,8 @@ Por `action` (driver `mir`):
 | `mission` | nombre exacto de la mission en la web del MiR; se resuelve a GUID **por robot** al arrancar |
 | `position_inputs` | `actionParameters` cuyo valor es un **nombre de position**; se traduce a GUID. Ausente → `VALIDATION_FAILURE`; inexistente → `NO_ROUTE_TO_TARGET` |
 | `required_inputs` | parámetros obligatorios que se reenvían tal cual (ausente → `VALIDATION_FAILURE`) |
-| `number_inputs` | parámetros obligatorios **numéricos**: `5`, `5.0`, `"5"` o `"2,5"` se mandan al MiR como número (`5`, `2.5`); ausente o no numérico → `VALIDATION_FAILURE`. P.ej. `n_piezas_pedidas` (registro PLC 22) |
+| `number_inputs` | parámetros obligatorios **numéricos**: `5`, `5.0`, `"5"` o `"2,5"` se mandan al MiR como número (`5`, `2.5`); ausente o no numérico → `VALIDATION_FAILURE`. P.ej. `n_piezas_pedidas` (registro PLC 22). Lista de nombres, o mapping con rango `{n_piezas_pedidas: {min: 1, max: 10, step: 1}}`: fuera de rango → `VALIDATION_FAILURE`, y la UI pinta un deslizador |
+| `positions_allowlist` | (por action) positions admitidas en los `position_inputs` de **esa** action; se suma a la del robot. Fuera de ella → `NO_ROUTE_TO_TARGET`; la UI solo ofrece estas |
 
 El resto de `actionParameters` se reenvían solo si la mission expone ese
 `input_name`; si no, se ignoran. En el `POST /mission_queue` cada parámetro va
@@ -218,6 +219,7 @@ ignora repeticiones de la última order **aceptada**.
 | `mission_text` | `information[] {infoType: MISSION}` |
 | `errors[]` | `errors[] {errorType: MIR_<code>}` |
 | `mission_queue/<id>.state` de la order | `actionStates[].actionStatus`: Pending→WAITING, Executing→RUNNING, Done→FINISHED, Aborted/Cancelled→FAILED |
+| `mission_queue/<id>.message` al terminar | `actionStates[].actionResult` y final de `errorDescription` (p.ej. `Aborted - User Request` = parada a mano). El MiR usa `Aborted` para todo; el motivo solo está aquí |
 
 `powerSupply.charging` solo es `true` cuando la mission de carga del FM está
 en ejecución (pendiente de validar en el dock).

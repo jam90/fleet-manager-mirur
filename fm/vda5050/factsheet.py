@@ -36,14 +36,24 @@ def _generic_spec(name: str) -> RobotSpec:
     return RobotSpec(name, description=f"driver '{name}' sin ficha técnica")
 
 
+def _param_description(p) -> str:
+    if p.kind == "position" and p.choices:
+        return f"nombre de position: {', '.join(p.choices)}" if len(p.choices) <= 10 \
+            else f"nombre de position ({len(p.choices)} conocidas)"
+    if p.kind == "number" and (p.min is not None or p.max is not None):
+        lo = "-∞" if p.min is None else f"{p.min:g}"
+        hi = "∞" if p.max is None else f"{p.max:g}"
+        return f"number en [{lo}, {hi}]"
+    return p.kind
+
+
 def _action(a: ActionInfo) -> dict:
     return {
         "actionType": a.action_type,
         "actionDescription": a.description or None,
         "actionScopes": ["NODE"],
         "actionParameters": [{"key": p.key, "valueDataType": "NUMBER" if p.kind == "number" else "STRING", "isOptional": not p.required,
-                              "description": f"nombre de position ({len(p.choices)} conocidas)"
-                              if p.kind == "position" and p.choices else p.kind}
+                              "description": _param_description(p)}
                              for p in a.params] or None,
         "blockingTypes": ["NONE", "SOFT", "HARD"],
         "pauseAllowed": True,      # startPause

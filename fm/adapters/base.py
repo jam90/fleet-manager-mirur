@@ -59,6 +59,10 @@ class ParamInfo:
     kind: str = "text"                   # "position" | "text" | "number"
     required: bool = True
     choices: list[str] | None = None     # valores admitidos, si el driver los conoce
+    # Solo kind "number": límites para validar y para el deslizador de la UI.
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
 
 
 @dataclass
@@ -109,6 +113,12 @@ class RobotDriver(Protocol):
     def job_status(self, job_id: str) -> JobStatus | None:
         """Estado del job. None = no se pudo consultar (se reintenta)."""
 
+    def job_result(self, job_id: str) -> str | None:
+        """Gancho opcional: motivo legible con el que terminó el job (p.ej.
+        "Aborted - User Request"). VDA solo tiene `FAILED`; esto va a
+        `actionStates[].actionResult` y a la descripción del error, para
+        distinguir una parada a mano de un fallo de verdad."""
+
     def cancel(self, job_id: str) -> None:
         """Aborta el job (H5, instantActions/cancelOrder)."""
 
@@ -132,3 +142,9 @@ class RobotDriver(Protocol):
     def describe_robot(self) -> RobotSpec:
         """Gancho opcional: ficha técnica para el `factsheet`. Sin él, el
         core publica una genérica con el nombre del driver."""
+
+
+def job_result(driver: RobotDriver, job_id: str) -> str | None:
+    """Motivo del final del job si el driver lo sabe (gancho opcional)."""
+    fn = getattr(driver, "job_result", None)
+    return fn(job_id) if fn is not None else None

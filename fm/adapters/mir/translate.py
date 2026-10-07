@@ -105,6 +105,11 @@ def to_number(key: str, value) -> int | float:
     return int(num) if num.is_integer() else num
 
 
+def _fmt(x: float | None) -> str:
+    """Límite para mensajes: 10.0 → "10", None → "∞"."""
+    return "∞" if x is None else f"{x:g}"
+
+
 def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, str],
                    positions: dict[str, str], mission_inputs: dict[str, set[str]],
                    allowlist: set[str] | None = None) -> MissionRequest:
@@ -132,6 +137,11 @@ def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, st
         name = str(given[key])
         if allowlist is not None and name not in allowlist:
             raise OrderRejected(E_NO_ROUTE_TO_TARGET, f"position '{name}' fuera de la allowlist")
+        # Allowlist de la action: se suma a la del robot (hay que pasar las dos).
+        if acfg.positions_allowlist is not None and name not in acfg.positions_allowlist:
+            raise OrderRejected(E_NO_ROUTE_TO_TARGET,
+                                f"position '{name}' no admitida en '{action.actionType}'; "
+                                f"admite {sorted(acfg.positions_allowlist)}")
         pguid = positions.get(name)
         if pguid is None:
             raise OrderRejected(E_NO_ROUTE_TO_TARGET, f"[{robot.serial}] position '{name}' no existe")
@@ -147,7 +157,13 @@ def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, st
     for key in acfg.number_inputs:
         if key not in given:
             raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (número)")
-        params.append({"id": key, "value": to_number(key, given[key])})
+        value = to_number(key, given[key])
+        # El rango de la UI no basta: la order puede venir de Node-RED o de un script.
+        r = acfg.number_ranges.get(key)
+        if r is not None and ((r.min is not None and value < r.min) or (r.max is not None and value > r.max)):
+            raise OrderRejected(E_VALIDATION_FAILURE,
+                                f"'{key}' = {value} fuera de rango [{_fmt(r.min)}, {_fmt(r.max)}]")
+        params.append({"id": key, "value": value})
 
     # El resto solo si la mission expone ese input_name (compatibilidad hacia delante).
     handled = set(acfg.position_inputs) | set(acfg.required_inputs) | set(acfg.number_inputs)

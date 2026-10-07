@@ -78,3 +78,20 @@ def test_registro_make_driver(tmp_path):
 def test_yaml_antiguo_falla_con_pista(tmp_path, bad, hint):
     with pytest.raises(ConfigError, match=hint):
         load_config(_write(tmp_path, bad), env_path=tmp_path / "no.env")
+
+
+def test_number_inputs_y_allowlist_por_action():
+    m = parse_config("mir-1", {"host": "h", "actions": {
+        "a": {"mission": "M", "number_inputs": ["n"]},
+        "b": {"mission": "M", "position_inputs": ["target_pos"], "positions_allowlist": ["P1", "P2"],
+              "number_inputs": {"n": {"min": 1, "max": 10, "step": 1}, "m": None}},
+    }}, {}, {})
+    a, b = m.actions["a"], m.actions["b"]
+    assert a.number_inputs == ["n"] and a.number_ranges == {} and a.positions_allowlist is None
+    assert b.number_inputs == ["n", "m"] and b.positions_allowlist == {"P1", "P2"}
+    assert (b.number_ranges["n"].min, b.number_ranges["n"].max, b.number_ranges["n"].step) == (1, 10, 1)
+    assert b.number_ranges["m"].min is None
+    for bad, hint in (({"min": 5, "max": 1}, "min > max"), ({"min": "x"}, "deben ser números"),
+                      ({"step": 0}, "step")):
+        with pytest.raises(ConfigError, match=hint):
+            parse_config("mir-1", {"host": "h", "actions": {"a": {"mission": "M", "number_inputs": {"n": bad}}}}, {}, {})

@@ -20,6 +20,7 @@ class _FakeClient(MirClient):
         self.fail_status = fail_status
         self.status = dict(STATUS)
         self.queue: dict[int, str] = {}
+        self.messages: dict[int, str] = {}       # mission_queue/<id>.message
         self.posted: list[dict] = []
         self.deleted: list[int] = []
 
@@ -43,7 +44,8 @@ class _FakeClient(MirClient):
             self.queue[qid] = "Pending"
             return {"id": qid}
         if method == "GET" and path.startswith("mission_queue/"):
-            return {"state": self.queue[int(path.split("/")[1])]}
+            qid = int(path.split("/")[1])
+            return {"state": self.queue[qid], "message": self.messages.get(qid, "")}
         if method == "DELETE" and path.startswith("mission_queue/"):
             self.deleted.append(int(path.split("/")[1]))
             return None
@@ -143,3 +145,36 @@ def test_number_input_llega_como_numero_al_post(caplog):
     d.execute(job)
     assert c.posted[-1]["parameters"] == [{"id": "n_piezas_pedidas", "value": 5}]
     assert [(p.key, p.kind) for p in d.describe_actions()[0].params] == [("n_piezas_pedidas", "number")]
+
+
+def test_describe_actions_allowlist_de_action_y_rango(caplog):
+    """La UI solo ofrece las positions de la allowlist de la action que existen
+    en el robot, y recibe el rango del número para pintar el deslizador."""
+    from fm.adapters.mir.config import NumberRange
+    cfg = MirRobotConfig("mir-1", "h", "a", {
+        "llevar": ActionConfig("llevar", "Ir a posición", position_inputs=["target_pos"],
+                               positions_allowlist={"P1", "NoExiste"}, number_inputs=["n"],
+                               number_ranges={"n": NumberRange(1, 10, 1)}),
+        "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"]),
+    }, mission_group="g")
+    d = MirDriver(cfg, _FakeClient())
+    # Antes de conectar: la allowlist tal cual (es config, no hace falta red).
+    assert d.describe_actions()[0].params[0].choices == ["NoExiste", "P1"]
+    with caplog.at_level("WARNING", logger="fm.mir"):
+        assert d.connect()
+    assert "la position 'NoExiste' de la allowlist no existe" in caplog.text
+    llevar, ir_a = d.describe_actions()
+    pos, n = llevar.params
+    assert pos.choices == ["P1"]
+    assert (n.kind, n.min, n.max, n.step) == ("number", 1, 10, 1)
+    assert ir_a.params[0].choices == ["P1"]          # sin allowlist: todas las del robot
+
+
+def test_job_result_es_el_message_de_la_cola():
+    d, c = _driver()
+    d.connect()
+    qid = d.execute(d.translate(Action("coger", "a1")))
+    c.queue[int(qid)], c.messages[int(qid)] = "Aborted", "Aborted - User Request"
+    assert d.job_status(qid) == "FAILED"
+    assert d.job_result(qid) == "Aborted - User Request"
+    assert d.job_result(qid) is None          # se entrega una vez
