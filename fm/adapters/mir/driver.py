@@ -73,12 +73,27 @@ class MirDriver:
                     self.log.warning("mission '%s' no existe en este robot (irá a NO_ROUTE_TO_TARGET)", name)
                     continue
                 self.mission_inputs[guid] = self.client.index_mission_params(guid)
+            self._check_inputs()
             self.indexed = True
             self.log.info("índices: %d missions, %d positions", len(self.missions), len(self.positions))
             return True
         except Exception as e:   # red, 4xx, JSON raro: todo se reintenta luego
             self.log.warning("no se pudieron cargar los índices: %s", e)
             return False
+
+    def _check_inputs(self) -> None:
+        """Avisa al arrancar si `fleet.yaml` declara un input que la mission no
+        expone en este robot: si no, el fallo saldría como un 400 del MiR al
+        postear (`parameter_input_name_not_valid`) en mitad de una order."""
+        for a in self.cfg.actions.values():
+            guid = self.missions.get(a.mission)
+            if guid is None:
+                continue
+            exposed = self.mission_inputs.get(guid, set())
+            for key in [*a.position_inputs, *a.required_inputs, *a.number_inputs]:
+                if key not in exposed:
+                    self.log.warning("actions.%s: la mission '%s' no tiene el input '%s' (tiene %s)",
+                                     a.action_type, a.mission, key, sorted(exposed))
 
     def poll(self) -> Telemetry | None:
         """GET /status tolerante → `Telemetry`. None si falla (motivo en `last_error`)."""
@@ -154,5 +169,6 @@ class MirDriver:
         for a in self.cfg.actions.values():
             params = [ParamInfo(k, "position", True, positions) for k in a.position_inputs]
             params += [ParamInfo(k, "text", True) for k in a.required_inputs]
+            params += [ParamInfo(k, "number", True) for k in a.number_inputs]
             out.append(ActionInfo(a.action_type, params, f"mission '{a.mission}'"))
         return out

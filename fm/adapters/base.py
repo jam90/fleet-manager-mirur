@@ -56,7 +56,7 @@ class Job:
 class ParamInfo:
     """Un parámetro de una action, para formularios (UI) y `factsheet.agvActions`."""
     key: str
-    kind: str = "text"                   # "position" | "text"
+    kind: str = "text"                   # "position" | "text" | "number"
     required: bool = True
     choices: list[str] | None = None     # valores admitidos, si el driver los conoce
 

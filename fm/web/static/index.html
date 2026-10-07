@@ -211,10 +211,12 @@
             </select>
           </label>
           <label class="field" v-for="p in currentParams" :key="p.key">
-            {{ p.key }} <span v-if="p.kind === 'position'">(position)</span>
+            {{ p.key }} <span v-if="p.kind === 'position'">(position)</span><span v-else-if="p.kind === 'number'">(número)</span>
             <select v-if="p.choices" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
               <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
             </select>
+            <input v-else-if="p.kind === 'number'" type="number" step="any" :id="'param-' + p.key"
+                   v-model.number="form.params[p.key]" :required="p.required">
             <input v-else type="text" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
           </label>
           <button class="btn primary" id="order-send" type="submit" :disabled="!form.actionType || sending">Enviar fleet/order</button>

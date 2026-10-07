@@ -41,7 +41,7 @@ def _action(a: ActionInfo) -> dict:
         "actionType": a.action_type,
         "actionDescription": a.description or None,
         "actionScopes": ["NODE"],
-        "actionParameters": [{"key": p.key, "valueDataType": "STRING", "isOptional": not p.required,
+        "actionParameters": [{"key": p.key, "valueDataType": "NUMBER" if p.kind == "number" else "STRING", "isOptional": not p.required,
                               "description": f"nombre de position ({len(p.choices)} conocidas)"
                               if p.kind == "position" and p.choices else p.kind}
                              for p in a.params] or None,

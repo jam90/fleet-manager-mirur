@@ -12,6 +12,7 @@ robots:
     host: 192.168.15.5                     # o env MIR_HOST_MIR_1
     actions:
       ir_a: { mission: "Ir a posición", position_inputs: [target_pos], required_inputs: [pieza] }
+      pedir: { mission: "Pedir piezas", number_inputs: [n_piezas_pedidas] }
 ```
 
 `auth` sale del entorno: `MIR_AUTH_<SERIAL>`, si no `MIR_AUTH` (alias
@@ -35,6 +36,7 @@ class ActionConfig:
     mission: str                                  # nombre de la mission en la web del MiR
     position_inputs: list[str] = field(default_factory=list)   # inputs cuyo valor es un nombre de position
     required_inputs: list[str] = field(default_factory=list)   # inputs obligatorios (se reenvían tal cual)
+    number_inputs: list[str] = field(default_factory=list)     # inputs obligatorios numéricos ("5" → 5)
 
 
 @dataclass
@@ -69,6 +71,7 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
             mission=str(a["mission"]),
             position_inputs=list(a.get("position_inputs") or []),
             required_inputs=list(a.get("required_inputs") or []),
+            number_inputs=list(a.get("number_inputs") or []),
         )
 
     allow = merged.get("positions_allowlist")

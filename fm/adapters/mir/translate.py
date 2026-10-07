@@ -10,6 +10,7 @@ del `Telemetry`; aquí solo se interpreta lo que dice el MiR.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Collection
 
@@ -83,6 +84,27 @@ class MissionRequest:
 
 
 
+def to_number(key: str, value) -> int | float:
+    """Valor de un `number_inputs` → int/float para el JSON de `/mission_queue`.
+
+    VDA 5050 no fija el tipo de `actionParameters.value` y cada emisor manda
+    lo que le parece: la UI y `send_fleet_order.py` mandan texto (`"5"`),
+    Node-RED puede mandar `5` o `5.0`. El MiR guarda el input de Blockly como
+    número (p.ej. el `value` de *Set PLC register*), así que lo normalizamos
+    aquí y rechazamos lo que no lo sea antes de que llegue al robot.
+    Enteros como int: los registros PLC 1–100 del MiR son enteros.
+    """
+    if isinstance(value, bool):     # True es int en Python, pero no es un número aquí
+        raise OrderRejected(E_VALIDATION_FAILURE, f"'{key}' debe ser un número, no {value!r}")
+    try:
+        num = float(str(value).strip().replace(",", "."))   # "2,5" también vale
+    except ValueError:
+        raise OrderRejected(E_VALIDATION_FAILURE, f"'{key}' debe ser un número, no {value!r}") from None
+    if not math.isfinite(num):
+        raise OrderRejected(E_VALIDATION_FAILURE, f"'{key}' debe ser un número finito, no {value!r}")
+    return int(num) if num.is_integer() else num
+
+
 def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, str],
                    positions: dict[str, str], mission_inputs: dict[str, set[str]],
                    allowlist: set[str] | None = None) -> MissionRequest:
@@ -120,8 +142,15 @@ def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, st
             raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}'")
         params.append({"id": key, "value": given[key]})
 
+    # Por input_name, igual que target_pos: el GUID interno del parámetro
+    # (distinto en cada robot) no se usa nunca (CLAUDE.md §9.1).
+    for key in acfg.number_inputs:
+        if key not in given:
+            raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (número)")
+        params.append({"id": key, "value": to_number(key, given[key])})
+
     # El resto solo si la mission expone ese input_name (compatibilidad hacia delante).
-    handled = set(acfg.position_inputs) | set(acfg.required_inputs)
+    handled = set(acfg.position_inputs) | set(acfg.required_inputs) | set(acfg.number_inputs)
     for key, value in given.items():
         if key not in handled and key in exposed:
             params.append({"id": key, "value": value})

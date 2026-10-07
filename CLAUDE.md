@@ -572,6 +572,9 @@ Semántica de cada `action` (driver `mir`):
   no existe / fuera de allowlist → `noRouteError`.
 - `required_inputs`: se reenvían tal cual pero su ausencia es `validationError`
   (`0`/falsy es válido; solo cuenta ausente que la `key` no venga).
+- `number_inputs` (2026-10-07): obligatorios y numéricos; `"5"` → `5` antes
+  de postear (no numérico → `validationError`). Ej.: `n_piezas_pedidas` →
+  registro PLC 22 en la mission `MIRUR-prueba-parámetros`.
 - El resto de `actionParameters` se pasan tal cual **si la mission expone ese
   `input_name`**; si no, se ignoran en silencio (compatibilidad hacia delante).
 

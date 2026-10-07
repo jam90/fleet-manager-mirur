@@ -78,9 +78,21 @@ Por `action` (driver `mir`):
 | `mission` | nombre exacto de la mission en la web del MiR; se resuelve a GUID **por robot** al arrancar |
 | `position_inputs` | `actionParameters` cuyo valor es un **nombre de position**; se traduce a GUID. Ausente → `VALIDATION_FAILURE`; inexistente → `NO_ROUTE_TO_TARGET` |
 | `required_inputs` | parámetros obligatorios que se reenvían tal cual (ausente → `VALIDATION_FAILURE`) |
+| `number_inputs` | parámetros obligatorios **numéricos**: `5`, `5.0`, `"5"` o `"2,5"` se mandan al MiR como número (`5`, `2.5`); ausente o no numérico → `VALIDATION_FAILURE`. P.ej. `n_piezas_pedidas` (registro PLC 22) |
 
 El resto de `actionParameters` se reenvían solo si la mission expone ese
-`input_name`; si no, se ignoran. Los GUIDs nunca van en la config: cambian
+`input_name`; si no, se ignoran. En el `POST /mission_queue` cada parámetro va
+como `{"id": <input_name>, "value": …}`: el `input_name` es el nombre que se le
+da en Blockly (igual en todos los robots); el `guid` interno del parámetro
+cambia de un robot a otro y el FM no lo usa. Al arrancar, el driver avisa en
+el log si un input de `fleet.yaml` no existe en la mission de ese robot.
+
+Ejemplo de order con parámetro numérico:
+
+```json
+{ "actionType": "prueba_parametros", "actionId": "a1", "blockingType": "HARD",
+  "actionParameters": [ { "key": "n_piezas_pedidas", "value": 5 } ] }
+``` Los GUIDs nunca van en la config: cambian
 de un robot a otro aunque el nombre coincida.
 
 Variables de entorno (`.env`): `MIR_AUTH` (o `AUTH_HEADER`), `MIR_AUTH_<SERIAL>`

@@ -9,8 +9,9 @@ from fm.vda5050.order import OrderRejected, parse_order
 ROBOT = MirRobotConfig("mir-1", "h", "a", {
     "coger": ActionConfig("coger", "coger"),
     "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"], required_inputs=["pieza"]),
+    "pedir": ActionConfig("pedir", "Pedir piezas", number_inputs=["n_piezas_pedidas"]),
 })
-MISSIONS = {"coger": "g-coger", "Ir a posición": "g-ir"}
+MISSIONS = {"coger": "g-coger", "Ir a posición": "g-ir", "Pedir piezas": "g-pedir"}
 POSITIONS = {"H2D1-VL": "g-h2d1"}
 INPUTS = {"g-ir": {"target_pos", "pieza", "extra"}}
 
@@ -54,6 +55,26 @@ def test_traduccion_con_position_y_required_y_extra():
     req = from_vda_order(pick_action(o), ROBOT, MISSIONS, POSITIONS, INPUTS)
     assert req.parameters == [{"id": "target_pos", "value": "g-h2d1"}, {"id": "pieza", "value": 0},
                               {"id": "extra", "value": "x"}]
+
+
+@pytest.mark.parametrize("value, sent", [(5, 5), ("5", 5), (5.0, 5), ("2,5", 2.5), (0, 0), (" 7 ", 7)])
+def test_number_inputs_se_normalizan(value, sent):
+    req = from_vda_order(pick_action(order("pedir", {"n_piezas_pedidas": value})), ROBOT, MISSIONS, POSITIONS, INPUTS)
+    assert req.parameters == [{"id": "n_piezas_pedidas", "value": sent}]
+    assert type(req.parameters[0]["value"]) is type(sent)
+
+
+@pytest.mark.parametrize("value", ["cinco", "", True, None, "nan", "inf"])
+def test_number_inputs_no_numericos(value):
+    with pytest.raises(OrderRejected) as e:
+        from_vda_order(pick_action(order("pedir", {"n_piezas_pedidas": value})), ROBOT, MISSIONS, POSITIONS, INPUTS)
+    assert e.value.error_type == "VALIDATION_FAILURE" and "n_piezas_pedidas" in e.value.description
+
+
+def test_number_inputs_obligatorio():
+    with pytest.raises(OrderRejected) as e:
+        from_vda_order(pick_action(order("pedir")), ROBOT, MISSIONS, POSITIONS, INPUTS)
+    assert e.value.error_type == "VALIDATION_FAILURE" and "n_piezas_pedidas" in e.value.description
 
 
 def test_errores_de_traduccion():

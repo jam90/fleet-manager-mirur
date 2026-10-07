@@ -17,7 +17,8 @@ def _header(man="MiR", serial="mir-1"):
 def test_mir_factsheet_valida_y_lista_actions():
     cfg = MirRobotConfig("mir-1", "h", "a", {
         "coger": ActionConfig("coger", "coger"),
-        "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"], required_inputs=["pieza"]),
+        "ir_a": ActionConfig("ir_a", "Ir a posición", position_inputs=["target_pos"], required_inputs=["pieza"],
+                             number_inputs=["n_piezas_pedidas"]),
     })
     fs = factsheet_for(_header(), MirDriver(cfg), driver_name="mir")
     assert_valid("factsheet", fs)
@@ -25,7 +26,7 @@ def test_mir_factsheet_valida_y_lista_actions():
     acts = {a["actionType"]: a for a in fs["protocolFeatures"]["mobileRobotActions"]}
     assert acts["coger"]["actionScopes"] == ["NODE"] and "actionParameters" not in acts["coger"]
     assert [(p["key"], p["valueDataType"], p["isOptional"]) for p in acts["ir_a"]["actionParameters"]] == [
-        ("target_pos", "STRING", False), ("pieza", "STRING", False)]
+        ("target_pos", "STRING", False), ("pieza", "STRING", False), ("n_piezas_pedidas", "NUMBER", False)]
     assert acts["cancelOrder"]["actionScopes"] == ["INSTANT"] and acts["factsheetRequest"]["actionScopes"] == ["INSTANT"]
     assert fs["protocolLimits"]["maximumArrayLengths"]["node.actions"] == 1
     assert fs["manufacturer"] == "MiR" and fs["serialNumber"] == "mir-1"

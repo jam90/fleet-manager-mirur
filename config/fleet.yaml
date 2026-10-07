@@ -54,6 +54,9 @@ robots:
       abrir_puerta:            # prueba de parámetros: target_pos = nombre de position
         mission: "Simular Apertura Puerta H2DX MIRUR"
         position_inputs: [target_pos]
+      prueba_parametros:       # escribe n_piezas_pedidas en el registro PLC 22 del MiR
+        mission: "MIRUR-prueba-parámetros"
+        number_inputs: [n_piezas_pedidas]   # número; "5" → 5 antes de postear
   mir-2:
     driver: mir
     host: 192.168.15.15
@@ -68,6 +71,9 @@ robots:
       abrir_puerta:
         mission: "Simular Apertura Puerta H2DX MIRUR"
         position_inputs: [target_pos]
+      prueba_parametros:
+        mission: "MIRUR-prueba-parámetros"
+        number_inputs: [n_piezas_pedidas]
       recoger_pieza:           # solo existe en mir-2
         mission: "Simulacion Recogida pieza H2DX MIRUR"
         position_inputs: [target_pos]

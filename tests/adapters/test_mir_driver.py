@@ -125,3 +125,21 @@ def test_charge_job():
     d2 = MirDriver(MirRobotConfig("mir-1", "h", "a", {}, mission_group="g"), _FakeClient())
     d2.connect()
     assert d2.charge_job() is None              # sin mission de carga configurada
+
+
+def test_number_input_llega_como_numero_al_post(caplog):
+    """`n_piezas_pedidas` (registro PLC 22): la UI manda "5", el MiR recibe 5,
+    con el input_name como `id` (no el GUID del parámetro, distinto por robot)."""
+    cfg = MirRobotConfig("mir-1", "h", "a", {
+        "pedir": ActionConfig("pedir", "Ir a posición", number_inputs=["n_piezas_pedidas"]),
+    }, mission_group="g")
+    c = _FakeClient()
+    d = MirDriver(cfg, c)
+    with caplog.at_level("WARNING", logger="fm.mir"):
+        assert d.connect()
+    # La mission falsa solo expone target_pos: aviso al arrancar, no error.
+    assert "no tiene el input 'n_piezas_pedidas'" in caplog.text
+    job = d.translate(Action("pedir", "a1", actionParameters=[ActionParameter("n_piezas_pedidas", "5")]))
+    d.execute(job)
+    assert c.posted[-1]["parameters"] == [{"id": "n_piezas_pedidas", "value": 5}]
+    assert [(p.key, p.kind) for p in d.describe_actions()[0].params] == [("n_piezas_pedidas", "number")]

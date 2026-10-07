@@ -873,3 +873,88 @@ marcador y el robot pasa por su entry él solo; la entry no es un destino.
     `position_inputs` son nombres de position y los `required_inputs` se
     reenvían tal cual; el tipo real lo decide la mission de Blockly y el FM
     no lo conoce. Si algún día hace falta, `ParamInfo.kind` puede crecer.
+
+## 2026-10-07 — Parámetros numéricos de mission (`n_piezas_pedidas`)
+
+Petición del usuario: poder mandar desde aguas arriba (y desde la UI) una
+mission con parámetros. Primer caso: `n_piezas_pedidas`, un número que la
+mission `MIRUR-prueba-parámetros` escribe en el **registro PLC 22**.
+
+Comprobado con `GET /missions/<guid>/actions` en los dos robots (solo
+lectura): la action `set_plc_register` tiene `register = "22"` fijo y su
+`value` expuesto como `input_name: "n_piezas_pedidas"`, con valor por
+defecto `1.0`. El parámetro tiene un `guid` distinto en cada robot
+(`2e8a7b12…` en mir-1, `eeeabc4e…` en mir-2), igual que las missions, pero
+`POST /mission_queue` lo identifica por `input_name` (gotcha §9.1, el mismo
+mecanismo que `target_pos`), así que no hay que resolver nada por robot más
+allá del GUID de la mission, que ya se hacía. Comprobado con `connect()` +
+`translate()` contra los dos robots: body `{"id": "n_piezas_pedidas",
+"value": 5}`, sin avisos. **Probado con robot real** (2026-10-07, el
+usuario la lanzó desde la interfaz web): la mission se ejecuta y escribe el
+valor en el registro 22.
+
+`pytest`: 90 en verde.
+
+### Código
+
+- `fm/adapters/mir/config.py`: `ActionConfig.number_inputs`.
+- `fm/adapters/mir/translate.py`: `to_number()` y bloque `number_inputs` en
+  `from_vda_order`.
+- `fm/adapters/mir/driver.py`: `ParamInfo(kind="number")` en
+  `describe_actions`; `_check_inputs()` avisa al arrancar si `fleet.yaml`
+  declara un input que la mission no expone en ese robot.
+- `fm/vda5050/factsheet.py`: `valueDataType: NUMBER` para `kind == "number"`.
+- `fm/web/static/index.html`: `<input type="number">` con `v-model.number`
+  para los parámetros numéricos.
+- `config/fleet.yaml`: action `prueba_parametros` en mir-1 y mir-2.
+- Tests: normalización y rechazos en `tests/test_orders.py`, POST con número
+  y aviso de input inexistente en `tests/adapters/test_mir_driver.py`,
+  factsheet con `NUMBER`.
+- Documentación: `README.md` (fila `number_inputs` en la tabla de config,
+  `id` = `input_name` y no el `guid` del parámetro, ejemplo de order con
+  número) y `CLAUDE.md` §8 (semántica de `number_inputs`).
+
+### Decisiones nuevas
+
+51. **Tipo numérico explícito en `fleet.yaml` (`number_inputs`)** en vez de
+    deducirlo del valor por defecto de la mission (`1.0`): se ve en la
+    config qué espera cada action y el FM no depende de un detalle de
+    Blockly. VDA no fija el tipo de `actionParameters.value` y cada emisor
+    manda lo suyo (la UI y los scripts, texto; Node-RED, número), así que
+    el FM normaliza a int si es entero (los registros PLC 1–100 del MiR son
+    enteros) o a float; acepta coma decimal; rechaza bool, NaN e infinito.
+52. **Matiza la decisión 50**: los parámetros `number` se anuncian en el
+    factsheet como `valueDataType: NUMBER`; el resto sigue en `STRING`.
+53. **Los inputs se validan contra la mission al arrancar solo con un
+    warning** (no error): coherente con missions inexistentes (§8), el FM
+    arranca igual y el fallo saldría como 400 del MiR en esa order.
+
+## Pendiente (a 2026-10-07)
+
+Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
+2026-09-17, en parte superadas (la order con `position_inputs` se probó con
+robot después).
+
+**Funcionalidad**
+
+1. **Missions definitivas** ("coge 5 contactores y llévalos a la balda 3"):
+   crearlas en la web del MiR y añadirlas a `fleet.yaml` con
+   `number_inputs` / `position_inputs` / `required_inputs`.
+2. **Flujo Node-RED emisor de `fleet/order`**: topic
+   `vda5050/v3/imperial_fleet/fleet/order`, header
+   `imperial_fleet`/`fleet`. Los números pueden ir como número o texto.
+3. **Acceso a la web desde otros equipos**: comprobar si WSL está en modo
+   `mirrored` o NAT (en NAT: `netsh portproxy` + regla de firewall).
+
+**Sin probar con robot (solo tests)**
+
+4. `required_inputs` (parámetro de texto): no hay mission que lo use.
+5. Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
+6. Order update (`orderUpdateId > 0`) sobre una order terminada.
+7. Robot que se apaga y vuelve a encenderse con el FM en marcha.
+
+**Menor**
+
+8. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
+   carga del FM en marcha" (decisión 35, coincidió en la prueba real). Solo
+   haría falta si el robot carga sin que lo mande el FM.
