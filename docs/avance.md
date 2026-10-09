@@ -1054,7 +1054,52 @@ fines de mission. Probado por el usuario en la web: se queda.
 - Comprobado en jsdom: parada a mano, "Unable to find path to goal." y fin
   normal, cada uno en su fila; las filas sin resultado quedan vacías.
 
-## Pendiente (a 2026-10-07)
+## 2026-10-09 — Llave física manual/auto (`mode_key_state`)
+
+Con la llave de mir-2 en manual, `run_fm` seguía mostrando
+`mode=AUTOMATIC`. Causa: el FM solo ponía `MANUAL` con `state_id = 11`, que
+es *ManualControl* (joystick de la web tras pulsar el botón azul de aceptar);
+girar la llave no cambia `state_id` (se quedó en 10 EmergencyStop). La
+posición de la llave va en `/status.mode_key_state`; `mode_id`/`mode_text`
+(7 Mission) distinguen Mission/Mapping, no manual/auto.
+
+Valores de `mode_key_state` vistos con mir-2 real: `"auto"` (automático),
+`"manual"` (manual) e `"idle"` (posición central/neutra; el robot queda en
+`state_id = 10` EmergencyStop).
+
+### Código
+
+- `client.py`: `MirStatus.mode_key_state` + constantes `KEY_AUTO`/`KEY_MANUAL`/`KEY_IDLE`.
+- `translate.py`: `operating_mode = MANUAL` si `state_id = 11` **o** llave
+  en `manual`; `available = False` si la llave no está en `auto`, con
+  motivo "llave del robot en '…'". `key=` añadido al `information` DEBUG.
+- `scripts/read_status.py` muestra la llave; test `test_llave_fisica`.
+
+### Decisiones nuevas
+
+58. **Cualquier llave distinta de `auto` bloquea orders** (`idle` incluido,
+    y también un valor que no conozcamos de otro firmware); solo
+    `manual` cambia `operatingMode` a `MANUAL`. Si `mode_key_state` no viene
+    (firmware antiguo) no bloquea, para no dejar inutilizado un robot que no
+    informa.
+
+### `operatingMode` con la llave en neutra
+
+Leída la norma (§6.6.6, tablas 10 y 11): `INTERVENED` = la flota no tiene el
+control, el robot informa bien y **no borra la order**; si vuelve a
+`AUTOMATIC` la continúa. Es lo que hace el MiR en neutra (EmergencyStop con
+la mission en cola), mientras que `AUTOMATIC` ("la flota tiene el control
+total") era falso.
+
+59. **Llave en neutra → `INTERVENED`, rechazando orders igualmente.** La
+    norma permite enviar orders en `INTERVENED` (el robot las guarda), pero
+    no queremos que el asignador dé trabajo a un robot que alguien está
+    manipulando, ni dejar una order dirigida esperando a que se gire la
+    llave. Desviación documentada en el README (limitaciones). Ídem con
+    `MANUAL`: la norma pide borrar la order al entrar y el MiR la conserva.
+    La UI muestra "intervenido".
+
+## Pendiente (a 2026-10-09)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
 2026-09-17, en parte superadas (la order con `position_inputs` se probó con
@@ -1071,16 +1116,35 @@ robot después).
 3. **Acceso a la web desde otros equipos**: comprobar si WSL está en modo
    `mirrored` o NAT (en NAT: `netsh portproxy` + regla de firewall).
 
+4. **GUIDs comunes en toda la flota** (idea anotada el 2026-10-09). El
+    usuario ha visto que al crear missions desde fuera de la interfaz web
+    (por API) se puede fijar el GUID: vale cualquier cadena de 36
+    caracteres. Si missions, positions, mission_groups y mapas se crean así
+    en todos los robots con el mismo GUID, desaparece el gotcha 2 del brief
+    (§9) y podrían simplificarse los índices nombre → GUID por robot y el
+    `mapId` del `state` (hoy distinto en cada MiR). Antes de adoptarlo,
+    comprobar:
+    - qué endpoints lo aceptan (`POST /missions`, `/positions`,
+      `/mission_groups`, `/maps`…) y si el MiR valida el formato UUID;
+    - cómo copiar una mission con sus actions (`missions/<guid>/actions`) y
+      sus positions a otro robot manteniendo GUIDs;
+    - qué pasa con las positions que crea el MiR solo (entry positions de
+      marcadores y cargadores, `type_id` 12/21) y con los mapas ya
+      existentes (habría que recrearlos o migrarlos);
+    - si un backup/restore o una actualización del MiR conserva los GUIDs.
+    Aunque se adopte, mantener la resolución por nombre como respaldo: un
+    robot nuevo o editado a mano en la web volvería a tener GUIDs propios.
+
 **Sin probar con robot (solo tests)**
 
-4. `required_inputs` (parámetro de texto): no hay mission que lo use.
-5. Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
-6. Order update (`orderUpdateId > 0`) sobre una order terminada.
-7. Robot que se apaga y vuelve a encenderse con el FM en marcha.
+5. `required_inputs` (parámetro de texto): no hay mission que lo use.
+6. Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
+7. Order update (`orderUpdateId > 0`) sobre una order terminada.
+8. Robot que se apaga y vuelve a encenderse con el FM en marcha.
 
 **Menor**
 
-8. `prueba_parametros_v2` desde una tablet (deslizador).
-9. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
+9. `prueba_parametros_v2` desde una tablet (deslizador).
+10. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
    carga del FM en marcha" (decisión 35, coincidió en la prueba real). Solo
    haría falta si el robot carga sin que lo mande el FM.

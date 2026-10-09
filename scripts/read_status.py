@@ -22,7 +22,7 @@ def main() -> None:
     if raw:
         print(json.dumps(d, indent=2, ensure_ascii=False))
     st = MirStatus.from_json(d)
-    print(f"[{serial}] state={st.state_id} ({st.state_text}) mode={st.mode_id} ({st.mode_text})")
+    print(f"[{serial}] state={st.state_id} ({st.state_text}) mode={st.mode_id} ({st.mode_text}) llave={st.mode_key_state!r}")
     print(f"[{serial}] bat={st.battery_percentage:.1f}% time_remaining={st.battery_time_remaining}")
     print(f"[{serial}] pos=({st.x:.2f},{st.y:.2f}) theta={st.theta:.3f} rad map={st.map_id}")
     print(f"[{serial}] mission_text='{st.mission_text}' queue_id={st.mission_queue_id} errors={len(st.errors)}")

@@ -31,6 +31,22 @@ def test_estados_no_disponibles():
     assert to_telemetry(_st(state_id=12)).errors[0].errorType == "MIR_STATE_ERROR"
 
 
+def test_llave_fisica():
+    # Llave en manual: state_id sigue sin ser 11, pero el FM debe verlo (2026-10-09)
+    t = to_telemetry(_st(state_id=10, state_text="EmergencyStop", mode_key_state="manual"))
+    assert t.operating_mode == "MANUAL" and not t.available
+    assert "llave" in t.unavailable_reason and "manual" in t.unavailable_reason
+    # Neutra ("idle", visto con mir-2) → INTERVENED; desconocida → modo sin cambiar.
+    # En ambos casos no acepta orders (decisiones 58 y 59).
+    for key, mode in (("idle", "INTERVENED"), ("otra", "AUTOMATIC")):
+        t = to_telemetry(_st(mode_key_state=key))
+        assert not t.available and t.operating_mode == mode and f"'{key}'" in t.unavailable_reason
+    # "auto" o ausente (firmware que no informa): disponible
+    assert to_telemetry(_st(mode_key_state="auto")).available
+    assert to_telemetry(_st()).available
+    assert "key=auto" in to_telemetry(_st(mode_key_state="auto")).information[0].infoDescriptor
+
+
 def test_mission_propia_vs_ajena():
     # Executing con mission_queue 7: ajena si el FM no lanzó la 7 (decisión 16)
     st = _st(state_id=5, state_text="Executing", mission_queue_id=7, mission_text="Ir a H2D1")

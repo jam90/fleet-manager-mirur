@@ -301,7 +301,8 @@ Mapeo desde `GET /status` del MiR:
 
 | MiR `/status` | VDA `state` |
 |---|---|
-| `state_id` 3 Ready / 4 Pause / 5 Executing / 11 Manual / 12 Error | `driving = (5)`, `paused = (4)`, `operatingMode = MANUAL si 11, si no AUTOMATIC`, `errors[]` si 12 |
+| `state_id` 3 Ready / 4 Pause / 5 Executing / 11 Manual / 12 Error | `driving = (5)`, `paused = (4)`, `operatingMode = MANUAL si 11`, `errors[]` si 12 |
+| `mode_key_state` (llave física) `auto` / `manual` / `idle` (neutra) | `operatingMode` `AUTOMATIC` / `MANUAL` / `INTERVENED`; si no es `auto`, no acepta orders (decisiones 58–59). Girar la llave **no** pone `state_id = 11` (ese es el joystick de la web) |
 | `position.{x,y,orientation}` (orientation en **grados**) | `mobileRobotPosition` con `theta` en **radianes** `[-π, π]` |
 | `battery_percentage` | `powerSupply.stateOfCharge` |
 | `map_id` | `mobileRobotPosition.mapId` (GUID distinto por robot) |
@@ -609,6 +610,10 @@ Gotchas verificados contra robots reales en el proyecto anterior:
    `missions/<guid>/actions` solo para **verificar que el `input_name` existe**.
 2. **GUIDs distintos por robot** para missions, positions, mission_groups y
    mapas aunque el nombre sea idéntico. Índices por robot, siempre.
+   *A futuro (2026-10-09, sin probar):* al crear un recurso por API el GUID
+   se puede elegir (cualquier cadena de 36 caracteres), lo que permitiría
+   GUIDs idénticos en todos los robots. Ver "Pendiente" en `docs/avance.md`.
+   Mientras no se adopte, la regla sigue siendo resolver por nombre.
 3. **Positions con nombre duplicado** (p.ej. dos `Charging station` con
    `type_id` 20 y 21): al indexar, quedarse con la primera y avisar por log.
 4. **Filtrar missions por grupo:** `GET /mission_groups/<guid>/missions`.

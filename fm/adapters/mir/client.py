@@ -28,6 +28,14 @@ STATE_EMERGENCY_STOP = 10
 STATE_MANUAL = 11
 STATE_ERROR = 12
 
+# Posiciones del selector de llave del MiR250 (`/status.mode_key_state`).
+# Las tres comprobadas con mir-2 real (2026-10-09); en neutra el robot queda en
+# EmergencyStop (state_id 10). Cualquier valor distinto de "auto" se trata como
+# "no acepta orders", así que uno desconocido (otro firmware) también es seguro.
+KEY_AUTO = "auto"
+KEY_MANUAL = "manual"
+KEY_IDLE = "idle"        # posición central (neutra)
+
 # `type_id` de positions que son la "entry position" automática de un marcador
 # (12 = de un VL-marker, 21 = de un cargador). Comparten nombre con su marcador
 # (`parent_id`) y no son un destino: al mandar el marcador el MiR ya pasa por su
@@ -68,6 +76,7 @@ class MirStatus:
     battery_time_remaining: int | None       # segundos; candidato a delatar la carga
     mode_id: int | None
     mode_text: str
+    mode_key_state: str                      # llave física: "auto" | "manual" | "idle" ("" si no viene)
     x: float
     y: float
     theta: float                             # radianes en [-π, π] (el MiR da grados)
@@ -90,6 +99,7 @@ class MirStatus:
             battery_time_remaining=d.get("battery_time_remaining"),
             mode_id=d.get("mode_id"),
             mode_text=str(d.get("mode_text", "")),
+            mode_key_state=str(d.get("mode_key_state") or ""),
             x=float(pos.get("x", 0.0)),
             y=float(pos.get("y", 0.0)),
             theta=theta,

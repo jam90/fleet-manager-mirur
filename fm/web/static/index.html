@@ -408,7 +408,8 @@ createApp({
     function statusOf(r, s) {
       if (!s || r.connection === 'CONNECTIONBROKEN' || (s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE'))
         return { key: 'sinconexion', label: 'sin conexión' };
-      if (s.operatingMode !== 'AUTOMATIC') return { key: 'manual', label: s.operatingMode.toLowerCase() };
+      if (s.operatingMode !== 'AUTOMATIC')
+        return { key: 'manual', label: s.operatingMode === 'INTERVENED' ? 'intervenido' : s.operatingMode.toLowerCase() };
       if (s.safetyState && s.safetyState.activeEmergencyStop !== 'NONE') return { key: 'error', label: 'parada de emergencia' };
       if ((s.errors || []).some(e => e.errorLevel === 'FATAL')) return { key: 'error', label: 'error' };
       if (s.paused) return { key: 'pausado', label: 'en pausa' };

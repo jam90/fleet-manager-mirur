@@ -16,8 +16,8 @@ from typing import Collection
 
 from fm.adapters.base import Telemetry
 from fm.adapters.mir.config import MirRobotConfig
-from fm.adapters.mir.client import (STATE_EMERGENCY_STOP, STATE_ERROR, STATE_EXECUTING,
-                                    STATE_MANUAL, STATE_PAUSE, MirStatus)
+from fm.adapters.mir.client import (KEY_AUTO, KEY_IDLE, KEY_MANUAL, STATE_EMERGENCY_STOP, STATE_ERROR,
+                                    STATE_EXECUTING, STATE_MANUAL, STATE_PAUSE, MirStatus)
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET,
                               E_VALIDATION_FAILURE, Error, Info)
@@ -40,6 +40,34 @@ def _mir_errors(st: MirStatus) -> list[Error]:
     return out
 
 
+def _key_not_auto(st: MirStatus) -> bool:
+    """La llave física no está en automático. Va aparte de `state_id`: girar
+    la llave a manual NO pone `state_id = 11` (ese es *ManualControl*, el
+    joystick de la web tras aceptar el cambio). "" = firmware que no informa
+    de la llave → no bloquea."""
+    return st.mode_key_state not in ("", KEY_AUTO)
+
+
+def _operating_mode(st: MirStatus) -> str:
+    """`operatingMode` VDA (§6.6.6) a partir de `state_id` y la llave.
+
+    Llave en neutra → INTERVENED: la flota no tiene el control pero el MiR
+    conserva la mission en su cola, igual que pide la norma para ese modo.
+    Desviación consciente (decisión 59): la norma permite mandar orders en
+    INTERVENED y el FM las rechaza igualmente (`available = False`)."""
+    if st.state_id == STATE_MANUAL or st.mode_key_state == KEY_MANUAL:
+        return "MANUAL"
+    if st.mode_key_state == KEY_IDLE:
+        return "INTERVENED"
+    return "AUTOMATIC"
+
+
+def _unavailable_reason(st: MirStatus) -> str:
+    if _key_not_auto(st):
+        return f"llave del robot en '{st.mode_key_state}' (no en '{KEY_AUTO}')"
+    return f"robot en estado {st.state_text} (state_id={st.state_id})"
+
+
 def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetry:
     """`MirStatus` → `Telemetry`. `own_queue_ids` son las entradas de
     `mission_queue` que lanzó el FM: cualquier otra mission en marcha es ajena
@@ -50,7 +78,8 @@ def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetr
     # Para depurar "ocupado por mission ajena" sin abrir la web del MiR:
     # state_id y la entrada de cola en curso, tal cual los da /status.
     info.append(Info("MIR_STATUS", "DEBUG",
-                     f"state_id={st.state_id} mission_queue_id={st.mission_queue_id}"
+                     f"state_id={st.state_id} key={st.mode_key_state or '?'} "
+                     f"mission_queue_id={st.mission_queue_id}"
                      + (" (propia)" if st.mission_queue_id in own_queue_ids else "")))
     return Telemetry(
         battery=st.battery_percentage,
@@ -61,11 +90,11 @@ def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetr
         # Heurística sobre /status PENDIENTE DE VALIDAR en el dock (CLAUDE.md
         # §5.2): de momento el MiR no informa y decide el overlay (auto-carga).
         charging=None,
-        operating_mode="MANUAL" if st.state_id == STATE_MANUAL else "AUTOMATIC",
+        operating_mode=_operating_mode(st),
         emergency_stop=st.state_id == STATE_EMERGENCY_STOP,
-        available=st.state_id not in UNAVAILABLE_STATES,
+        available=st.state_id not in UNAVAILABLE_STATES and not _key_not_auto(st),
         foreign_busy=foreign,
-        unavailable_reason=f"robot en estado {st.state_text} (state_id={st.state_id})",
+        unavailable_reason=_unavailable_reason(st),
         errors=_mir_errors(st),
         information=info,
     )

@@ -173,7 +173,7 @@ Reglas (§6.1.4 de la norma):
 | mismo `orderId`, `orderUpdateId` mayor, order viva | `VALIDATION_FAILURE` (v1 no amplía orders en curso) |
 | mismo `orderId`, `orderUpdateId` mayor, order terminada | se acepta; se ejecuta la primera action no `FINISHED` |
 | otro `orderId` con order viva | `OTHER_ORDER_ACTIVE` |
-| robot en Manual / Error / EmergencyStop | `MOBILE_ROBOT_NOT_AVAILABLE` |
+| robot en Manual / Error / EmergencyStop, o llave no en `auto` | `MOBILE_ROBOT_NOT_AVAILABLE` |
 | robot ejecutando una mission lanzada desde la web | `MOBILE_ROBOT_NOT_AVAILABLE` |
 | más de una action pendiente | `VALIDATION_FAILURE` |
 | `actionType` no mapeado en ese robot | `INVALID_ORDER_ACTION` |
@@ -215,6 +215,7 @@ ignora repeticiones de la última order **aceptada**.
 | `state_id` 5 Executing / 4 Pause / 11 Manual / 12 Error / 10 EStop | `driving` / `paused` / `operatingMode: MANUAL` / `errors[] FATAL` / `safetyState.activeEmergencyStop: MANUAL` |
 | `position.{x,y,orientation°}` | `mobileRobotPosition.{x,y,theta rad}` |
 | `battery_percentage` | `powerSupply.stateOfCharge` |
+| `mode_key_state` (llave) `auto` / `manual` / `idle` (neutra) | `operatingMode: AUTOMATIC` / `MANUAL` / `INTERVENED` |
 | `map_id` | `mobileRobotPosition.mapId` |
 | `mission_text` | `information[] {infoType: MISSION}` |
 | `errors[]` | `errors[] {errorType: MIR_<code>}` |
@@ -394,6 +395,9 @@ robot queda ocupado para siempre y no sale del dock. La de `mirur-tknika`
 - Sin cola interna: si ningún robot puede, se rechaza y el sistema aguas
   arriba reencola. Sin coordinación de tráfico entre robots.
 - `safetyState.fieldViolation` siempre `false` (el MiR no lo expone).
+- `operatingMode`: con la llave en neutra se publica `INTERVENED`, pero el FM
+  **rechaza orders** (la norma las permite en ese modo). Y en `MANUAL` la
+  norma pide borrar la order; el MiR la conserva en su cola.
 - El `headerId` del Last Will se fija al conectar, así que llega menor que el
   último `ONLINE`.
 
