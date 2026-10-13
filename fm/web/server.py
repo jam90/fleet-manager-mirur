@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from fm.adapters.base import ActionInfo
+from fm.adapters.base import describe_actions
 from fm.config import FleetConfig
 from fm.mqtt_bus import FLEET, MqttBus
 from fm.robot import Robot
@@ -64,7 +64,10 @@ class WebServer:
 
     # ---------------------------------------------------------------- espejo
     def mirror(self, topic: str, payload: dict) -> None:
-        """Gancho `bus.on_publish`: se llama desde el hilo principal."""
+        """Gancho `bus.on_publish`. Se llama desde el hilo que publica: el
+        principal casi siempre, pero también paho (`connection` ONLINE al
+        reconectar) y el propio hilo web (las orders de la UI). Por eso solo
+        hace operaciones atómicas y delega el envío en el event loop."""
         if topic.endswith("/state") or topic.endswith("/connection"):
             self.last[topic] = payload
         if self.loop is not None and self.clients:
@@ -85,11 +88,7 @@ class WebServer:
     def fleet_info(self) -> dict:
         robots = []
         for s, r in self.robots.items():
-            describe = getattr(r.driver, "describe_actions", None)
-            if describe is not None:
-                actions = [asdict(a) for a in describe()]
-            else:
-                actions = [asdict(ActionInfo(t)) for t in sorted(r.cfg.action_types)]
+            actions = [asdict(a) for a in describe_actions(r.driver, r.cfg.action_types)]
             robots.append({"serial": s, "manufacturer": r.manufacturer, "driver": r.cfg.driver,
                            "battery_min": r.cfg.battery_min, "actions": actions})
         return {"robots": robots,

@@ -23,14 +23,12 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry, job_result
+from fm.adapters.base import JOB_ALIVE, Job, JobStatus, RobotDriver, Telemetry, job_result
 from fm.config import AutoChargeConfig
 from fm.vda5050.state import Info
 from fm.vda5050.state_builder import StateOverlay
 
 log = logging.getLogger("fm.charge")
-
-JOB_ALIVE = ("WAITING", "RUNNING")
 
 
 @dataclass

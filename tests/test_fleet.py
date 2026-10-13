@@ -102,3 +102,43 @@ def test_header_distinto_del_topic_se_rechaza():
     disp.handle(topic(FLEET_MAN, "fleet", "order"), _order("MiR", "fleet"))
     t, resp = bus.published[-1]
     assert resp["status"] == "REJECTED" and resp["errorType"] == "VALIDATION_FAILURE"
+
+
+class _BrokenDriver(FakeDriver):
+    """`execute` falla como lo haría el MiR: sin red o con un 4xx."""
+    def __init__(self, exc):
+        super().__init__()
+        self.exc = exc
+
+    def execute(self, job, priority=0):
+        raise self.exc
+
+
+def _setup_broken(exc):
+    disp, robots, bus, states = _setup({"mir-1": "MiR"})
+    robots["mir-1"].driver = _BrokenDriver(exc)
+    return disp, robots, bus, states
+
+
+def test_fleet_order_con_post_fallido_responde_rejected():
+    # Antes la excepción subía hasta drain() y el emisor no recibía order_response.
+    for exc, error_type in [(ConnectionError("sin red"), "ROBOT_UNREACHABLE"),
+                            (RuntimeError("POST mission_queue → HTTP 400"), "ORDER_EXECUTION_FAILED")]:
+        disp, robots, bus, states = _setup_broken(exc)
+        disp.handle(topic(FLEET_MAN, "fleet", "order"), _order(FLEET_MAN, "fleet"))
+        t, resp = bus.published[-1]
+        assert t.endswith("/fleet/order_response")
+        assert resp["status"] == "REJECTED" and resp["errorType"] == error_type
+        assert "fake 'coger'" in resp["errorDescription"]
+        assert robots["mir-1"].orders.active is None and not robots["mir-1"].busy
+        # La misma order se puede reintentar: no cuenta como "repetida".
+        assert disp.last_fleet_order is None
+
+
+def test_order_dirigida_con_post_fallido_deja_el_error_en_state():
+    disp, robots, bus, states = _setup_broken(ConnectionError("sin red"))
+    disp.handle(topic("MiR", "mir-1", "order"), _order("MiR", "mir-1"))
+    errs = robots["mir-1"].orders.order_errors
+    assert [e.errorType for e in errs] == ["ROBOT_UNREACHABLE"]
+    assert errs[0].errorReferences[0].referenceValue == "o1"
+    assert states == ["mir-1"] and robots["mir-1"].orders.active is None

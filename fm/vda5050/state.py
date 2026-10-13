@@ -33,12 +33,14 @@ E_ORDER_EXECUTION_FAILED = "ORDER_EXECUTION_FAILED"           # propio: mission 
 E_ROBOT_UNREACHABLE = "ROBOT_UNREACHABLE"                     # propio: el driver no alcanza al robot
 
 
-def _clean(d: Any) -> Any:
-    """Quita claves con valor None (campos opcionales no informados)."""
+def drop_none(d: Any) -> Any:
+    """Quita claves con valor None (campos opcionales no informados), en
+    profundidad. Lo usan todos los mensajes que publica el FM: un opcional
+    sin valor se omite, nunca se manda como `null` (el schema no lo admite)."""
     if isinstance(d, dict):
-        return {k: _clean(v) for k, v in d.items() if v is not None}
+        return {k: drop_none(v) for k, v in d.items() if v is not None}
     if isinstance(d, list):
-        return [_clean(v) for v in d]
+        return [drop_none(v) for v in d]
     return d
 
 
@@ -138,4 +140,4 @@ class State:
     edgeRequests: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return _clean(asdict(self))
+        return drop_none(asdict(self))

@@ -8,8 +8,8 @@ recibir `factsheetRequest`.
 """
 from __future__ import annotations
 
-
-from fm.adapters.base import ActionInfo, RobotSpec
+from fm.adapters.base import ActionInfo, RobotSpec, describe_actions
+from fm.vda5050.state import drop_none
 
 # instantActions que atiende el core (fm/instant.py)
 INSTANT_ACTIONS = ("startPause", "stopPause", "cancelOrder", "stateRequest", "factsheetRequest")
@@ -52,8 +52,8 @@ def _action(a: ActionInfo) -> dict:
         "actionType": a.action_type,
         "actionDescription": a.description or None,
         "actionScopes": ["NODE"],
-        "actionParameters": [{"key": p.key, "valueDataType": "NUMBER" if p.kind == "number" else "STRING", "isOptional": not p.required,
-                              "description": _param_description(p)}
+        "actionParameters": [{"key": p.key, "valueDataType": "NUMBER" if p.kind == "number" else "STRING",
+                              "isOptional": not p.required, "description": _param_description(p)}
                              for p in a.params] or None,
         "blockingTypes": ["NONE", "SOFT", "HARD"],
         "pauseAllowed": True,      # startPause
@@ -89,22 +89,13 @@ def build_factsheet(header: dict, actions: list[ActionInfo], spec: RobotSpec | N
         "mobileRobotGeometry": {},
         "loadSpecification": {},
     }
-    return _clean(fs)
-
-
-def _clean(d):
-    if isinstance(d, dict):
-        return {k: _clean(v) for k, v in d.items() if v is not None}
-    if isinstance(d, list):
-        return [_clean(v) for v in d]
-    return d
+    return drop_none(fs)
 
 
 def factsheet_for(header: dict, driver, action_types: list[str] | None = None,
                   driver_name: str = "") -> dict:
     """Factsheet de un robot a partir de su driver (ganchos opcionales)."""
-    describe = getattr(driver, "describe_actions", None)
-    actions = describe() if describe else [ActionInfo(t) for t in sorted(action_types or [])]
+    actions = describe_actions(driver, action_types)
     describe_robot = getattr(driver, "describe_robot", None)
     spec = describe_robot() if describe_robot else None
     return build_factsheet(header, actions, spec, driver_name)

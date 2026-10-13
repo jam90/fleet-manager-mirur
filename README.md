@@ -178,6 +178,8 @@ Reglas (§6.1.4 de la norma):
 | más de una action pendiente | `VALIDATION_FAILURE` |
 | `actionType` no mapeado en ese robot | `INVALID_ORDER_ACTION` |
 | position inexistente / fuera de allowlist / mission ausente en el robot | `NO_ROUTE_TO_TARGET` |
+| el robot no responde al encolar la mission (red) | `ROBOT_UNREACHABLE` |
+| el robot rechaza la mission al encolarla (4xx del MiR) | `ORDER_EXECUTION_FAILED` |
 
 Los rechazos de `<serial>/order` van a `state.errors[]` (`errorLevel:
 WARNING`, `errorReferences: [{orderId}]`) hasta que se acepte otra order.
@@ -285,10 +287,10 @@ Añadir una marca es crear una carpeta y registrarla:
    | Método | Qué hace | Regla |
    |---|---|---|
    | `manufacturer` | segmento `<manufacturer>` de sus topics | atributo; `robots.<s>.manufacturer` lo pisa |
-   | `connect() -> bool` | índices, handshake… | tolerante; el core reintenta cada tick mientras sea False |
+   | `connect() -> bool` | índices, handshake… | tolerante; mientras sea False el core lo reintenta cada 5 s (si el robot responde) |
    | `poll() -> Telemetry \| None` | snapshot normalizado | None = inalcanzable (motivo en `last_error`); nunca lanza |
    | `translate(Action) -> Job` | valida y prepara sin red | lanza `OrderRejected(errorType, texto)` |
-   | `execute(Job, priority) -> str` | lanza el job | devuelve un `job_id` opaco |
+   | `execute(Job, priority) -> str` | lanza el job | devuelve un `job_id` opaco; si el robot no lo acepta, lanza (el core lo convierte en rechazo de la order) |
    | `job_status(job_id) -> JobStatus \| None` | `WAITING/RUNNING/FINISHED/FAILED` | None = no se pudo consultar (se reintenta) |
    | `cancel(job_id)` | aborta el job (H5) | |
    | `charge_job() -> Job \| None` | job de auto-carga (H4) | None = no soporta |

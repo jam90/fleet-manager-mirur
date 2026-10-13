@@ -43,3 +43,36 @@ def test_backoff_exponencial_y_recuperacion():
     t["now"] = 132
     r.poll()
     assert d.calls == expected_calls + 2
+
+
+def test_connect_fallido_se_reintenta_cada_connect_retry_s():
+    """Robot que responde a `poll()` pero cuyo `connect()` falla (p.ej.
+    `mission_group` mal escrito): no se reintenta en cada tick."""
+    from fm.robot import CONNECT_RETRY_S
+
+    class NoIndexDriver(FlakyDriver):
+        def __init__(self):
+            super().__init__()
+            self.up = True
+            self.connects = 0
+
+        def connect(self):
+            self.connects += 1
+            return self.connects >= 3       # a la tercera va
+
+    t = {"now": 0.0}
+    d = NoIndexDriver()
+    r = Robot(RobotConfig("r1"), d, clock=lambda: t["now"])
+    for now in range(0, int(CONNECT_RETRY_S)):      # 1 Hz durante un intervalo
+        t["now"] = float(now)
+        r.poll()
+    assert d.connects == 1 and not r.connected
+    t["now"] = CONNECT_RETRY_S
+    r.poll()
+    assert d.connects == 2
+    t["now"] = 2 * CONNECT_RETRY_S
+    r.poll()
+    assert d.connects == 3 and r.connected
+    t["now"] += 1
+    r.poll()
+    assert d.connects == 3                           # conectado: no se vuelve a llamar

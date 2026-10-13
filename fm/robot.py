@@ -14,13 +14,19 @@ from fm.charge import ChargeGuard
 from fm.config import AutoChargeConfig, RobotConfig
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
-from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE
+from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
+                              E_ROBOT_UNREACHABLE, State)
+from fm.vda5050.state_builder import to_vda_state
 
 log = logging.getLogger("fm.robot")
 
 # Backoff tras fallos de red consecutivos: 1, 2, 4, 8, 8, ... segundos entre
 # intentos. Un robot apagado deja de costar un timeout por tick (decisión 42).
 BACKOFF_MAX_S = 8.0
+# Si el robot responde pero `connect()` falla (p.ej. `mission_group` mal
+# escrito), no reintentar en cada tick: serían varias peticiones REST y un
+# warning por segundo mientras dure el problema.
+CONNECT_RETRY_S = 5.0
 
 
 class Robot:
@@ -38,6 +44,7 @@ class Robot:
         self.last_telemetry: Telemetry | None = None
         self.poll_failures = 0           # fallos de red consecutivos
         self.next_poll_at = 0.0          # no volver a preguntar al robot antes de esto
+        self.next_connect_at = 0.0       # no reintentar connect() antes de esto
         self.orders = OrderTracker(self.serial)
         self.charge = ChargeGuard(self.serial, auto_charge or AutoChargeConfig())
 
@@ -51,7 +58,8 @@ class Robot:
 
     # ------------------------------------------------------------------ tick
     def connect(self) -> bool:
-        """Índices/handshake del driver. Se reintenta cada tick hasta que vaya."""
+        """Índices/handshake del driver. Si falla, `poll()` lo reintenta cada
+        `CONNECT_RETRY_S` mientras el robot responda."""
         self.connected = self.driver.connect()
         return self.connected
 
@@ -77,8 +85,9 @@ class Robot:
             self.log.info("vuelve a responder tras %d fallos", self.poll_failures)
         self.poll_failures = 0
         self.next_poll_at = 0.0
-        if not self.connected:
-            self.connect()   # reintento tras un arranque sin red
+        if not self.connected and now >= self.next_connect_at:
+            if not self.connect():       # reintento tras un arranque sin red
+                self.next_connect_at = now + CONNECT_RETRY_S
         self.orders.poll(self.driver)
         self.charge.tick(self.driver, self.last_telemetry)
         return self.last_telemetry
@@ -86,6 +95,20 @@ class Robot:
     def overlay(self):
         """Lo que el FM sabe de este robot y el driver no: order + auto-carga."""
         return self.charge.decorate(self.orders.overlay())
+
+    def state(self, header: dict) -> State:
+        """`state` VDA de este robot: telemetría + overlay del FM + el gancho
+        opcional `extra_state()` del driver (campos que el core no deduce).
+        El gancho solo se llama con telemetría fresca: sin ella no hay nada
+        nuevo que decir del robot."""
+        s = to_vda_state(header, self.last_telemetry, self.overlay(), error=self.last_error)
+        extra = getattr(self.driver, "extra_state", None)
+        if extra is not None and self.last_telemetry is not None:
+            try:
+                extra(s)
+            except Exception as e:   # un driver con bug no debe parar el tick de toda la flota
+                self.log.error("extra_state() lanzó %s: %s", type(e).__name__, e)
+        return s
 
     # ---------------------------------------------------------------- orders
     @property
@@ -122,7 +145,24 @@ class Robot:
         return self.driver.translate(action)
 
     def execute(self, order: Order, job: Job, priority: int = 0) -> str:
-        """Lanza el job en el robot y lo registra en el tracker. Devuelve el job_id."""
-        job_id = self.driver.execute(job, priority)
+        """Lanza el job en el robot y lo registra en el tracker. Devuelve el job_id.
+
+        Si el robot no lo acepta (red caída, 4xx del MiR...) lanza
+        `OrderRejected`, como cualquier otro rechazo: así `fleet/order` recibe
+        su `order_response REJECTED` y `<serial>/order` deja el error en
+        `state.errors`, en vez de acabar en una excepción sin respuesta."""
+        try:
+            job_id = self.driver.execute(job, priority)
+        except OrderRejected:
+            raise
+        except Exception as e:
+            # OSError = no se llegó al robot (las excepciones de red de
+            # `requests` heredan de él); lo demás, el robot dijo que no.
+            # Ojo: tras un timeout de lectura el robot pudo encolarla igual;
+            # entonces se verá como trabajo ajeno (`foreign_busy`) y el FM no
+            # le mandará nada más hasta que termine.
+            error_type = E_ROBOT_UNREACHABLE if isinstance(e, OSError) else E_ORDER_EXECUTION_FAILED
+            raise OrderRejected(error_type, f"el robot no aceptó {job.label}: "
+                                            f"{type(e).__name__}: {str(e)[:160]}") from e
         self.orders.accept(order, job, job_id)
         return job_id

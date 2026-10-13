@@ -1,5 +1,5 @@
 """Despacho de mensajes MQTT entrantes: `<serial>/order`, `fleet/order`
-(asignador) y, en H5, `instantActions`. Corre en el hilo principal, drenando
+(asignador) e `instantActions`. Corre en el hilo principal, drenando
 `bus.inbox` al inicio de cada tick.
 """
 from __future__ import annotations

@@ -1099,7 +1099,108 @@ total") era falso.
     `MANUAL`: la norma pide borrar la order al entrar y el MiR la conserva.
     La UI muestra "intervenido".
 
-## Pendiente (a 2026-10-09)
+## 2026-10-11 — Diseño: configurador del FM y sincronización de la flota
+
+Sin código. Plan completo en `docs/plan-admin.md`; se refinará tras las
+pruebas de GUIDs con robot (previstas el 2026-10-13).
+
+### Decisiones nuevas (provisionales hasta la fase 0)
+
+60. **Dos pestañas nuevas separadas de la de operación:** configurador del
+    FM (edita `fleet.yaml`) y sincronización (missions, positions y mapas
+    en los robots). Un operario básico no las necesita.
+61. **Sin editor de missions:** la lógica se programa en el Blockly de un
+    MiR; el FM la captura y la propaga.
+62. **Sincronización puntual y pensada para N robots:** se usa con una
+    mission o position nueva o con un MiR nuevo; no es continua.
+63. **Catálogo versionado en git (`catalog/`) entre el robot y la flota**
+    (capturar → desplegar), en vez de copiar robot a robot: no depende de
+    que el robot origen esté disponible, deja historial y permite sacar el
+    siguiente GUID sin tener toda la flota encendida.
+64. **Estándar de GUID `4d495255-TTTT-0000-0000-NNNNNNNNNNNN`** ("MIRU" +
+    tipo + contador), solo hexadecimal por si el MiR valida formato UUID.
+    El usuario no lo edita. Pendiente de validar con robot.
+65. **`fleet.yaml` pasa a un catálogo único de actions** y cada robot lista
+    las que tiene habilitadas: hoy cada action se repite por robot, cosa
+    inmanejable con N robots y en una UI.
+
+## 2026-10-12 — Interfaz web con el estilo de la web del MiR
+
+Solo CSS de `fm/web/static/index.html`; plantilla y lógica sin cambios.
+Referencias en `img_referencia/` (capturas de la web del MiR250).
+
+### Decisiones nuevas
+
+66. **La UI imita el estilo general de la web del MiR, no su estructura:**
+    fondo gris claro, tarjetas blancas planas con esquinas redondeadas
+    (10 px; 6 px en botones, campos y etiquetas),
+    títulos y botón principal en azul marino, verde MiR para "libre" y
+    etiquetas de estado en mayúsculas con borde y fondo pálido (como
+    EXECUTING / PENDING de su cola), botón de cancelar en rojo relleno.
+    Motivo: el operario reconoce los mismos códigos de color que ya ve en
+    el robot. No se copia la barra superior del robot (batería, cola):
+    aquí hay N robots y cada tarjeta ya lo muestra. Se mantiene el modo
+    oscuro con los mismos tokens.
+67. **Pestañas en una barra lateral de iconos, como la del MiR:**
+    Operación (la interfaz de siempre) arriba; Configurador y
+    Sincronización en un grupo aparte debajo, porque no son para el
+    operario (decisión 60). El nombre sale en un rótulo al pasar el ratón
+    o al llegar con el tabulador. La pestaña va en el `#` de la URL
+    (`#operacion`, `#configurador`, `#sincronizacion`): se puede enlazar
+    de una a otra (el configurador enlazará a la sincronización) y al
+    recargar no se pierde. Todo en el cliente, sin cambios en el
+    servidor. Las dos pestañas nuevas son de momento un esqueleto con las
+    secciones de `docs/plan-admin.md` §2.2 y §3.4 marcadas "en diseño";
+    se rellenan tras la fase 0. Recordatorio (§7 del plan): una pestaña
+    aparte no protege nada.
+
+## 2026-10-12 — Revisión del código: un fallo corregido y limpieza
+
+`pytest`: 104 en verde (6 nuevos). Probado con `fleet-sim.yaml` (asignación,
+repetida ignorada, ocupado → otro robot, `cancelOrder`, auto-carga, `state`
+contra el schema, `OFFLINE` al cerrar) y con `fleet.yaml` y los dos MiR
+apagados (backoff, `REJECTED NO_MOBILE_ROBOT_AVAILABLE`). Sin hardware.
+
+### Código
+
+- **Fallo corregido:** si el robot no aceptaba el job al encolarlo (red caída
+  justo entonces, o un 4xx del MiR al hacer `POST /mission_queue`), la
+  excepción subía hasta `Dispatcher.drain()`, que solo la registraba en el
+  log: una `fleet/order` se quedaba **sin `order_response`** y una
+  `<serial>/order` sin error en `state.errors`. Ahora `Robot.execute()` la
+  convierte en `OrderRejected` y sigue el camino de cualquier rechazo.
+- `Robot.state(header)`: construye el `state` en un solo sitio; `run_fm.py`
+  lo usaba duplicado en `publish_state` y `tick_robot`.
+- Gancho `extra_state()` del contrato de drivers: estaba declarado en
+  `RobotDriver` y en el README pero el core no lo llamaba nunca. Ahora lo
+  llama `Robot.state()` (los dos drivers actuales no hacen nada en él).
+- `connect()` fallido con el robot respondiendo se reintenta cada
+  `CONNECT_RETRY_S` (5 s) en vez de en cada tick.
+- Duplicados unificados: `JOB_ALIVE` (en `fm/adapters/base.py`), `drop_none`
+  (antes `_clean`, copiado en `state.py` y `factsheet.py`) y
+  `describe_actions(driver, action_types)` (lo calculaban igual el factsheet
+  y la web). Quitado `MqttBus.publish_state`, que no se usaba.
+- Al cerrar limpio el log ya no dice "paho reintentará".
+
+### Decisiones nuevas
+
+68. **Un job que el robot no acepta es un rechazo de la order**, con
+    `ROBOT_UNREACHABLE` si no se llegó al robot (`OSError`: de ahí heredan
+    las excepciones de red de `requests`) y `ORDER_EXECUTION_FAILED` si el
+    robot respondió que no. Motivo: el emisor de `fleet/order` necesita
+    siempre una respuesta para poder reencolar. Si fue un timeout de lectura
+    y el MiR llegó a encolarla, el FM la verá como trabajo ajeno
+    (`foreign_busy`) y no mandará nada más a ese robot mientras dure.
+69. **`extra_state()` solo se llama con telemetría fresca**, y si lanza
+    excepción se registra y se publica el `state` igual: un driver con
+    un fallo no debe parar el tick de toda la flota.
+70. **`connect()` se reintenta cada 5 s, no en cada tick:** con un
+    `mission_group` mal escrito eran varias peticiones REST y un warning
+    por segundo. El primer intento tras volver a responder sigue siendo
+    inmediato; solo si falla, un robot recién encendido tarda hasta 5 s
+    más en aceptar orders.
+
+## Pendiente (a 2026-10-12)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
 2026-09-17, en parte superadas (la order con `position_inputs` se probó con
@@ -1134,17 +1235,87 @@ robot después).
     - si un backup/restore o una actualización del MiR conserva los GUIDs.
     Aunque se adopte, mantener la resolución por nombre como respaldo: un
     robot nuevo o editado a mano en la web volvería a tener GUIDs propios.
+    **2026-10-11:** desarrollado en `docs/plan-admin.md` (configurador +
+    sincronización); estas comprobaciones son su fase 0.
+
+5. **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
+   Objetivo: avisar a los operarios cuando una mission tarda más de lo
+   normal. Ejemplos: "posible obstáculo / camino bloqueado" si la fase de
+   "ir a recoger" se alarga, o "problema en almacén" si el robot pasa allí
+   más tiempo del previsto. El MiR solo avisa cuando entra en error; un
+   robot esquivando un palé o esperando en el almacén sigue en `Executing`
+   sin que nadie se entere. Primero los avisos salen en la interfaz; el
+   sonido viene después.
+   - **Sonido, más adelante.** El MiR no tiene endpoint REST para reproducir
+     un sonido (`/sounds` solo lista y sube audios). Encolar una mission de
+     sonido no sirve: la `mission_queue` es secuencial y no interrumpe la
+     mission en curso. Opciones: (a) altavoz externo (ESP32/Raspberry)
+     suscrito al `state` VDA, sin tocar FM ni missions; (b) bloque en cada
+     mission que reproduce un sonido según un registro PLC escrito por el
+     FM (mismo mecanismo que `n_piezas_pedidas`). Las dos se basan en el
+     mismo aviso del `state`, así que hacerlo primero en la UI no obliga a
+     rehacer nada.
+   - **Paso 1 — tiempo total por `actionType`.** Umbral en `fleet.yaml`
+     (p. ej. `expected_s: 180`). Si se supera: entrada en `state.errors[]`
+     con `errorLevel: WARNING` (en v3, "el robot puede seguir") y
+     `errorReferences` → `orderId`; la UI la destaca. Es genérico: no
+     necesita saber nada del MiR.
+   - **Paso 2 — medir antes de fijar umbrales.** Registrar la duración de
+     cada ejecución (y de cada fase si se puede) y sacar el tiempo "normal"
+     de datos reales (p. ej. percentil 90), no a ojo.
+   - **Paso 3 — por fases.** El FM hoy solo ve la mission entera
+     (RUNNING/FINISHED). Para saber la fase hay dos fuentes:
+     `GET /mission_queue/<id>/actions` (si no recordamos mal, da cada
+     action con estado y horas de inicio/fin: más robusto) o asociar fases
+     a patrones de `mission_text` (frágil: depende del idioma y de la versión
+     del software). El driver MiR traduciría eso a un nombre de fase genérico
+     en `Telemetry` y el core compararía con el umbral de cada fase, para
+     no romper la regla de §4 (el core no sabe nada de MiR).
+   - **Camino bloqueado = sin progreso, no solo tiempo.** Si está en una
+     fase de movimiento y la posición apenas cambia durante N s, es casi
+     seguro un obstáculo. Avisa antes y da menos falsos positivos. La
+     posición ya llega a 1 Hz.
+   - **Cuidado con:** no contar el tiempo en `Pending` (p. ej. encolada
+     detrás de una carga) ni en pausa (`state_id 4`); el aviso se retira
+     solo al avanzar la fase o terminar la mission, sin repetirse en cada
+     tick; un WARNING no es un FAILED.
+   - **Primer paso con robot:** leer `GET /mission_queue/<id>/actions` de
+     una entrada ya terminada (solo lectura) para ver si da fases y tiempos.
+     De eso depende si el paso 3 es viable o hay que usar `mission_text`.
+
+6. **Validación con schemas en runtime (`--validate`)**, pedida en el brief
+   (§10.1, H6) y sin implementar (revisión del 2026-10-12): validar cada
+   `order`/`instantActions` entrante contra `schemas/` y rechazar con
+   `VALIDATION_FAILURE`. `fm/vda5050/schemas.py::validation_errors` ya
+   existe (hoy solo la usan los tests). El README no lo promete.
+7. **Asignador: probar el siguiente candidato si el elegido rechaza**
+   (revisión del 2026-10-12). Hoy, si el robot con más batería rechaza al
+   traducir (p.ej. le falta la mission: `NO_ROUTE_TO_TARGET`), se rechaza
+   la `fleet/order` entera aunque otro robot sí pudiera. Cambia el
+   comportamiento: decidirlo antes.
 
 **Sin probar con robot (solo tests)**
 
-5. `required_inputs` (parámetro de texto): no hay mission que lo use.
-6. Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
-7. Order update (`orderUpdateId > 0`) sobre una order terminada.
-8. Robot que se apaga y vuelve a encenderse con el FM en marcha.
+8. `required_inputs` (parámetro de texto): no hay mission que lo use.
+9. Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
+10. Order update (`orderUpdateId > 0`) sobre una order terminada.
+11. Robot que se apaga y vuelve a encenderse con el FM en marcha.
+    2026-10-12: probado solo con los dos MiR apagados desde el arranque
+    (backoff 1-2-4-8 s, `state` con `ROBOT_UNREACHABLE`, `fleet/order` →
+    `REJECTED NO_MOBILE_ROBOT_AVAILABLE`). Falta encenderlos con el FM en
+    marcha: ver que el primer `connect()` carga los índices (decisión 70).
 
 **Menor**
 
-9. `prueba_parametros_v2` desde una tablet (deslizador).
-10. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
+12. `prueba_parametros_v2` desde una tablet (deslizador).
+13. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
    carga del FM en marcha" (decisión 35, coincidió en la prueba real). Solo
    haría falta si el robot carga sin que lo mande el FM.
+14. Retained antiguo en el Mosquitto local: `vda5050/v3/MiR/fleet/connection`
+    (de antes de la decisión 30; el código actual ya no lo publica). Se borra
+    con `mosquitto_pub -r -n -t vda5050/v3/MiR/fleet/connection`.
+15. Nota para leer logs: en WSL2 el reloj de pared salta a veces unos
+    segundos al resincronizarse con Windows (visto el 2026-10-12: hueco de
+    4 s en las marcas de tiempo con el `headerId` continuo). El bucle usa
+    `time.monotonic()` y no se ve afectado; el `timestamp` VDA sí refleja
+    el salto, como debe (es hora UTC).

@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Mapping
 
-from fm.adapters.base import ActionInfo, Job, JobStatus, RobotSpec, Telemetry
+from fm.adapters.base import JOB_ALIVE, ActionInfo, Job, JobStatus, RobotSpec, Telemetry
 from fm.config import ConfigError
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import E_INVALID_ORDER_ACTION, State
@@ -162,7 +162,7 @@ class SimDriver:
         job_id = str(self._next_id)
         self._next_id += 1
         payload = job.payload or {}
-        start = max([now, *(j.ends for j in self._jobs.values() if j.status(now) in ("WAITING", "RUNNING"))])
+        start = max([now, *(j.ends for j in self._jobs.values() if j.status(now) in JOB_ALIVE)])
         self._jobs[job_id] = _SimJob(
             job, start, start + float(payload.get("duration_s", self.cfg.duration_s)),
             fail=job.action.actionType in self.cfg.fail_actions,
@@ -182,7 +182,7 @@ class SimDriver:
 
     def cancel(self, job_id: str) -> None:
         j = self._jobs.get(job_id)
-        if j is not None and j.status(self._now()) in ("WAITING", "RUNNING"):
+        if j is not None and j.status(self._now()) in JOB_ALIVE:
             j.started = j.ends = self._now()
             j.fail = True
             j.result = "cancelado"

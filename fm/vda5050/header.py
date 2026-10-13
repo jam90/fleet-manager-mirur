@@ -52,7 +52,8 @@ def parse_topic(t: str) -> ParsedTopic | None:
 
 class HeaderCounter:
     """`headerId` monótono por topic (§7.2). Arranca en 1 en cada arranque.
-    Con Lock: lo usan el hilo principal y el servidor web (`fm/web.py`)."""
+    Con Lock: lo usan el hilo principal, paho (`connection` al reconectar)
+    y el servidor web (`fm/web/server.py`)."""
 
     def __init__(self) -> None:
         self._next: dict[str, int] = {}

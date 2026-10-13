@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from fm.adapters.base import Job, JobStatus, RobotDriver, Telemetry, job_result
+from fm.adapters.base import JOB_ALIVE, Job, JobStatus, RobotDriver, Telemetry, job_result
 from fm.vda5050.order import Action, Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
                               E_OTHER_ORDER_ACTIVE, E_OUTDATED_ORDER_UPDATE, E_VALIDATION_FAILURE,
@@ -18,8 +18,6 @@ from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FA
 from fm.vda5050.state_builder import StateOverlay
 
 log = logging.getLogger("fm.orders")
-
-JOB_ALIVE = ("WAITING", "RUNNING")
 
 
 class IgnoreOrder(Exception):

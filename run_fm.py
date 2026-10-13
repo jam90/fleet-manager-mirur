@@ -26,7 +26,7 @@ from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus  # noqa: E402
 from fm.robot import Robot  # noqa: E402
 from fm.vda5050.factsheet import factsheet_for  # noqa: E402
-from fm.vda5050.state_builder import to_vda_state  # noqa: E402
+from fm.vda5050.state import State  # noqa: E402
 
 log = logging.getLogger("fm")
 
@@ -105,11 +105,6 @@ def main(argv=None) -> int:
     list(pool.map(lambda r: r.connect(), robots.values()))
     poll_all(timeout=10.0)
 
-    def publish_state(r: Robot) -> None:
-        state = to_vda_state(bus.next_header(r.serial, "state"), r.last_telemetry, r.overlay(),
-                             error=r.last_error)
-        bus.publish_raw(r.serial, "state", state.to_dict())
-
     def publish_factsheet(r: Robot) -> None:
         fs = factsheet_for(bus.next_header(r.serial, "factsheet"), r.driver,
                            sorted(r.cfg.action_types), r.cfg.driver)
@@ -118,7 +113,7 @@ def main(argv=None) -> int:
     for r in robots.values():
         publish_factsheet(r)
 
-    dispatcher = Dispatcher(cfg, robots, bus, publish_state, publish_factsheet)
+    dispatcher = Dispatcher(cfg, robots, bus, lambda r: publish_state(r, bus), publish_factsheet)
     dispatcher.subscribe()
 
     if web is not None:
@@ -142,12 +137,18 @@ def main(argv=None) -> int:
     return 0
 
 
-def tick_robot(r: Robot, bus: MqttBus) -> None:
-    """Parte del tick sin red: construir y publicar el `state` (tras `poll_all`)."""
-    t = r.last_telemetry
-    header = bus.next_header(r.serial, "state")
-    state = to_vda_state(header, t, r.overlay(), error=r.last_error)
+def publish_state(r: Robot, bus: MqttBus) -> State:
+    """Construye y publica el `state` de un robot. Lo usan el tick (1 Hz) y
+    los eventos que piden publicar ya (order aceptada, instantActions...)."""
+    state = r.state(bus.next_header(r.serial, "state"))
     bus.publish_raw(r.serial, "state", state.to_dict())
+    return state
+
+
+def tick_robot(r: Robot, bus: MqttBus) -> None:
+    """Parte del tick sin red: publicar el `state` (tras `poll_all`) y una línea de log."""
+    t = r.last_telemetry
+    state = publish_state(r, bus)
     if t is not None:
         acts = ",".join(f"{a.actionType}:{a.actionStatus}" for a in state.actionStates) or "-"
         x, y = t.pose[:2] if t.pose else (float("nan"), float("nan"))

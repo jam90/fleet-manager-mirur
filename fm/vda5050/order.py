@@ -2,7 +2,7 @@
 
 Solo se modela lo que el FM usa. La validación aquí es la del *modelo* (tipos,
 nodos, edges, released); la de negocio (actionType soportado, parámetros)
-vive en `adapters/mir.py`.
+vive en el driver de cada marca (`fm/adapters/<marca>/`).
 """
 from __future__ import annotations
 

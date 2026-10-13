@@ -21,6 +21,8 @@ from fm.vda5050.state import Error, Info, State
 
 # Igual que `actionStatus` VDA (subconjunto grueso): el core lo copia tal cual.
 JobStatus = Literal["WAITING", "RUNNING", "FINISHED", "FAILED"]
+# Job aún vivo (en cola o ejecutándose): cuenta como `busy` y se sigue consultando.
+JOB_ALIVE: tuple[JobStatus, ...] = ("WAITING", "RUNNING")
 
 
 @dataclass
@@ -99,7 +101,8 @@ class RobotDriver(Protocol):
     last_error: str | None       # motivo del último fallo de red, para state.errors
 
     def connect(self) -> bool:
-        """Índices, handshake, ... Se reintenta cada tick mientras devuelva False."""
+        """Índices, handshake, ... Mientras devuelva False el core lo reintenta
+        (cada `CONNECT_RETRY_S`, solo si `poll()` responde)."""
 
     def poll(self) -> Telemetry | None:
         """Telemetría actual. None = robot inalcanzable (motivo en `last_error`)."""
@@ -144,7 +147,19 @@ class RobotDriver(Protocol):
         core publica una genérica con el nombre del driver."""
 
 
+# --- Ganchos opcionales ------------------------------------------------------
+# Un driver puede no implementarlos: el core siempre los llama a través de
+# estas funciones, que ponen el valor por defecto en un único sitio.
+
+
 def job_result(driver: RobotDriver, job_id: str) -> str | None:
     """Motivo del final del job si el driver lo sabe (gancho opcional)."""
     fn = getattr(driver, "job_result", None)
     return fn(job_id) if fn is not None else None
+
+
+def describe_actions(driver: RobotDriver, action_types) -> list[ActionInfo]:
+    """actionTypes del robot con sus parámetros (UI y factsheet). Sin el
+    gancho, solo los nombres de `actions:` de fleet.yaml, sin parámetros."""
+    fn = getattr(driver, "describe_actions", None)
+    return fn() if fn is not None else [ActionInfo(t) for t in sorted(action_types or ())]

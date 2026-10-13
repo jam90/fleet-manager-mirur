@@ -48,6 +48,7 @@ class MqttBus:
         self.counter = HeaderCounter()
         self.inbox: queue.Queue[tuple[str, bytes]] = queue.Queue()
         self._ready: dict[str, threading.Event] = {}
+        self._stopping = False           # cierre pedido: la desconexión no es un fallo
         # Espejo de publicaciones (topic, payload) para la interfaz web; None = sin UI.
         self.on_publish: Callable[[str, dict], None] | None = None
 
@@ -93,6 +94,7 @@ class MqttBus:
 
     def stop(self) -> None:
         """Cierre limpio: OFFLINE en todos los `connection` y desconexión."""
+        self._stopping = True
         for serial in [*self.serials, FLEET]:
             info = self.publish_connection(serial, "OFFLINE")
             try:
@@ -127,9 +129,6 @@ class MqttBus:
         self.publish_raw(serial, subtopic, payload, retain)
         return payload
 
-    def publish_state(self, serial: str, state_body: dict) -> dict:
-        return self.publish(serial, "state", state_body)
-
     def publish_connection(self, serial: str, connection_state: str) -> mqtt.MQTTMessageInfo:
         return self.publish_raw(serial, "connection",
                                 self._connection_payload(serial, connection_state), retain=True)
@@ -148,7 +147,10 @@ class MqttBus:
 
     def _on_disconnect(self, client, serial, flags, reason_code, properties=None):
         self._ready[serial].clear()
-        log.warning("[%s] MQTT desconectado (%s); paho reintentará", serial, reason_code)
+        if self._stopping:
+            log.info("[%s] MQTT desconectado (cierre del FM)", serial)
+        else:
+            log.warning("[%s] MQTT desconectado (%s); paho reintentará", serial, reason_code)
 
     def _on_message(self, client, userdata, msg):
         self.inbox.put((msg.topic, msg.payload))

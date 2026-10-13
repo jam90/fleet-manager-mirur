@@ -66,6 +66,6 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
 
     # Ranking: más batería primero; alfabético en empate. Sustituir aquí por
     # "menor distancia al destino" (usar `position`) cuando haga falta.
-    best = sorted(candidates, key=lambda c: (-c.battery, c.serial))[0]
+    best = min(candidates, key=lambda c: (-c.battery, c.serial))
     return AssignResult(best.serial, f"asignado a {best.serial} ({best.battery:.1f}%)",
                         rejections=rejections)
