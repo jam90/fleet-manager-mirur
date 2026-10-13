@@ -222,7 +222,7 @@ imperialfleet-position00-01-0001-012
 | `pathguide0` | path_guide | `/path_guides` | mapa | por padre | `imperialfleet-pathguide0-01-0001-001` |
 | `missiongrp` | mission_group | `/mission_groups` | — | instalación | `imperialfleet-missiongrp-01-0000-001` |
 | `mission000` | mission | `/missions` | grupo | instalación | `imperialfleet-mission000-01-0001-005` |
-| `action0000` | action de una mission | `/missions/<g>/actions` | mission | por padre | `imperialfleet-action0000-01-0005-003` |
+| `sound00000` | sonido subido a mano | `/sounds` | — | instalación | `imperialfleet-sound00000-01-0000-001` |
 
 Reglas de numeración:
 
@@ -247,6 +247,11 @@ Reglas de numeración:
   estándar solo para nombrar su fichero (`creada_por_mir: true`), y el
   docking offset va dentro del fichero de su marcador, sin GUID. Al
   desplegar se buscan por `parent_id` y se corrigen con PUT.
+- **Tampoco llevan GUID nuestro las actions de una mission ni sus
+  parámetros** (decisión 78): nadie los referencia desde fuera. El
+  anidamiento (`scope_reference` → GUID de un parámetro de la contenedora)
+  se guarda como `(priority de la contenedora, id del parámetro)` y se
+  rehace al desplegar con los GUIDs que ponga el MiR.
 - El usuario nunca edita un GUID; la UI lo muestra en solo lectura.
 - La resolución por nombre se mantiene como respaldo: un robot editado a
   mano en la web volvería a tener GUIDs propios.
@@ -262,6 +267,12 @@ Recursos creados con este estándar:
 
 Capturadas en `catalog/positions/` con `scripts/catalog_capture.py` y
 desplegadas con `scripts/catalog_deploy.py`.
+
+Desplegados en mir-2 (2026-10-13, con `catalog_deploy.py missions`): el grupo
+`mirur-tknikav2` (`…-missiongrp-01-0000-001`), las 9 missions de
+`mirur-tknika` de mir-2 más `Ir a zona de espera` de `p6-factory`, a la que
+llaman (`…-mission000-01-0001-001` a `…-010`), y el sonido `piezaH2D1`
+(`…-sound00000-01-0000-001`).
 
 ## 5. Arquitectura
 

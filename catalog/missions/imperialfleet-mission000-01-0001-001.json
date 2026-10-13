@@ -1,0 +1,34 @@
+{
+  "guid": "imperialfleet-mission000-01-0001-001",
+  "name": "coger",
+  "description": "",
+  "group_id": "imperialfleet-missiongrp-01-0000-001",
+  "session_id": "imperialfleet-session000-01-0000-001",
+  "hidden": false,
+  "actions": [
+    {
+      "priority": 1,
+      "action_type": "adjust_localization",
+      "scope": null,
+      "parameters": []
+    },
+    {
+      "priority": 2,
+      "action_type": "wait",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "time",
+          "value": "00:00:05.000000",
+          "input_name": null
+        }
+      ]
+    }
+  ],
+  "_origen": {
+    "robot": "mir-2",
+    "grupo": "mirur-tknika",
+    "guid": "faed62f3-b1bc-11f1-a6d4-000e8eb5b8fb",
+    "capturado": "2026-10-13"
+  }
+}

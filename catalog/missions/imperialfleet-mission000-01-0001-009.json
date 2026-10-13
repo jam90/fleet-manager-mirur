@@ -1,0 +1,105 @@
+{
+  "guid": "imperialfleet-mission000-01-0001-009",
+  "name": "MIRUR-prueba-parámetros-v2",
+  "description": "",
+  "group_id": "imperialfleet-missiongrp-01-0000-001",
+  "session_id": "imperialfleet-session000-01-0000-001",
+  "hidden": false,
+  "actions": [
+    {
+      "priority": 11,
+      "action_type": "adjust_localization",
+      "scope": null,
+      "parameters": []
+    },
+    {
+      "priority": 12,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "22",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": "n_piezas_pedidas"
+        }
+      ]
+    },
+    {
+      "priority": 13,
+      "action_type": "move",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "position",
+          "value": "mirconst-guid-0000-0001-positions000",
+          "input_name": "target_pos"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 14,
+      "action_type": "wait",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "time",
+          "value": "00:00:05.000000",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 15,
+      "action_type": "load_mission",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "mission_id",
+          "value": "imperialfleet-mission000-01-0001-004",
+          "input_name": null
+        }
+      ]
+    }
+  ],
+  "_origen": {
+    "robot": "mir-2",
+    "grupo": "mirur-tknika",
+    "guid": "b5dca83b-9e57-717a-7b45-43ae4737f817",
+    "capturado": "2026-10-13"
+  }
+}

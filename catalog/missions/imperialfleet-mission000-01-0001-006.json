@@ -1,0 +1,195 @@
+{
+  "guid": "imperialfleet-mission000-01-0001-006",
+  "name": "Simular Apertura Puerta H2DX MIRUR",
+  "description": "",
+  "group_id": "imperialfleet-missiongrp-01-0000-001",
+  "session_id": "imperialfleet-session000-01-0000-001",
+  "hidden": false,
+  "actions": [
+    {
+      "priority": 16,
+      "action_type": "move",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "position",
+          "value": "imperialfleet-position00-01-0001-001",
+          "input_name": "target_pos"
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 17,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "1",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 18,
+      "action_type": "sound",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "sound",
+          "value": "mirconst-guid-0000-0001-sounds000000",
+          "input_name": null
+        },
+        {
+          "id": "volume",
+          "value": 50.0,
+          "input_name": null
+        },
+        {
+          "id": "mode",
+          "value": "custom",
+          "input_name": null
+        },
+        {
+          "id": "duration",
+          "value": "00:00:01.000000",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 19,
+      "action_type": "wait",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "time",
+          "value": "00:00:05.000000",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 20,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "1",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 0.0,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 21,
+      "action_type": "wait_for_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "1",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 0.0,
+          "input_name": null
+        },
+        {
+          "id": "timeout",
+          "value": null,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 22,
+      "action_type": "move",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "position",
+          "value": "imperialfleet-position00-01-0001-002",
+          "input_name": null
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null
+        }
+      ]
+    }
+  ],
+  "_origen": {
+    "robot": "mir-2",
+    "grupo": "mirur-tknika",
+    "guid": "af80f240-318d-1516-ba99-8ff26611fb6d",
+    "capturado": "2026-10-13"
+  }
+}

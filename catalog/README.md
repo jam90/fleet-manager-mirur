@@ -11,7 +11,9 @@ catalog/
 ├── maps/<guid>.json         metadatos del mapa (resolución, origen, session)
 ├── maps/<guid>.png          su imagen (base_map), aparte para poder abrirla
 ├── positions/<guid>.json    una por position, con su docking offset si lo tiene
-└── missions/                (pendiente)
+├── mission_groups/<guid>.json
+├── missions/<guid>.json     una por mission, con sus actions dentro
+└── sounds/<guid>.json + .ogg/.wav   sonidos subidos a mano (el audio, aparte)
 ```
 
 - **Un fichero por recurso, con su GUID como nombre.** El GUID ya dice qué
@@ -25,6 +27,13 @@ catalog/
   solo, con su propio GUID, al crear la madre. Nuestro GUID solo nombra el
   fichero; en el robot se busca por `parent_id`. El docking offset de un
   marcador va dentro de su fichero, sin GUID, por lo mismo.
-- Los ficheros los escribe el FM (hoy, `scripts/catalog_capture.py`; se
-  llevan al robot con `scripts/catalog_deploy.py`).
+- **Missions:** las actions van dentro del fichero, en orden de `priority`
+  y sin GUID: el MiR les pone el suyo al crearlas (decisión 78). Una action
+  anidada (dentro de un try/catch, un if…) lleva
+  `"scope": {"action": <priority de la contenedora>, "parameter": "try"}`.
+  Los valores que apuntan a positions, missions o sonidos van traducidos a
+  GUIDs del catálogo; los recursos de fábrica (`mirconst-…`), tal cual.
+- Los ficheros los escribe el FM (hoy, `scripts/catalog_capture.py
+  positions|missions`; se llevan al robot con `scripts/catalog_deploy.py
+  positions|missions`).
   Editarlos a mano es posible, pero un GUID no se cambia nunca.

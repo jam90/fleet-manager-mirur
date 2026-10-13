@@ -1,0 +1,150 @@
+{
+  "guid": "imperialfleet-mission000-01-0001-004",
+  "name": "Ir a zona de espera MIRUR",
+  "description": "",
+  "group_id": "imperialfleet-missiongrp-01-0000-001",
+  "session_id": "imperialfleet-session000-01-0000-001",
+  "hidden": false,
+  "actions": [
+    {
+      "priority": 1,
+      "action_type": "move",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "position",
+          "value": "imperialfleet-position00-01-0001-012",
+          "input_name": null
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 2,
+      "action_type": "try_catch",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "try",
+          "value": "",
+          "input_name": null
+        },
+        {
+          "id": "catch",
+          "value": "",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 3,
+      "action_type": "move",
+      "scope": {
+        "action": 2,
+        "parameter": "try"
+      },
+      "parameters": [
+        {
+          "id": "position",
+          "value": "imperialfleet-position00-01-0001-010",
+          "input_name": null
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 5.0,
+          "input_name": null
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 4,
+      "action_type": "move",
+      "scope": {
+        "action": 2,
+        "parameter": "catch"
+      },
+      "parameters": [
+        {
+          "id": "position",
+          "value": "imperialfleet-position00-01-0001-011",
+          "input_name": null
+        },
+        {
+          "id": "cart_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "main_or_entry_position",
+          "value": "main",
+          "input_name": null
+        },
+        {
+          "id": "marker_entry_position",
+          "value": "entry",
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "distance_threshold",
+          "value": 0.1,
+          "input_name": null
+        }
+      ]
+    }
+  ],
+  "_origen": {
+    "robot": "mir-2",
+    "grupo": "mirur-tknika",
+    "guid": "ade9abc9-536c-da7e-f32e-077923a7748a",
+    "capturado": "2026-10-13"
+  }
+}

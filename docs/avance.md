@@ -1324,6 +1324,75 @@ dos MiR; escrituras solo en mir-2 (`192.168.15.15`). Sin missions lanzadas.
     la madre (con los `offset_*` si es un marcador), busca la entrada por
     `parent_id` y la corrige con PUT si no está donde dice el catálogo.
 
+### Missions al catálogo
+
+Lectura de las missions de `mirur-tknika` en mir-2:
+
+- Cada mission tiene `group_id` y **`session_id`**. Queda por ver si una
+  mission de `suberri_mirur` se ve con el site activo `suberri`.
+- Las actions se ordenan por `priority`. El anidamiento no apunta a la
+  action padre sino al **GUID de un parámetro** suyo (`scope_reference` →
+  parámetro `try`/`catch` de un `try_catch`, o los de un `if`).
+- Qué referencian por GUID: positions (`move`, `docking`), missions
+  (`load_mission`), un footprint y sonidos. El footprint y dos de los
+  sonidos son de fábrica (`mirconst-…`, iguales en los dos robots). Hay un
+  sonido subido a mano (`piezaH2D1`, solo en mir-2), con el audio en base64
+  en el campo `sound` (OGG).
+- `Carga en estación MIRUR` y `Simulacion Recogida pieza H2DX MIRUR` llaman
+  a `Ir a zona de espera`, del grupo `p6-factory` (proyecto anterior).
+- `GET /missions/<g>/definition` no es una exportación: describe la
+  mission como bloque para usarla dentro de otras.
+
+78. **De una mission solo se unifica el GUID de la mission y el de su
+    grupo**, que son lo que referencian `load_mission` y el FM. Las actions
+    y sus parámetros quedan con el GUID que les ponga el MiR, como en la
+    decisión 77. `scope_reference` se guarda como (priority de la
+    contenedora, id del parámetro) y se rehace al desplegar. El tipo
+    `action0000` se quita del §4 y entra `sound00000` para los sonidos
+    subidos a mano.
+79. **Grupo nuevo `mirur-tknikav2`** (`imperialfleet-missiongrp-01-0000-001`),
+    para no tener dos grupos con el mismo nombre mientras conviva con
+    `mirur-tknika`. Cuando todo funcione se renombrará a `mirur-tknika`
+    (el GUID no cambia). **Al catálogo va todo lo que llama
+    `mirur-tknika`**: sus 9 missions, `Ir a zona de espera` de
+    `p6-factory` (en el mismo grupo del catálogo; `_origen.grupo` recuerda
+    de dónde vino) y el sonido `piezaH2D1`. Capturado con
+    `catalog_capture.py missions`; para capturar positions el script pasa
+    a ser `catalog_capture.py positions …`.
+
+### Primera mission desplegada en mir-2
+
+- `POST /mission_groups` y `POST /missions` **admiten GUID elegido**.
+  Creados `mirur-tknikav2` (`…-missiongrp-01-0000-001`, con priority 0;
+  el original tiene 102) y `Ir a zona de espera MIRUR`
+  (`…-mission000-01-0001-004`), en la session `suberri_mirur`.
+- Las actions se crean una a una con `POST /missions/<g>/actions`, en
+  orden de `priority`. Tras crear la contenedora (`try_catch`) se leen los
+  GUIDs que el MiR ha puesto a sus parámetros, y con ellos el
+  `scope_reference` de las actions de dentro. Al releer la mission y
+  normalizarla igual que en la captura, sale **idéntica al catálogo**, y
+  el MiR la da por `valid`.
+- El usuario lo ha comprobado en la web: con el site activo `suberri` se
+  ven el grupo y la mission, y Blockly la pinta igual que la original.
+  **Las missions no dependen del site activo.**
+
+### Grupo `mirur-tknikav2` completo en mir-2
+
+- `scripts/catalog_deploy.py missions` despliega lo que necesita un grupo:
+  primero los sonidos y el grupo, después las missions en orden de
+  dependencias (`Ir a zona de espera` antes de `Carga en estación MIRUR`).
+  No crea una mission si le falta en el robot alguna position o
+  sub-mission que use. Las positions pasan a desplegarse con
+  `catalog_deploy.py positions …`.
+- Desplegadas en mir-2 las 10 missions del catálogo. Al releerlas todas
+  coinciden con el catálogo, una segunda pasada da 0 cambios y el MiR las
+  da todas por `valid`.
+- `POST /sounds` **admite GUID elegido**, pero **vuelve a codificar el
+  audio** (OGG de 23.897 → 22.123 bytes, misma duración). Los sonidos se
+  comparan por GUID, nombre y duración, no byte a byte.
+- El usuario ha lanzado `MIRUR-prueba-parámetros` (copia en
+  `mirur-tknikav2`) en mir-2: funciona bien.
+
 ## Pendiente (a 2026-10-12)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
