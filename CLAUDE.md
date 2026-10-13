@@ -41,7 +41,9 @@
   `v0.3-ui`; después se sigue en `main` sin tag.
 - **Arquitectura real:** ver §4 (drivers en `fm/adapters/<marca>/`, core sin
   imports de MiR, UI en `fm/web/`). Planes cerrados: `docs/plan-drivers.md`,
-  `docs/plan-ui.md`.
+  `docs/plan-ui.md`. Plan abierto (2026-10-11, en diseño):
+  `docs/plan-admin.md` (configurador del FM + sincronización de missions,
+  positions y mapas con GUIDs comunes); su fase 0 son pruebas con robot.
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con

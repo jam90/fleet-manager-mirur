@@ -14,50 +14,70 @@
   del `state` VDA. Ver docs/plan-ui.md.
 -->
 <style>
+  /*
+    Estilo inspirado en la interfaz web del MiR250 (capturas en img_referencia/):
+    fondo gris claro, tarjetas blancas casi sin sombra y con esquinas
+    redondeadas (10 px; 6 px en botones y campos), títulos en azul marino,
+    botón principal azul marino, verde MiR para "todo bien" y etiquetas de estado en mayúsculas con borde y fondo
+    pálido (como EXECUTING / PENDING de la cola de missions). Así el operario
+    reconoce los mismos códigos de color que ya ve en el robot.
+  */
   :root {
-    --bg: #eef1f4;          /* gris frío, no neutro puro */
+    --bg: #e8eaed;          /* gris de fondo del MiR */
     --surface: #ffffff;
-    --surface-2: #f6f8fa;
-    --ink: #1a2330;
-    --ink-2: #4b5766;
-    --ink-3: #7d8896;
-    --line: #d5dbe2;
-    --accent: #0f6e8c;      /* azul-verde industrial: botones y foco */
+    --surface-2: #f3f4f6;   /* gris del menú lateral y de los recuadros internos */
+    --ink: #2b2f36;
+    --ink-2: #5b6370;
+    --ink-3: #8a919c;
+    --line: #dfe2e6;
+    --line-strong: #c9ced6; /* borde de los campos de formulario */
+    --navy: #13265c;        /* títulos */
+    --accent: #0d2a6e;      /* botón principal ("Upload", "Create") */
     --accent-ink: #ffffff;
-    --ok: #2f8f5b;          /* libre / FINISHED */
-    --run: #2f6fd6;         /* ejecutando */
-    --warn: #c98a00;        /* pausado / cargando / WAITING */
-    --bad: #c63b3b;         /* error / sin conexión / FAILED */
-    --shadow: 0 1px 2px rgba(20, 30, 40, .06), 0 4px 14px rgba(20, 30, 40, .05);
+    --ok: #6aaf23;          /* verde MiR: libre / FINISHED / batería */
+    --ok-bg: #eef6e2;
+    --run: #8aa51c;         /* EXECUTING: verde oliva */
+    --run-bg: #f1f6d9;
+    --warn: #e08a00;        /* "Paused" naranja / PENDING */
+    --warn-bg: #fff6d6;
+    --warn-line: #e9c84a;
+    --bad: #e53935;         /* rojo de los botones de borrar */
+    --bad-bg: #fdeceb;
+    --shadow: 0 1px 2px rgba(20, 30, 50, .05);
+    --radius: 10px;         /* tarjetas y paneles */
+    --radius-sm: 6px;       /* botones, campos, etiquetas y recuadros internos */
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #12171d; --surface: #1b222b; --surface-2: #222b35; --ink: #e6ebf0; --ink-2: #aab5c1;
-      --ink-3: #7f8b98; --line: #2f3a46; --accent: #4fb3d1; --accent-ink: #0c1a20;
-      --ok: #58b982; --run: #6c9cf0; --warn: #e0a626; --bad: #e46464;
+      --bg: #12161f; --surface: #1b212c; --surface-2: #232a37; --ink: #e4e8ee; --ink-2: #aab3c0;
+      --ink-3: #7c8694; --line: #2e3645; --line-strong: #3d4759; --navy: #c8d4f2; --accent: #4a6fd0; --accent-ink: #ffffff;
+      --ok: #7cc63a; --ok-bg: #22301a; --run: #b3cc45; --run-bg: #2a3119; --warn: #f0a63a;
+      --warn-bg: #352b14; --warn-line: #8a6d1e; --bad: #ef5f5b; --bad-bg: #3a1e1f;
       --shadow: 0 1px 2px rgba(0,0,0,.4);
     }
   }
   :root[data-theme="dark"] {
-    --bg: #12171d; --surface: #1b222b; --surface-2: #222b35; --ink: #e6ebf0; --ink-2: #aab5c1;
-    --ink-3: #7f8b98; --line: #2f3a46; --accent: #4fb3d1; --accent-ink: #0c1a20;
-    --ok: #58b982; --run: #6c9cf0; --warn: #e0a626; --bad: #e46464;
+    --bg: #12161f; --surface: #1b212c; --surface-2: #232a37; --ink: #e4e8ee; --ink-2: #aab3c0;
+    --ink-3: #7c8694; --line: #2e3645; --line-strong: #3d4759; --navy: #c8d4f2; --accent: #4a6fd0; --accent-ink: #ffffff;
+    --ok: #7cc63a; --ok-bg: #22301a; --run: #b3cc45; --run-bg: #2a3119; --warn: #f0a63a;
+    --warn-bg: #352b14; --warn-line: #8a6d1e; --bad: #ef5f5b; --bad-bg: #3a1e1f;
     --shadow: 0 1px 2px rgba(0,0,0,.4);
   }
 
   * { box-sizing: border-box; }
+  /* El MiR usa una sans redondeada tipo Lato/Open Sans; si no están instaladas, la del sistema. */
   html, body { margin: 0; background: var(--bg); color: var(--ink);
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
-  body { padding-block: 0 32px; }
-  code, .mono { font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, monospace; font-size: .92em; }
+    font: 15px/1.45 Lato, "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+  body { padding: 0; }
+  code, .mono { font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, monospace; font-size: .9em; }
   .num { font-variant-numeric: tabular-nums; }
   button { font: inherit; }
   [hidden], [v-cloak] { display: none !important; }
 
-  /* ---- cabecera ---- */
-  header { position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--line);
-    padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: .01em; }
+  /* ---- cabecera: barra blanca fina, título en azul marino ---- */
+  header { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: var(--shadow);
+    border-bottom: 1px solid var(--line); padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--navy); }
   header .sub { color: var(--ink-3); font-size: 13px; }
   .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
@@ -65,90 +85,155 @@
 
   .banner { background: var(--bad); color: #fff; padding: 8px 24px; font-size: 14px; }
 
-  main { padding: 20px 24px 0; display: grid; gap: 20px; }
+  main { padding: 24px 24px 32px; display: grid; gap: 20px; align-content: start; }
 
-  /* ---- tarjetas de robot ---- */
-  .robots { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-  .card { background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); border-top: 4px solid var(--ink-3);
-    padding: 14px 16px 12px; display: grid; gap: 10px; }
-  .card.st-libre { border-top-color: var(--ok); }
-  .card.st-ejecutando { border-top-color: var(--run); }
-  .card.st-pausado, .card.st-cargando, .card.st-encola { border-top-color: var(--warn); }
-  .card.st-error, .card.st-sinconexion, .card.st-manual { border-top-color: var(--bad); }
-  .card-head { display: flex; align-items: baseline; gap: 10px; }
-  .card-head h2 { margin: 0; font-size: 20px; font-weight: 650; }
-  .chip { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2);
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
-  .pill { margin-left: auto; font-size: 12px; font-weight: 600; letter-spacing: .03em; padding: 2px 9px; border-radius: 999px;
-    color: #fff; background: var(--ink-3); white-space: nowrap; }
-  .pill.libre { background: var(--ok); } .pill.ejecutando { background: var(--run); }
-  .pill.pausado, .pill.cargando, .pill.encola { background: var(--warn); }
-  .pill.error, .pill.sinconexion, .pill.manual { background: var(--bad); }
+  /* ---- barra lateral de pestañas, como la columna de iconos del MiR ----
+     Solo iconos para no robar ancho a las tarjetas; el nombre sale en un
+     rótulo al pasar el ratón (o al llegar con el tabulador). Las pestañas de
+     administración van en un grupo aparte, abajo: el operario no las necesita. */
+  .layout { display: grid; grid-template-columns: 64px minmax(0, 1fr); min-height: 100vh; }
+  .rail { position: sticky; top: 0; height: 100vh; z-index: 3; background: var(--surface);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center;
+    gap: 8px; padding: 14px 0; }
+  .rail .sep { width: 32px; border-top: 1px solid var(--line); margin: 6px 0; }
+  .rail .spacer { flex: 1; }
+  .tab { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border-radius: var(--radius-sm);
+    color: var(--ink-3); text-decoration: none; }
+  .tab svg { width: 24px; height: 24px; }
+  .tab:hover { color: var(--navy); background: var(--surface-2); }
+  .tab.active { color: var(--navy); background: var(--line); }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Rótulo emergente: aparece a la derecha del icono. */
+  .tab .tip { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+    background: var(--navy); color: var(--surface); font-size: 13px; font-weight: 700; white-space: nowrap;
+    padding: 5px 10px; border-radius: var(--radius-sm); pointer-events: none; opacity: 0; transition: opacity .12s; }
+  .tab:hover .tip, .tab:focus-visible .tip { opacity: 1; }
+  .rail .brand { font-weight: 800; font-size: 13px; color: var(--navy); letter-spacing: .02em; }
 
-  .battery { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
-  .bar { height: 12px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .page-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--navy); }
+  .page-sub { margin: -14px 0 0; color: var(--ink-3); font-size: 14px; }
+
+  /* Pestañas aún en diseño: recuadros con lo que contendrán. */
+  .todo { display: block; padding: 12px 14px; border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-2); font-size: 14px; }
+  .todo b { color: var(--ink); display: block; margin-bottom: 4px; }
+  .todo a, .page-sub a { color: var(--accent); font-weight: 700; }
+  .tag { display: table; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 1px 7px; border-radius: var(--radius-sm); color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+
+  /* ---- tarjetas de robot: blancas, planas; el estado lo da la etiqueta ---- */
+  .robots { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 18px 20px 16px; display: grid; gap: 12px; }
+  .card-head { display: flex; align-items: center; gap: 10px; }
+  .card-head h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--navy); }
+  .chip { font-size: 11px; letter-spacing: .04em; color: var(--ink-2); background: var(--surface-2);
+    border-radius: var(--radius-sm); padding: 1px 7px; }
+
+  /* Etiqueta de estado al estilo EXECUTING / PENDING de la cola del MiR. */
+  .pill { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: var(--radius-sm); white-space: nowrap;
+    color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line); }
+  .pill.libre { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
+  .pill.ejecutando { color: var(--run); background: var(--run-bg); border-color: var(--run); }
+  .pill.pausado, .pill.cargando, .pill.encola { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+  .pill.error, .pill.sinconexion, .pill.manual { color: var(--bad); background: var(--bad-bg); border-color: var(--bad); }
+
+  /* Batería: barra fina como la de "Disk space". */
+  .battery { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; }
+  .bar { height: 10px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
   .bar > i { display: block; height: 100%; background: var(--ok); transition: width .4s; }
   .bar > i.low { background: var(--warn); } .bar > i.crit { background: var(--bad); }
-  .battery .pct { font-size: 22px; font-weight: 650; min-width: 4.2ch; text-align: right; }
-  .battery small { color: var(--ink-3); font-size: 12px; display: block; }
+  .battery .pct { font-size: 22px; font-weight: 700; color: var(--navy); min-width: 4.2ch; text-align: right; }
+  .battery small { color: var(--ink-3); font-size: 12px; display: block; margin-top: 3px; }
 
-  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 14px; }
-  .kv dt { color: var(--ink-3); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  /* Datos clave: recuadro gris como "Type of last update" de la web del MiR. */
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px;
+    background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; margin: 0; }
+  .kv dt { color: var(--ink-3); } .kv dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
   .acts { display: flex; flex-wrap: wrap; gap: 6px; }
-  .act { font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: var(--surface-2); }
-  .act b { font-weight: 600; } .act .s { margin-left: 6px; font-size: 11px; letter-spacing: .05em; }
-  .act .why { margin-left: 6px; font-size: 12px; color: var(--ink-2); }   /* actionResult: motivo del FAILED */
+  .act { font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 1px 8px; background: var(--surface); }
+  .act b { font-weight: 700; } .act .s { margin-left: 6px; font-size: 11px; font-weight: 700; letter-spacing: .05em; }
+  .act .why { margin-left: 6px; font-size: 12px; color: var(--ink-2); font-weight: 400; }   /* actionResult: motivo del FAILED */
   .s-RUNNING { color: var(--run); } .s-FINISHED { color: var(--ok); } .s-FAILED { color: var(--bad); }
   .s-WAITING, .s-PAUSED, .s-INITIALIZING { color: var(--warn); }
 
   .errs { display: grid; gap: 4px; font-size: 13px; }
-  .err { border-left: 3px solid var(--bad); padding: 2px 8px; background: var(--surface-2); border-radius: 0 4px 4px 0; }
-  .err.warn { border-left-color: var(--warn); }
-  .err code { font-weight: 600; }
+  .err { border: 1px solid var(--bad); background: var(--bad-bg); padding: 4px 8px; border-radius: var(--radius-sm); }
+  .err.warn { border-color: var(--warn-line); background: var(--warn-bg); }
+  .err code { font-weight: 700; }
 
-  .controls { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--line); }
-  .btn { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 7px;
-    padding: 6px 12px; cursor: pointer; }
-  .btn:hover:not(:disabled) { border-color: var(--accent); }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* ---- botones: gris claro los secundarios, azul marino el principal, rojo el destructivo ---- */
+  .controls { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); }
+  .controls .btn { padding-inline: 11px; }   /* que quepan los tres en una línea con 3 tarjetas por fila */
+  .btn { border: 1px solid transparent; background: var(--surface-2); color: var(--ink); border-radius: var(--radius-sm);
+    padding: 7px 14px; cursor: pointer; font-weight: 600; }
+  .btn:hover:not(:disabled) { filter: brightness(.95); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
-  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-  .btn.danger { color: var(--bad); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 9px 22px; justify-self: start; }
+  .btn.danger { background: var(--bad); color: #fff; }
   .feedback { font-size: 12px; color: var(--ink-3); align-self: center; }
 
   /* ---- paneles inferiores ---- */
   .panels { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.3fr); gap: 16px; }
   @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } header, main, .banner { padding-inline: 16px; } }
-  .panel { background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
-  .panel h3 { margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
-  .form { display: grid; gap: 8px; }
-  .field { display: grid; gap: 3px; font-size: 13px; color: var(--ink-2); }
-  .field input, .field select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line);
-    border-radius: 6px; padding: 6px 8px; }
+  .panel { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px;
+    display: grid; gap: 12px; align-content: start; }
+  .panel h3 { margin: 0; font-size: 18px; font-weight: 700; color: var(--navy); }
+  .form { display: grid; gap: 10px; }
+  .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
+  .field input, .field select { font: inherit; font-weight: 400; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 10px; }
   /* Número con rango: deslizador (cómodo en tablet) + recuadro, mismo v-model. */
   .numrow { display: grid; grid-template-columns: 1fr 5.5em; gap: 10px; align-items: center; }
   .field input[type=range] { padding: 0; border: 0; background: none; height: 36px; accent-color: var(--accent); }
   .field input[type=range]:focus { outline-offset: 2px; }
-  .field .range-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); }
+  .field .range-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); font-weight: 400; }
   .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
-  .hint { font-size: 12px; color: var(--ink-3); }
-  .resp { font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--surface-2); border-left: 3px solid var(--ink-3); }
-  .resp.ASSIGNED { border-left-color: var(--ok); } .resp.REJECTED { border-left-color: var(--bad); } .resp.pending { border-left-color: var(--warn); }
+  .hint { font-size: 13px; color: var(--ink-3); margin: 0; }
+  .resp { font-size: 13px; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); }
+  .resp.ASSIGNED { background: var(--ok-bg); border-color: var(--ok); }
+  .resp.REJECTED { background: var(--bad-bg); border-color: var(--bad); }
+  .resp.pending { background: var(--warn-bg); border-color: var(--warn-line); }
 
-  .events { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; max-height: 340px; overflow: auto; }
+  /* Eventos: tabla como las listas del MiR (cabecera en azul marino, filas separadas por líneas). */
+  .events { list-style: none; margin: 0; padding: 0; display: grid; font-size: 13px; max-height: 380px; overflow: auto; }
   /* 4.ª columna: resultado con que terminó la mission (actionResult); solo se rellena al terminar. */
-  .events li { display: grid; grid-template-columns: 7ch 7ch minmax(0, 1fr) minmax(0, 18ch); gap: 10px;
-    padding: 3px 0; border-bottom: 1px dashed var(--line); }
-  .events li.head { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
-    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+  .events li { display: grid; grid-template-columns: 7ch 7ch minmax(0, 1fr) minmax(0, 18ch); gap: 12px;
+    padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  .events li.head { font-size: 13px; font-weight: 700; color: var(--navy); background: var(--surface-2);
+    border-bottom: 0; border-radius: var(--radius-sm); position: sticky; top: 0; }
   .events .res { overflow-wrap: anywhere; }
-  .events .res.s-FAILED { font-weight: 600; }
-  .events .t { color: var(--ink-3); } .events .who { color: var(--ink-2); font-weight: 600; }
-  .empty { color: var(--ink-3); font-size: 13px; }
+  .events .res.s-FAILED { font-weight: 700; }
+  .events .t { color: var(--ink-3); } .events .who { color: var(--navy); font-weight: 700; }
+  .empty { color: var(--ink-3); font-size: 13px; font-weight: 400; }
 </style>
 </head>
 <body>
 <div id="app" v-cloak>
+<div class="layout">
+  <!-- Pestañas: la URL lleva #operacion, #configurador o #sincronizacion para
+       poder enlazar una pestaña (p. ej. del configurador a la sincronización)
+       y para que al recargar no se vuelva a la primera. -->
+  <nav class="rail" aria-label="Pestañas">
+    <a v-for="t in tabs.filter(t => !t.admin)" :key="t.id" class="tab" :class="{ active: tab === t.id }"
+       :href="'#' + t.id" :aria-label="t.label" :aria-current="tab === t.id ? 'page' : null">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="t.icon"></svg>
+      <span class="tip">{{ t.label }}</span>
+    </a>
+    <div class="sep"></div>
+    <a v-for="t in tabs.filter(t => t.admin)" :key="t.id" class="tab" :class="{ active: tab === t.id }"
+       :href="'#' + t.id" :aria-label="t.label" :aria-current="tab === t.id ? 'page' : null">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="t.icon"></svg>
+      <span class="tip">{{ t.label }}</span>
+    </a>
+    <div class="spacer"></div>
+    <span class="brand" title="Fleet Manager">FM</span>
+  </nav>
+
+<div>
   <header>
     <h1>Fleet Manager</h1>
     <span class="sub">VDA 5050 v3 · flota <code>{{ fleet.fleet_manufacturer || '…' }}</code></span>
@@ -156,7 +241,7 @@
   </header>
   <div class="banner" v-if="!wsOk">No hay conexión con el Fleet Manager. Reintentando… (¿está arrancado <code>run_fm.py</code>?)</div>
 
-  <main>
+  <main v-show="tab === 'operacion'">
     <section class="robots">
       <article v-for="r in robotsView" :key="r.serial" class="card" :class="'st-' + r.status.key">
         <div class="card-head">
@@ -262,6 +347,64 @@
       </div>
     </section>
   </main>
+
+  <!-- ===== Configurador (docs/plan-admin.md §2). Esqueleto: se rellena en
+       las fases 2 (solo lectura) y 3 (edición), tras las pruebas con robot. ===== -->
+  <main v-show="tab === 'configurador'">
+    <h2 class="page-title">Configurador</h2>
+    <p class="page-sub">Lo que hoy se edita a mano en <code>config/fleet.yaml</code>. Pensado para el profesor, no para el operario.</p>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Qué robot hace qué action</h3>
+        <div class="todo"><span class="tag">en diseño</span>
+          Matriz action × robot con casillas. Si un robot no tiene la mission, aviso con enlace a
+          <a href="#sincronizacion">Sincronización</a>.</div>
+      </div>
+      <div class="panel">
+        <h3>Umbrales</h3>
+        <div class="todo"><span class="tag">en diseño</span>
+          Auto-carga (<code>battery_floor</code>, prioridad, cooldown), <code>battery_min</code> por robot y opciones del asignador.</div>
+      </div>
+      <div class="panel">
+        <h3>Catálogo de actions</h3>
+        <div class="todo"><span class="tag">en diseño</span>
+          Por action: mission asociada, <code>position_inputs</code>, <code>number_inputs</code> con rango,
+          <code>required_inputs</code> y allowlist de positions.</div>
+      </div>
+      <div class="panel">
+        <h3>Robots</h3>
+        <div class="todo"><span class="tag">en diseño</span>
+          Alta y baja de robots: serial, driver y host.</div>
+      </div>
+    </div>
+    <div class="todo"><b>Guardar y aplicar</b>
+      Validar con el mismo cargador del arranque, copia <code>.bak</code> de <code>fleet.yaml</code> sin perder comentarios y recarga en caliente entre ticks.</div>
+  </main>
+
+  <!-- ===== Sincronización (docs/plan-admin.md §3). Depende de la fase 0:
+       ¿acepta el MiR GUIDs elegidos para missions, positions y mapas? ===== -->
+  <main v-show="tab === 'sincronizacion'">
+    <h2 class="page-title">Sincronización</h2>
+    <p class="page-sub">Llevar missions, positions y mapas creados en la web de un MiR al resto de la flota, con GUIDs comunes.</p>
+    <div class="panel">
+      <h3>Estado de la flota</h3>
+      <div class="todo"><span class="tag">en diseño</span>
+        Una fila por robot: “al día”, “3 diferencias”, “offline”, “pendiente” o “no aplica” (simulados). Al pulsarla, el detalle por recurso.</div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Catálogo</h3>
+        <div class="todo"><span class="tag">en diseño</span>
+          Mapas, positions y missions capturados (<code>catalog/</code> en el repo), con su GUID en solo lectura, robot de origen y fecha.</div>
+      </div>
+      <div class="panel">
+        <h3>Acciones</h3>
+        <div class="todo"><span class="tag">en diseño</span>
+          Capturar desde un robot → vista previa (qué se crea o se sustituye en cada robot) → desplegar a todos o a los seleccionados.</div>
+      </div>
+    </div>
+  </main>
+</div>
 </div>
 
 <script src="/static/vue.global.prod.js"></script>
@@ -273,6 +416,20 @@ function parseTopic(t) {
   const p = t.split('/');
   return p.length === 5 ? { manufacturer: p[2], serial: p[3], subtopic: p[4] } : null;
 }
+// Pestañas de la barra lateral. `admin`: van en el grupo de abajo (plan-admin.md).
+// Iconos SVG en línea (trazos de 24×24) para no depender de internet ni de fuentes de iconos.
+const TABS = [
+  { id: 'operacion', label: 'Operación', admin: false,
+    icon: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/>' +
+          '<rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>' },
+  { id: 'configurador', label: 'Configurador', admin: true,
+    icon: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/>' +
+          '<circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>' },
+  { id: 'sincronizacion', label: 'Sincronización', admin: true,
+    icon: '<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/>' +
+          '<path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/>' },
+];
+
 function hhmmss(iso) {
   const d = iso ? new Date(iso) : new Date();
   return isNaN(d) ? '' : d.toTimeString().slice(0, 8);
@@ -439,9 +596,18 @@ createApp({
       };
     }));
 
+    // ---------------- pestañas: la del #hash de la URL, o la primera si no es válida
+    const tabFromHash = () => {
+      const id = location.hash.slice(1);
+      return TABS.some(t => t.id === id) ? id : TABS[0].id;
+    };
+    ui.tab = tabFromHash();
+    window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); });
+
     loadFleet();
     connect();
     return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
+             tabs: TABS, tab: computed(() => ui.tab),
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');
