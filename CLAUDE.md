@@ -571,8 +571,10 @@ robots:
 
 Semántica de cada `action` (driver `mir`):
 
-- `mission`: nombre lógico. Al arranque se resuelve a GUID **por robot**
-  (`GET /missions`, buscar por `name`). Si no existe en un robot: warning al
+- `mission`: GUID del catálogo (`imperialfleet-mission000-…`, común a la
+  flota sincronizada; así está `config/fleet.yaml` desde el 2026-10-13,
+  decisión 87) o nombre lógico, que al arranque se resuelve a GUID **por
+  robot** (`GET /missions`, buscar por `name`). Si no existe en un robot: warning al
   arranque y `noRouteError` en runtime — el FM **arranca igual**.
 - `position_inputs`: `actionParameters` cuya `value` es un nombre de position;
   se resuelve a GUID por robot (`GET /positions`). Falta → `validationError`;

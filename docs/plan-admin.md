@@ -173,7 +173,10 @@ Por qué:
 casillas (positions por mapa, missions por grupo), elección de robot,
 vista previa y despliegue con avance en directo. Queda pendiente: la vista
 de flota con el estado de cada robot sin pedir la vista previa, capturar
-desde la UI y sustituir lo que es distinto.
+desde la UI y sustituir lo que es distinto. **La vista de flota ya está
+(decisiones 86–88):** comprobación rápida cada 5 min, completa bajo
+demanda y botón Preparar. Las missions de `fleet.yaml` van ya por GUID del
+catálogo (adelanta parte del §2.1).
 
 
 - **Vista de flota:** una fila por robot ("al día", "3 diferencias",

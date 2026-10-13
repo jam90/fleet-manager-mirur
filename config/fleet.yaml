@@ -26,8 +26,8 @@ drivers:
     # Grupo de missions (web del MiR) del que se leen las missions: reduce
     # ruido y peticiones. Se resuelve a GUID por robot con GET /mission_groups.
     mission_group: "mirur-tknika"
-    # Mission de auto-carga: nombre EXACTO en el grupo (sin inputs).
-    charge_mission: "Carga en estación MIRUR"
+    # Mission de auto-carga (sin inputs): GUID del catálogo o nombre EXACTO en el grupo.
+    charge_mission: imperialfleet-mission000-01-0001-002   # Carga en estación MIRUR
     # Opcional. Si se omite, vale cualquier position que exista en el robot.
     # positions_allowlist:
     #   - H2D1-VL
@@ -36,9 +36,11 @@ drivers:
 # Histéresis: battery_min (aceptar trabajo) > battery_floor (ir a cargar).
 # Así un robot que acaba de salir del suelo no recibe trabajo y vuelve a caer.
 #
-# Los nombres de missions y positions son los que aparecen en la web de cada
-# MiR; el driver los resuelve a GUID por robot al arrancar (los GUIDs cambian
-# de un robot a otro aunque el nombre coincida).
+# Las missions se nombran por su GUID del catálogo (catalog/missions/), que es
+# el mismo en todos los robots sincronizados (decisión 87); el comentario dice
+# su nombre en la web del MiR. También vale el nombre exacto, para missions
+# que no están en el catálogo. Las positions se nombran como en la web del MiR
+# y el driver las resuelve a GUID por robot al arrancar.
 robots:
   mir-1:
     driver: mir                # por defecto "mir"; el manufacturer lo pone el driver ("MiR")
@@ -46,19 +48,19 @@ robots:
     battery_min: 25
     actions:
       coger:
-        mission: "coger"       # sin parámetros
+        mission: imperialfleet-mission000-01-0001-001   # coger — sin parámetros
       dejar:
-        mission: "dejar"
+        mission: imperialfleet-mission000-01-0001-003   # dejar
       ir_a_espera:
-        mission: "Ir a zona de espera MIRUR"
+        mission: imperialfleet-mission000-01-0001-004   # Ir a zona de espera MIRUR
       abrir_puerta:            # prueba de parámetros: target_pos = nombre de position
-        mission: "Simular Apertura Puerta H2DX MIRUR"
+        mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
         position_inputs: [target_pos]
       prueba_parametros:       # escribe n_piezas_pedidas en el registro PLC 22 del MiR
-        mission: "MIRUR-prueba-parámetros"
+        mission: imperialfleet-mission000-01-0001-008   # MIRUR-prueba-parámetros
         number_inputs: [n_piezas_pedidas]   # número; "5" → 5 antes de postear
       prueba_parametros_v2:    # los dos parámetros de la mission final; MUEVE el robot
-        mission: "MIRUR-prueba-parámetros-v2"
+        mission: imperialfleet-mission000-01-0001-009   # MIRUR-prueba-parámetros-v2
         position_inputs: [target_pos]
         positions_allowlist: [Deshecho, Montaje, Area_calidad]   # solo estas en ESTA action
         number_inputs:
@@ -69,25 +71,25 @@ robots:
     battery_min: 25
     actions:
       coger:
-        mission: "coger"
+        mission: imperialfleet-mission000-01-0001-001   # coger
       dejar:
-        mission: "dejar"
+        mission: imperialfleet-mission000-01-0001-003   # dejar
       ir_a_espera:
-        mission: "Ir a zona de espera MIRUR"
+        mission: imperialfleet-mission000-01-0001-004   # Ir a zona de espera MIRUR
       abrir_puerta:
-        mission: "Simular Apertura Puerta H2DX MIRUR"
+        mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
         position_inputs: [target_pos]
       prueba_parametros:
-        mission: "MIRUR-prueba-parámetros"
+        mission: imperialfleet-mission000-01-0001-008   # MIRUR-prueba-parámetros
         number_inputs: [n_piezas_pedidas]
       prueba_parametros_v2:
-        mission: "MIRUR-prueba-parámetros-v2"
+        mission: imperialfleet-mission000-01-0001-009   # MIRUR-prueba-parámetros-v2
         position_inputs: [target_pos]
         positions_allowlist: [Deshecho, Montaje, Area_calidad]
         number_inputs:
           n_piezas_pedidas: { min: 1, max: 10, step: 1 }
       recoger_pieza:           # solo existe en mir-2
-        mission: "Simulacion Recogida pieza H2DX MIRUR"
+        mission: imperialfleet-mission000-01-0001-005   # Simulacion Recogida pieza H2DX MIRUR
         position_inputs: [target_pos]
 
 # Un robot simulado puede convivir con los reales (útil en clase; ojo: el

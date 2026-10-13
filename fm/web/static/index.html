@@ -243,6 +243,19 @@
   .ops .st { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
   .st-hecho { color: var(--ok); } .st-error { color: var(--bad); } .st-saltada { color: var(--warn); }
   .st-sin-cambios { color: var(--ink-3); }
+  .fleet-sync { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .fleet-sync li { display: grid; grid-template-columns: 7ch auto 1fr auto; grid-template-areas: "s p w a" "d d d d";
+    gap: 6px 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .fleet-sync .serial { grid-area: s; color: var(--navy); } .fleet-sync .pill { grid-area: p; margin: 0; }
+  .fleet-sync .when { grid-area: w; font-size: 12px; } .fleet-sync .acts { grid-area: a; }
+  .fleet-sync .detail { grid-area: d; display: grid; gap: 2px; font-size: 13px; }
+  .fleet-sync .detail:empty { display: none; }
+  .d-falta { color: var(--warn); } .d-distinta, .d-error { color: var(--bad); } .d-fuera { color: var(--ink-2); }
+  .where { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  .where span { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: var(--radius-sm); border: 1px solid var(--line); }
+  .w-ok { color: var(--ok); border-color: var(--ok) !important; } .w-falta { color: var(--warn); border-color: var(--warn-line) !important; }
+  .w-distinta, .w-corregir { color: var(--bad); border-color: var(--bad) !important; }
+  .w-mixto { color: var(--ink-2); }
 </style>
 </head>
 <body>
@@ -421,6 +434,26 @@
   <main v-show="tab === 'sincronizacion'">
     <h2 class="page-title">Sincronización</h2>
     <p class="page-sub">Llevar a un robot lo que hay en el catálogo (<code>catalog/</code>), con los mismos GUIDs en toda la flota.</p>
+    <div class="panel">
+      <h3>Estado de la flota</h3>
+      <p class="hint">Qué le falta a cada robot de lo que necesita según <code>fleet.yaml</code>: sus missions y todo lo que usan.
+        Se comprueba sola cada 5 min y tras cada despliegue (rápida: ¿existe?); <b>A fondo</b> compara además el contenido.</p>
+      <ul class="fleet-sync">
+        <li v-for="row in fleetRows" :key="row.serial">
+          <b class="serial">{{ row.serial }}</b>
+          <span class="pill" :class="row.key">{{ row.label }}</span>
+          <span class="muted when">{{ row.when }}</span>
+          <span class="detail">
+            <span v-for="(d, i) in row.details" :key="i" :class="d.cls">{{ d.text }}</span>
+          </span>
+          <span class="acts" v-if="row.supported">
+            <button class="btn" @click="syncCheck(row.serial, false)" :disabled="!row.canCheck">Comprobar</button>
+            <button class="btn" @click="syncCheck(row.serial, true)" :disabled="!row.canCheck">A fondo</button>
+            <button class="btn primary" v-if="row.fixable" @click="prepare(row.serial)">Preparar</button>
+          </span>
+        </li>
+      </ul>
+    </div>
     <div class="sync-grid">
       <div class="panel">
         <h3>Catálogo</h3>
@@ -444,6 +477,9 @@
                 <b>{{ it.name }}</b> <span class="muted">{{ it.extra }}</span>
                 <span class="muted" v-if="it.origin_group && it.kind === 'mission'"> · de {{ it.origin_group }}</span></label>
               <code class="guid">{{ it.guid }}</code>
+              <span class="where" v-if="whereIs(it).length">
+                <span v-for="w in whereIs(it)" :key="w.serial" :class="'w-' + w.state" :title="w.title">{{ w.text }}</span>
+              </span>
             </li>
           </ul>
         </details>
@@ -685,14 +721,18 @@ createApp({
     }));
 
     // ---------------- sincronización (docs/plan-admin.md §3)
-    const syncState = reactive({ catalog: [], robots: [], sel: {}, target: '', ops: [], opsKey: '',
+    const syncState = reactive({ catalog: [], robots: [], reports: {}, sel: {}, target: '', ops: [], opsKey: '',
                                  msg: '', loading: false });
+    // "hace 3 min": un reloj que avanza solo para que el texto no se quede viejo.
+    const clock = reactive({ now: Date.now() });
+    setInterval(() => { clock.now = Date.now(); }, 15000);
     const syncCatalog = computed(() => syncState.catalog);
     async function loadSync() {
       try {
         const info = await (await fetch('/api/sync')).json();
         syncState.catalog = info.catalog;
         syncState.robots = info.robots;
+        syncState.reports = info.reports;
         if (!syncState.target) {
           const first = info.robots.find(r => r.supported);
           if (first) syncState.target = first.serial;
@@ -765,8 +805,86 @@ createApp({
       syncState.msg = 'desplegando…';
       const t = targetInfo.value; if (t) t.deploying = true;
     }
+    // ---- estado de la flota: informes de SyncMonitor (rápida cada 5 min, completa bajo demanda)
+    const catByGuid = computed(() => Object.fromEntries(syncState.catalog.map(i => [i.guid, i])));
+    function ago(iso) {
+      const s = Math.max(0, Math.round((clock.now - new Date(iso)) / 1000));
+      return s < 60 ? 'hace un momento' : s < 3600 ? `hace ${Math.round(s / 60)} min` : `hace ${Math.round(s / 3600)} h`;
+    }
+    // Nombres legibles: la entrada de un marcador se nombra por su marcador.
+    function names(guids) {
+      const seen = new Set();
+      for (const g of guids) {
+        const it = catByGuid.value[g];
+        if (!it) continue;
+        const ref = it.auto ? catByGuid.value[it.parent_id] : it;
+        seen.add((KIND_LABEL[ref.kind] || ref.kind) + ' ' + ref.name);
+      }
+      const list = [...seen];
+      return list.length > 6 ? list.slice(0, 6).join(', ') + ` y ${list.length - 6} más` : list.join(', ');
+    }
+    const fleetRows = computed(() => syncState.robots.map(r => {
+      const rep = syncState.reports[r.serial];
+      const row = { serial: r.serial, supported: r.supported, details: [], fixable: false,
+                    canCheck: r.supported && r.online && !r.deploying && !r.checking };
+      if (!r.supported) return { ...row, key: '', label: 'no aplica', when: '' };
+      if (r.checking) Object.assign(row, { key: 'ejecutando', label: 'comprobando…' });
+      if (!rep || !rep.state) return { key: r.online ? '' : 'sinconexion', label: r.online ? 'sin comprobar' : 'sin conexión',
+                                       when: '', ...row };
+      const st = g => rep.state[g];
+      const missing = rep.required.filter(g => st(g) === 'falta');
+      const fix = rep.required.filter(g => st(g) === 'corregir');
+      const diff = rep.required.filter(g => st(g) === 'distinta');
+      row.when = `${rep.level} · ${ago(rep.checked_at)}`;
+      if (missing.length) row.details.push({ cls: 'd-falta', text: 'Faltan: ' + names(missing) });
+      if (fix.length) row.details.push({ cls: 'd-falta', text: 'A corregir: ' + names(fix) });
+      if (diff.length) row.details.push({ cls: 'd-distinta', text: 'Distintas (editadas en el robot; no se tocan): ' + names(diff) });
+      if (rep.outside.length) row.details.push({ cls: 'd-fuera', text: 'En fleet.yaml pero no en el catálogo: ' + rep.outside.join(', ') });
+      if (rep.error) row.details.push({ cls: 'd-error', text: 'La última comprobación falló: ' + rep.error });
+      row.fixable = missing.length + fix.length > 0;
+      if (!row.key) {
+        if (diff.length) Object.assign(row, { key: 'error', label: `${diff.length} distintas` });
+        else if (missing.length || fix.length) Object.assign(row, { key: 'encola', label: `faltan ${missing.length + fix.length}` });
+        else Object.assign(row, { key: 'libre', label: 'al día' });
+      }
+      return row;
+    }));
+    // En qué robots está cada recurso del catálogo (con muchos robots, un contador).
+    const W_TEXT = { ok: '✓', falta: '✗', distinta: '!', corregir: '~' };
+    function whereIs(it) {
+      const reps = syncState.robots.filter(r => r.supported && syncState.reports[r.serial] && syncState.reports[r.serial].state)
+                                   .map(r => [r.serial, syncState.reports[r.serial].state[it.guid] || 'falta']);
+      if (reps.length <= 6) return reps.map(([s, v]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`, title: `${s}: ${v}` }));
+      const ok = reps.filter(([, v]) => v === 'ok');
+      return [{ serial: '*', state: ok.length === reps.length ? 'ok' : 'mixto', text: `✓ ${ok.length}/${reps.length}`,
+                title: 'falta en: ' + reps.filter(([, v]) => v !== 'ok').map(([s]) => s).join(', ') }];
+    }
+    async function syncCheck(serial, deep) {
+      const r = await fetch(`/api/sync/${serial}/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deep }) });
+      if (!r.ok) { syncState.msg = (await r.json()).detail; return; }
+      const robot = syncState.robots.find(x => x.serial === serial); if (robot) robot.checking = true;
+    }
+    // Preparar: marca lo que falta (o hay que corregir) y pide la vista previa.
+    function prepare(serial) {
+      const rep = syncState.reports[serial];
+      syncState.target = serial;
+      for (const k of Object.keys(syncState.sel)) syncState.sel[k] = false;
+      for (const g of rep.required) {
+        if (rep.state[g] !== 'falta' && rep.state[g] !== 'corregir') continue;
+        const it = catByGuid.value[g];
+        if (it) syncState.sel[it.auto ? it.parent_id : g] = true;
+      }
+      syncPreview();
+    }
+
     // Avance del despliegue por el WebSocket (topic fm/sync/<serial>).
     function onSync(serial, p) {
+      if (p.report) {
+        syncState.reports[serial] = p.report;
+        const robot = syncState.robots.find(x => x.serial === serial); if (robot) robot.checking = false;
+        return;
+      }
       if (serial !== syncState.target) return;
       if (p.op) {
         const i = syncState.ops.findIndex(o => o.guid === p.op.guid);
@@ -798,6 +916,7 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              syncState, syncCatalog, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
              canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
+             fleetRows, whereIs, syncCheck, prepare,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');

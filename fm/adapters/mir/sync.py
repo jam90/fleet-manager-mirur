@@ -12,6 +12,13 @@ una **selección** de ese catálogo:
    recurso: crear, corregir, igual (no se toca) o distinta (no se toca).
 4. `apply(...)` ejecuta las operaciones por REST e informa de cada una.
 
+Además, `MirSync.check()` dice qué recursos del catálogo tiene el robot
+(decisiones 86–88): la comprobación **rápida** solo mira si existe cada GUID
+(una lectura por tipo de recurso) y detecta lo que **falta**; la
+**completa** compara el contenido (es la vista previa de todo el catálogo)
+y detecta además lo **distinto**. Lo que el robot **debe** tener sale de las
+missions de su `fleet.yaml` y sus dependencias.
+
 Así sincronizar una mission suelta es barato: sus dependencias que el robot
 ya tiene salen "igual" y no generan escrituras.
 
@@ -24,7 +31,9 @@ from __future__ import annotations
 import base64
 import json
 import re
+import threading
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -218,6 +227,17 @@ def fetch_view(client: MirClient, cat: Catalog, guids: list[str]) -> RobotView:
     return v
 
 
+def presence(client: MirClient, cat: Catalog) -> dict[str, bool]:
+    """Comprobación rápida: ¿existe en el robot cada GUID del catálogo? Una
+    lectura por tipo de recurso. La entrada de un marcador no tiene nuestro
+    GUID en el robot: se da por presente si lo está su marcador."""
+    have: set[str] = set()
+    for path in ("sessions", "maps", "positions", "sounds", "mission_groups", "missions"):
+        have |= {x["guid"] for x in client._req("GET", path)}
+    return {g: (d["parent_id"] in have if d.get("creada_por_mir") else g in have)
+            for g, d in cat.items.items()}
+
+
 # ----------------------------------------------------------------- plan
 @dataclass
 class Op:
@@ -391,21 +411,66 @@ class MirSync:
     """Lo que ofrece el driver MiR a la web (`driver.make_sync`). Usa su propio
     cliente REST: corre en un hilo aparte del poll de 1 Hz."""
 
-    def __init__(self, serial: str, host: str, auth: str, catalog_dir: Path):
+    def __init__(self, serial: str, host: str, auth: str, catalog_dir: Path,
+                 wanted: Iterable[str] = ()):
         self.serial = serial
         self.catalog_dir = Path(catalog_dir)
+        # Missions que el robot necesita según fleet.yaml: GUID del catálogo o nombre.
+        self.wanted = list(wanted)
         # Lectura más larga que el poll: un POST /maps sube la imagen entera.
         self.client = MirClient(host, auth, timeout=(2.0, 20.0))
+        # Comprobación periódica, vista previa y despliegue pueden pedirse a la
+        # vez desde hilos distintos: el cliente REST se usa de uno en uno.
+        self.lock = threading.Lock()
 
     def catalog(self) -> Catalog:
         # Se relee cada vez: el catálogo cambia al capturar (git, script).
         return Catalog.load(self.catalog_dir)
 
+    def required(self, cat: Catalog) -> tuple[list[str], list[str]]:
+        """(GUIDs del catálogo que el robot debe tener, missions de fleet.yaml
+        que no están en el catálogo). Un nombre se busca entre las missions
+        del catálogo; si hay varias con ese nombre, cuenta como fuera."""
+        by_name: dict[str, list[str]] = {}
+        for g, d in cat.items.items():
+            if cat.kind(g) == "mission":
+                by_name.setdefault(d["name"], []).append(g)
+        found, outside = [], []
+        for w in self.wanted:
+            if w in cat.items:
+                found.append(w)
+            elif len(by_name.get(w, [])) == 1:
+                found.append(by_name[w][0])
+            else:
+                outside.append(w)
+        return (cat.closure(found) if found else []), outside
+
+    def _preview(self, cat: Catalog, selected: Iterable[str]) -> list[Op]:
+        guids = cat.closure(selected)
+        return plan(cat, fetch_view(self.client, cat, guids), guids, self.serial)
+
     def preview(self, selected: Iterable[str]) -> tuple[Catalog, list[Op]]:
         cat = self.catalog()
-        guids = cat.closure(selected)
-        return cat, plan(cat, fetch_view(self.client, cat, guids), guids, self.serial)
+        with self.lock:
+            return cat, self._preview(cat, selected)
 
     def deploy(self, selected: Iterable[str], progress: Progress = lambda op: None) -> list[Op]:
-        cat, ops = self.preview(selected)   # se replanifica: el robot puede haber cambiado
-        return apply(self.client, cat, ops, progress)
+        cat = self.catalog()
+        with self.lock:
+            ops = self._preview(cat, selected)   # se replanifica: el robot puede haber cambiado
+            return apply(self.client, cat, ops, progress)
+
+    def check(self, deep: bool = False) -> dict:
+        """Estado de cada recurso del catálogo en el robot: "ok", "falta" y,
+        solo en la completa, "distinta" o "corregir". Lanza si no hay red."""
+        cat = self.catalog()
+        required, outside = self.required(cat)
+        with self.lock:
+            if deep:
+                verb = {"igual": "ok", "crear": "falta", "corregir": "corregir", "distinta": "distinta"}
+                state = {op.guid: verb[op.verb] for op in self._preview(cat, list(cat.items))}
+            else:
+                state = {g: "ok" if ok else "falta" for g, ok in presence(self.client, cat).items()}
+        return {"level": "completa" if deep else "rápida",
+                "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "state": state, "required": required, "outside": outside}

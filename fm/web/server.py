@@ -12,7 +12,9 @@ Sincronización (docs/plan-admin.md §3): si el driver de un robot ofrece
 `make_sync(catalog_dir)` (hoy, solo MiR), la pestaña Sincronización puede
 previsualizar y desplegar en él una selección de `catalog/`. El despliegue
 corre en un hilo propio por robot (nunca en el bucle de 1 Hz) y su avance se
-emite por el mismo WebSocket con el topic `fm/sync/<serial>`.
+emite por el mismo WebSocket con el topic `fm/sync/<serial>`. Además,
+`SyncMonitor` comprueba cada 5 min qué tiene cada robot del catálogo
+(`sync_monitor.py`) y emite el informe por el mismo topic.
 
 Concurrencia: uvicorn corre en un hilo propio con su event loop. Con el hilo
 principal comparte solo `MqttBus` (paho es thread-safe para `publish`;
@@ -40,6 +42,7 @@ from fm.adapters.base import describe_actions
 from fm.config import FleetConfig
 from fm.mqtt_bus import FLEET, MqttBus
 from fm.robot import Robot
+from fm.web.sync_monitor import SyncMonitor
 
 log = logging.getLogger("fm.web")
 STATIC = Path(__file__).resolve().parent / "static"
@@ -61,6 +64,10 @@ class SyncIn(BaseModel):
     guids: list[str]
 
 
+class CheckIn(BaseModel):
+    deep: bool = False
+
+
 class WebServer:
     def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus,
                  catalog_dir: Path = CATALOG):
@@ -70,6 +77,8 @@ class WebServer:
                       if hasattr(r.driver, "make_sync")}
         self._deploying: set[str] = set()
         self._deploy_lock = threading.Lock()
+        self.monitor = SyncMonitor(self.syncs, robots,
+                                   publish=lambda s, p: self.mirror(f"fm/sync/{s}", p))
         self.app = FastAPI(title="Fleet Manager", docs_url="/api/docs")
         self.loop: asyncio.AbstractEventLoop | None = None
         self.clients: set[WebSocket] = set()
@@ -120,7 +129,8 @@ class WebServer:
         if serial not in self.syncs:
             return {"serial": serial, "supported": False}
         return {"serial": serial, "supported": True, "online": r.last_telemetry is not None,
-                "busy": r.busy, "deploying": serial in self._deploying}
+                "busy": r.busy, "deploying": serial in self._deploying,
+                "checking": serial in self.monitor.running}
 
     def _sync_for(self, serial: str):
         if serial not in self.robots:
@@ -144,6 +154,7 @@ class WebServer:
         finally:
             with self._deploy_lock:
                 self._deploying.discard(serial)
+        self.monitor.check(serial, wait_lock=True)    # el estado de la flota, al día
 
     # ------------------------------------------------------------- entradas
     def send_fleet_order(self, action_type: str, params: dict) -> str:
@@ -198,7 +209,17 @@ class WebServer:
         def sync_info():
             first = next(iter(self.syncs.values()), None)
             return {"catalog": first.catalog().summary() if first else [],
-                    "robots": [self.sync_status(s) for s in self.robots]}
+                    "robots": [self.sync_status(s) for s in self.robots],
+                    "reports": self.monitor.reports}
+
+        @app.post("/api/sync/{serial}/check")
+        def sync_check(serial: str, body: CheckIn):
+            self._sync_for(serial)
+            if not self.sync_status(serial)["online"]:
+                raise HTTPException(409, f"'{serial}' no responde: no se puede comprobar")
+            if not self.monitor.check_async(serial, deep=body.deep):
+                raise HTTPException(409, f"ya se está comprobando '{serial}'")
+            return {"started": True}
 
         @app.post("/api/sync/{serial}/preview")
         def sync_preview(serial: str, body: SyncIn):
@@ -264,9 +285,11 @@ class WebServer:
 
         self._server = server
         threading.Thread(target=run, name="web", daemon=True).start()
+        self.monitor.start()
         log.info("[web] interfaz en http://%s:%d/", host, port)
 
     def stop(self) -> None:
+        self.monitor.stop()
         self.bus.on_publish = None
         if getattr(self, "_server", None) is not None:
             self._server.should_exit = True

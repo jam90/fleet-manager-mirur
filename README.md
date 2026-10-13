@@ -50,17 +50,17 @@ auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo po
 drivers:                            # defaults por marca (cualquier robot los puede pisar)
   mir:
     mission_group: "mirur-tknika"   # solo se indexan las missions de este grupo
-    charge_mission: "Carga en estación MIRUR"
+    charge_mission: imperialfleet-mission000-01-0001-002   # Carga en estación MIRUR
 robots:
   mir-1:
     driver: mir                     # por defecto "mir"
     host: 192.168.15.5              # ↓ a partir de aquí lo interpreta el driver
     battery_min: 25                 # > battery_floor (histéresis)
     actions:
-      coger: { mission: "coger" }
-      dejar: { mission: "dejar" }
+      coger: { mission: imperialfleet-mission000-01-0001-001 }   # GUID del catálogo
+      dejar: { mission: "dejar" }                                # o nombre exacto
       abrir_puerta:
-        mission: "Simular Apertura Puerta H2DX MIRUR"
+        mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
         position_inputs: [target_pos]   # la order trae {"key": "target_pos", "value": "H2D2"}
 ```
 
@@ -75,7 +75,7 @@ Por `action` (driver `mir`):
 
 | Clave | Significado |
 |---|---|
-| `mission` | nombre exacto de la mission en la web del MiR; se resuelve a GUID **por robot** al arrancar |
+| `mission` | GUID del catálogo (`catalog/missions/`, el mismo en toda la flota sincronizada) o nombre exacto de la mission en la web del MiR, que se resuelve a GUID **por robot** al arrancar |
 | `position_inputs` | `actionParameters` cuyo valor es un **nombre de position**; se traduce a GUID. Ausente → `VALIDATION_FAILURE`; inexistente → `NO_ROUTE_TO_TARGET` |
 | `required_inputs` | parámetros obligatorios que se reenvían tal cual (ausente → `VALIDATION_FAILURE`) |
 | `number_inputs` | parámetros obligatorios **numéricos**: `5`, `5.0`, `"5"` o `"2,5"` se mandan al MiR como número (`5`, `2.5`); ausente o no numérico → `VALIDATION_FAILURE`. P.ej. `n_piezas_pedidas` (registro PLC 22). Lista de nombres, o mapping con rango `{n_piezas_pedidas: {min: 1, max: 10, step: 1}}`: fuera de rango → `VALIDATION_FAILURE`, y la UI pinta un deslizador |

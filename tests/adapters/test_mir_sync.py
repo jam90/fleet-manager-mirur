@@ -199,3 +199,20 @@ def test_si_falla_una_dependencia_se_saltan_las_que_la_usan(cat):
     ops = apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-2"))
     status = {o.guid: o.status for o in ops}
     assert status == {SES: "hecho", MAP: "error", P_NORMAL: "saltada"}
+
+
+def test_required_y_comprobaciones_rapida_y_completa(cat):
+    from fm.adapters.mir.sync import MirSync
+    s = MirSync("mir-1", "0.0.0.0", "Basic x", cat.root, wanted=["principal", M_SUB, "no-catalogada"])
+    s.client = FakeMir()
+    required, outside = s.required(cat)
+    assert required == cat.closure([M_MAIN]) and outside == ["no-catalogada"]   # por nombre o por GUID
+
+    r = s.check()
+    assert r["level"] == "rápida" and set(r["state"].values()) == {"falta"}
+    s.deploy([M_MAIN])
+    r = s.check()
+    assert {g: v for g, v in r["state"].items() if v != "ok"} == {P_OTHER: "falta"}   # no se usa
+    s.client.db["missions"][M_SUB]["name"] = "editada en la web"
+    assert s.check()["state"][M_SUB] == "ok"              # la rápida solo mira si existe
+    assert s.check(deep=True)["state"][M_SUB] == "distinta"

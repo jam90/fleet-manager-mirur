@@ -1457,6 +1457,41 @@ que mir-2.
     - Para renombrar un grupo basta con `PUT /mission_groups/<guid>
       {"name": …}`; el GUID no cambia.
 
+## 2026-10-13 — Saber qué no está sincronizado
+
+`pytest`: 115 en verde. Probado con los dos robots: la comprobación rápida
+da los dos al día con lo que piden sus `fleet.yaml` (mir-2 no tiene `traer`
+ni `MESA_TKNIKA`, que no usa); la completa en mir-2 da 37 iguales, 3 que
+faltan y ninguno distinto.
+
+86. **Qué tiene cada robot se comprueba en dos niveles.** La **rápida**
+    mira si existe cada GUID del catálogo: una lectura por tipo de
+    recurso, detecta lo que falta y la hace sola `SyncMonitor` cada **5
+    min** (elegido por el usuario), al arrancar y tras cada despliegue. La
+    **completa** compara el contenido (es la vista previa de todo el
+    catálogo), detecta además lo distinto y solo se lanza a mano ("A
+    fondo"), porque son unas 100 lecturas por robot. El informe guarda su
+    hora y la UI dice "hace X min". Corre en un hilo propio y se salta
+    el turno si el robot está desplegando: cada `MirSync` tiene un `lock`
+    para que comprobación, vista previa y despliegue no usen a la vez el
+    mismo cliente REST.
+87. **Las missions de `fleet.yaml` se nombran por su GUID del catálogo**
+    (decisión del usuario; antes, por nombre). El driver indexa cada mission
+    por nombre y por GUID, así que vale cualquiera de los dos: el nombre
+    queda para missions que no están en el catálogo. Cada línea lleva el
+    nombre en un comentario. Ese GUID es el que une el configurador con
+    la sincronización.
+88. **Lo que un robot "debe tener" son las missions de su `fleet.yaml`
+    (actions y carga) y sus dependencias.** Es el mismo cálculo de
+    dependencias que el de la sincronización (`MirSync.required`). La
+    pestaña muestra por robot "al día", "faltan N" o "N distintas", qué
+    falta y qué hay en `fleet.yaml` que no está en el catálogo. En el
+    catálogo, al lado de cada recurso, en qué robots está (con más de 6
+    robots, un contador). **Preparar** marca lo que falta y pide la vista
+    previa. Cuando llegue el configurador, la misma información irá en
+    su matriz action × robot, y el asignador podrá descartar el robot que
+    no tiene grabada la mission.
+
 ## Pendiente (a 2026-10-12)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del

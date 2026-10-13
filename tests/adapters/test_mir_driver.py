@@ -64,7 +64,10 @@ def test_connect_indices_y_translate():
     d, _ = _driver()
     assert d.manufacturer == "MiR"
     assert d.connect() and d.indexed
-    assert d.missions == {"coger": "m-coger", "Ir a posición": "m-ir", "Carga": "m-carga"}
+    assert d.mission_names == {"m-coger": "coger", "m-ir": "Ir a posición", "m-carga": "Carga"}
+    # Una mission se puede nombrar por su nombre o por su GUID (decisión 87).
+    assert d.missions == {"coger": "m-coger", "Ir a posición": "m-ir", "Carga": "m-carga",
+                          "m-coger": "m-coger", "m-ir": "m-ir", "m-carga": "m-carga"}
     assert d.positions == {"P1": "p-1"}
     job = d.translate(Action("ir_a", "a1", actionParameters=[ActionParameter("target_pos", "P1")]))
     assert job.label == "mission 'Ir a posición'"

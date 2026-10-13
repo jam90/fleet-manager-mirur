@@ -1,5 +1,6 @@
 """Servidor web: snapshot, envío (publica en el bus) y espejo por WebSocket."""
 import json
+import threading
 import time
 
 from fastapi.testclient import TestClient
@@ -85,6 +86,13 @@ class FakeSync:
 
     def __init__(self):
         self.deployed = []
+        self.checks = []
+        self.lock = threading.Lock()
+
+    def check(self, deep=False):
+        self.checks.append(deep)
+        return {"level": "completa" if deep else "rápida", "state": {"g1": "ok"}, "required": ["g1"],
+                "outside": [], "checked_at": "2026-10-13T12:00:00Z"}
 
     def catalog(self):
         return self.Cat()
@@ -115,7 +123,7 @@ def test_sync_no_aplica_si_el_driver_no_la_ofrece():
     srv, _ = _server()
     c = TestClient(srv.app)
     info = c.get("/api/sync").json()
-    assert info == {"catalog": [], "robots": [{"serial": "sim-1", "supported": False}]}
+    assert info == {"catalog": [], "robots": [{"serial": "sim-1", "supported": False}], "reports": {}}
     assert c.post("/api/sync/sim-1/preview", json={"guids": []}).status_code == 400
     assert c.post("/api/sync/nadie/preview", json={"guids": []}).status_code == 404
 
@@ -136,11 +144,31 @@ def test_sync_preview_y_deploy_con_avance_por_websocket():
     srv.mirror = lambda t, payload: msgs.append((t, payload))   # lo que iría al WebSocket
     assert c.post("/api/sync/sim-1/deploy", json={"guids": ["g1"]}).json() == {"started": True}
     for _ in range(200):                                        # el despliegue va en su hilo
-        if msgs and "done" in msgs[-1][1]:
+        if msgs and "report" in msgs[-1][1]:                    # tras desplegar, se comprueba
             break
         time.sleep(0.01)
     assert {t for t, _ in msgs} == {"fm/sync/sim-1"}
+    report = msgs.pop()[1]["report"]
+    assert report["state"] == {"g1": "ok"} and report["error"] is None
+    assert srv.monitor.reports["sim-1"] is report
     msgs = [{"payload": m} for _, m in msgs]
     assert msgs[0]["payload"]["op"]["status"] == "hecho"
     assert msgs[-1]["payload"] == {"done": True, "summary": {"hecho": 1}}
     assert sync.deployed == [["g1"]]
+
+
+def test_sync_check_bajo_demanda():
+    srv, sync = _server_with_sync()
+    c = TestClient(srv.app)
+    assert c.post("/api/sync/sim-1/check", json={"deep": True}).status_code == 409   # sin telemetría
+    srv.robots["sim-1"].poll()
+    msgs = []
+    srv.mirror = lambda t, payload: msgs.append(payload)
+    srv.monitor.publish = lambda s, p: srv.mirror(f"fm/sync/{s}", p)
+    assert c.post("/api/sync/sim-1/check", json={"deep": True}).json() == {"started": True}
+    for _ in range(200):
+        if msgs:
+            break
+        time.sleep(0.01)
+    assert sync.checks == [True] and msgs[0]["report"]["level"] == "completa"
+    assert c.get("/api/sync").json()["reports"]["sim-1"]["state"] == {"g1": "ok"}

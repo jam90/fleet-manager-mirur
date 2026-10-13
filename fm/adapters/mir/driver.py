@@ -47,7 +47,8 @@ class MirDriver:
         self.log = logging.LoggerAdapter(log, {})
         self.log.process = lambda msg, kw: (f"[{self.serial}] {msg}", kw)
         # Índices por robot (los GUIDs no coinciden entre robots).
-        self.missions: dict[str, str] = {}              # nombre → GUID
+        self.missions: dict[str, str] = {}              # nombre o GUID → GUID
+        self.mission_names: dict[str, str] = {}         # GUID → nombre (para logs y UI)
         self.positions: dict[str, str] = {}             # nombre → GUID
         self.mission_inputs: dict[str, set[str]] = {}   # GUID mission → input_names
         self.indexed = False
@@ -65,6 +66,10 @@ class MirDriver:
         próximo tick y mientras tanto el robot solo publica telemetría."""
         try:
             self.missions = self.client.index_missions_by_name(self.cfg.mission_group)
+            # En fleet.yaml una mission se puede nombrar por su GUID del
+            # catálogo (común a toda la flota, decisión 87) o por su nombre.
+            self.mission_names = {g: n for n, g in self.missions.items()}
+            self.missions.update({g: g for g in self.mission_names})
             st = self.last_status or self.client.status_get()
             self.positions = self.client.index_positions_by_name(st.map_id)
             wanted = {a.mission for a in self.cfg.actions.values()}
@@ -78,7 +83,7 @@ class MirDriver:
                 self.mission_inputs[guid] = self.client.index_mission_params(guid)
             self._check_inputs()
             self.indexed = True
-            self.log.info("índices: %d missions, %d positions", len(self.missions), len(self.positions))
+            self.log.info("índices: %d missions, %d positions", len(self.mission_names), len(self.positions))
             return True
         except Exception as e:   # red, 4xx, JSON raro: todo se reintenta luego
             self.log.warning("no se pudieron cargar los índices: %s", e)
@@ -197,7 +202,8 @@ class MirDriver:
                 r = a.number_ranges.get(k)
                 params.append(ParamInfo(k, "number", True, min=r and r.min, max=r and r.max,
                                         step=r and r.step))
-            out.append(ActionInfo(a.action_type, params, f"mission '{a.mission}'"))
+            name = self.mission_names.get(a.mission, a.mission)
+            out.append(ActionInfo(a.action_type, params, f"mission '{name}'"))
         return out
 
     # -------------------------------------------------------- sincronización
@@ -205,4 +211,7 @@ class MirDriver:
         """Capacidad opcional (no está en `RobotDriver`): la web la busca con
         `getattr` para la pestaña Sincronización. Ver `sync.py`."""
         from fm.adapters.mir.sync import MirSync   # import tardío: solo si se usa
-        return MirSync(self.serial, self.cfg.host, self.cfg.auth, catalog_dir)
+        wanted = [a.mission for a in self.cfg.actions.values()]
+        if self.cfg.charge_mission:
+            wanted.append(self.cfg.charge_mission)
+        return MirSync(self.serial, self.cfg.host, self.cfg.auth, catalog_dir, wanted)
