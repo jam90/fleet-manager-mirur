@@ -1,0 +1,29 @@
+{
+  "guid": "imperialfleet-position00-01-0001-013",
+  "name": "toolchanger-vl",
+  "type_id": 11,
+  "pos_x": 28.835,
+  "pos_y": 7.63,
+  "orientation": 179.0,
+  "map_id": "imperialfleet-map0000000-01-0001-001",
+  "parent_id": null,
+  "docking_offsets": [
+    {
+      "docking_type": null,
+      "name": null,
+      "x_offset": -0.8,
+      "y_offset": -0.018,
+      "orientation_offset": 3.513,
+      "bar_length": null,
+      "bar_distance": null,
+      "shelf_leg_asymmetry_x": null
+    }
+  ],
+  "creada_por_mir": false,
+  "_origen": {
+    "robot": "mir-2",
+    "mapa": "suberri",
+    "guid": "dbe4621b-5b48-11f1-8990-000e8eb5b8fb",
+    "capturado": "2026-10-13"
+  }
+}

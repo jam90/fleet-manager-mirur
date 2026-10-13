@@ -1,0 +1,18 @@
+{
+  "guid": "imperialfleet-position00-01-0001-012",
+  "name": "Entrada zona espera",
+  "type_id": 0,
+  "pos_x": 33.871,
+  "pos_y": 8.698,
+  "orientation": 0.0,
+  "map_id": "imperialfleet-map0000000-01-0001-001",
+  "parent_id": null,
+  "docking_offsets": [],
+  "creada_por_mir": false,
+  "_origen": {
+    "robot": "mir-2",
+    "mapa": "suberri",
+    "guid": "6999e6bc-58df-11f1-b2f5-000e8eb5b8fb",
+    "capturado": "2026-10-13"
+  }
+}

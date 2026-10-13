@@ -59,6 +59,10 @@
   Las definitivas ("coge 5 contactores y llévalos a la balda 3") están por
   crear en la web del MiR. Mission de carga: `Carga en estación MIRUR`
   (hasta 70 %, termina sola).
+- **El mapa `suberri` y su session no se tocan nunca** (son los de
+  trabajo). Las pruebas de sincronización van en **mir-2**, en la session
+  `suberri_mirur` y su mapa `suberri_mirur` (decisión 74). Lo capturado
+  vive en `catalog/` (decisión 75).
 - **Al parar el FM desde un shell** usa `kill -INT <pid>` (Ctrl-C); un
   `pkill -f` con el patrón dentro de la misma línea de comandos se mata a sí
   mismo. Comprueba `OFFLINE` en `+/connection` retained.
@@ -610,12 +614,13 @@ Gotchas verificados contra robots reales en el proyecto anterior:
    interno de la action (p.ej. `position`). Con el interno el MiR devuelve
    `400 invalid_input_data / parameter_input_name_not_valid`. Usa
    `missions/<guid>/actions` solo para **verificar que el `input_name` existe**.
-2. **GUIDs distintos por robot** para missions, positions, mission_groups y
-   mapas aunque el nombre sea idéntico. Índices por robot, siempre.
-   *A futuro (2026-10-09, sin probar):* al crear un recurso por API el GUID
-   se puede elegir (cualquier cadena de 36 caracteres), lo que permitiría
-   GUIDs idénticos en todos los robots. Ver "Pendiente" en `docs/avance.md`.
-   Mientras no se adopte, la regla sigue siendo resolver por nombre.
+2. **GUIDs distintos por robot** para missions, positions, mission_groups,
+   mapas y sessions aunque el nombre sea idéntico. Índices por robot,
+   siempre. *En curso (2026-10-13):* al crear un recurso por API el GUID
+   se puede elegir (exactamente 36 caracteres, de cualquier tipo; probado
+   con sessions). El estándar `imperialfleet-<tipo>-<inst>-<padre>-<número>`
+   está en `docs/plan-admin.md` §4. Mientras no esté desplegado, la regla
+   sigue siendo resolver por nombre.
 3. **Positions con nombre duplicado** (p.ej. dos `Charging station` con
    `type_id` 20 y 21): al indexar, quedarse con la primera y avisar por log.
 4. **Filtrar missions por grupo:** `GET /mission_groups/<guid>/missions`.

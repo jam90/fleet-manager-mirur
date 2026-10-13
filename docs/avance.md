@@ -1200,6 +1200,130 @@ apagados (backoff, `REJECTED NO_MOBILE_ROBOT_AVAILABLE`). Sin hardware.
     inmediato; solo si falla, un robot recién encendido tarda hasta 5 s
     más en aceptar orders.
 
+## 2026-10-13 — Fase 0 de `plan-admin`: GUIDs elegidos y lectura de mapas
+
+Sin código en el FM; scripts de prueba desechables. Lecturas (GET) en los
+dos MiR; escrituras solo en mir-2 (`192.168.15.15`). Sin missions lanzadas.
+
+### Lo que se ha comprobado
+
+- **`POST /sessions` admite un GUID elegido**, que tiene que tener
+  **exactamente 36 caracteres** de cualquier tipo. Aceptó
+  `estoesunapruebadequepuedoponeresto01` (sin guiones ni hexadecimal). Con
+  35 o 37 caracteres responde `400 input_string_too_short` /
+  `input_string_too_long`. Repetir un GUID que ya existe da `409
+  duplicate_entry` y deja intacta la session existente. `created_by_id` es
+  opcional (pone el usuario del token). Crear una session no la activa
+  (`active: false`). La session de prueba se borró al terminar.
+- **GUIDs de fábrica del MiR**, iguales en los dos robots y no
+  hexadecimales: `mirconst-guid-0000-0001-areas0000000` (ConfigurationSite),
+  `…-0001-maps00000000` (ConfigurationMap) y `…-0004-users0000000`
+  (Distributor).
+- **Las sessions también tienen GUIDs distintos en cada robot:** `Suberri`
+  en mir-1 y `suberri` en mir-2. Como el mapa pertenece a una session,
+  también hay que unificarlas, y van las primeras en el orden de despliegue.
+- **`GET /maps/<guid>`:** la imagen va en `base_map`, que es un PNG en gris
+  de 8 bits codificado en base64, sin prefijo `data:`. Píxeles: `0` =
+  obstáculo, `255` = libre, `200` = sin explorar. La fila 0 de la imagen
+  corresponde a la y máxima (las 49 positions de los dos robots caen sobre
+  píxeles libres solo invirtiendo el eje y). `origin_x/y` es la esquina
+  inferior izquierda en metros y `resolution`, metros por píxel. El mapa
+  `suberri` mide 1053×631 px a 0,05 m, es decir, 52,65 × 31,55 m. No hay
+  una capa aparte para las paredes dibujadas: parecen quedar dentro de
+  `base_map`.
+- **Lo que no va en `POST /maps`** y se crea aparte: positions
+  (`/maps/<g>/positions`), zonas (`/zones`, que devuelve los mismos objetos
+  que `/area_events`; las 5 tienen la misma geometría en los dos robots) y
+  path_guides (ninguna de momento).
+- **Los dos mapas `suberri` ya no son iguales:** salieron del mismo PNG
+  (`img_referencia/mapa_base/MiR floor plan.png`), pero difieren en 2.008
+  píxeles (paredes dibujadas en el taller) y en las positions (26 en mir-1,
+  23 en mir-2). El PNG difiere en 165 píxeles del mapa de mir-2 y en 1.843
+  del de mir-1.
+- **`POST /maps` admite un GUID elegido.** Se creó `mapa_prueba` en mir-2,
+  dentro de `suberri_mirur`, con GUID
+  `imperialfleet-map0000000-01-0001-001`, ese PNG tal cual (mismo formato
+  que guarda el MiR) y la resolución y el origen de `suberri`. Al leerlo de
+  vuelta, el GUID se conserva y `base_map` es idéntico byte a byte: el MiR
+  no convierte la imagen. Crear el mapa no lo activa; el robot sigue en
+  `suberri`.
+
+### Decisiones nuevas
+
+71. **GUID legible `imperialfleet-<tipo>-<inst>-<padre>-<número>`**
+    (formato completo en `docs/plan-admin.md` §4). Sustituye a la
+    decisión 64. Ejemplo: `imperialfleet-position00-01-0001-012` es la
+    position 12 del mapa 1 de la instalación 01. Motivo: el MiR acepta
+    cualquier cadena de 36 caracteres, y así quien haga una petición sabe
+    qué recurso es con solo ver el GUID. El tipo va en inglés, como el
+    endpoint, y solo se usan minúsculas, cifras y guiones porque el GUID
+    viaja en las URL.
+72. **Contador por padre solo en los recursos sin hijos** (position, zona,
+    path_guide, action). Los recursos que tienen hijos (mapa, mission) se
+    numeran en toda la instalación y su campo padre es solo informativo.
+    Motivo: si los mapas se numerasen dentro de su session, el mapa 1 de
+    dos sessions distintas daría GUIDs repetidos a sus positions. El
+    siguiente número se calcula a partir de los GUIDs existentes, no del
+    padre actual.
+73. **Las sessions (sites) también se unifican.** El orden de despliegue
+    queda así: session → mapa → positions y zonas → missions. Primera
+    session: `suberri_mirur` = `imperialfleet-session000-01-0000-001`,
+    creada en mir-2.
+74. **El mapa `suberri` y su session no se tocan nunca.** Las pruebas se
+    hacen en mir-2, en la session `suberri_mirur` y en su mapa. El mapa se
+    creó como `mapa_prueba` y el usuario lo renombró a `suberri_mirur`,
+    con el mismo GUID.
+75. **Catálogo en `catalog/`, un JSON por recurso con su GUID como nombre**
+    (estructura en `catalog/README.md`). La imagen del mapa va en un `.png`
+    aparte, para poder abrirla y para no meter en git un base64 de 11.000
+    caracteres. Las referencias van ya traducidas a GUIDs del catálogo, y
+    `_origen` guarda el robot y el GUID de procedencia, que es lo que
+    hace falta para adoptar lo existente. Primera captura, con
+    `scripts/catalog_capture.py`: las 23 positions de `suberri` de mir-2,
+    colgando del mapa `imperialfleet-map0000000-01-0001-001`. Se eligió
+    mir-2 porque las pruebas se hacen en él. mir-1 tiene además
+    `Pos_clase_2`, `MESA_TKNIKA` y `TOOLCHANGER`, y no tiene
+    `Espera_cercana`.
+76. **Tipo `dockoffset` para los docking offsets de los marcadores**, con
+    el mismo padre y número que su position. Las positions hijas (entrada
+    de marcador o cargador, tipos 12/21) llevan UUID versión 4 en el MiR:
+    probablemente las crea él solo y no podremos elegir su GUID. Por
+    probar al crear las positions.
+
+### Creación de positions en mir-2 (mapa `suberri_mirur`)
+
+- **`POST /positions` admite un GUID elegido.** `H2D1` (tipo 0) se creó
+  con `imperialfleet-position00-01-0001-001` y sus coordenadas exactas.
+- **Un marcador (tipo 11) exige `offset_x`, `offset_y` y
+  `offset_orientation`** (sin ellos, 400). Son los valores del docking
+  offset: con los capturados (−1.086, 0.014, 1.04), el MiR crea solo un
+  docking offset con esos valores y **GUID propio** (UUID versión 1).
+- **La position de entrada (tipo 12) también la crea el MiR solo**, con
+  GUID propio (UUID versión 4) y `parent_id` apuntando al marcador. La
+  coloca 1 m más allá del punto de atraque (x 30.76); en `suberri` estaba
+  movida a mano a x 30.0. Se dejó en 30.0 con `PUT /positions/<guid>`
+  (el PUT funciona).
+- Consecuencia: en un marcador solo podemos elegir el GUID del propio
+  marcador. La entrada y el docking offset quedan con GUIDs distintos en
+  cada robot, y el despliegue tendrá que encontrarlos por su `parent_id` /
+  `pos_id` y corregir su posición o sus valores con PUT. Falta probar si
+  se puede borrar la entrada automática y crearla con nuestro GUID.
+- Un cargador (tipo 20) se crea sin `offset_*` y el MiR coloca su entrada
+  (tipo 21) en el sitio correcto. En las entradas de los marcadores hubo
+  que corregir la x con PUT, igual que en `H2D1-VL`.
+- **Las 23 positions de `suberri` están creadas en mir-2**, en el mapa
+  `suberri_mirur`, con `scripts/catalog_deploy.py`. Una segunda pasada da
+  0 cambios, y los docking offsets coinciden con el catálogo.
+
+77. **No se unifican los GUIDs de lo que el MiR crea solo** (entrada de
+    marcador o cargador y docking offset). Sustituye a la parte de GUIDs
+    de la decisión 76. Motivo: ninguna de las 62 missions de mir-2 los usa
+    (12 acciones usan el marcador o el cargador, que sí lleva nuestro
+    GUID). Borrarlos y crearlos de nuevo con nuestro GUID añadiría pasos y
+    el riesgo de dejar mal el atraque, sin ganar nada. El despliegue crea
+    la madre (con los `offset_*` si es un marcador), busca la entrada por
+    `parent_id` y la corrige con PUT si no está donde dice el catálogo.
+
 ## Pendiente (a 2026-10-12)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -1237,6 +1361,9 @@ robot después).
     robot nuevo o editado a mano en la web volvería a tener GUIDs propios.
     **2026-10-11:** desarrollado en `docs/plan-admin.md` (configurador +
     sincronización); estas comprobaciones son su fase 0.
+    **2026-10-13:** fase 0 en curso. El MiR no valida el formato UUID
+    (probado con sessions) y el estándar de GUID está fijado (decisiones
+    71–74).
 
 5. **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
    Objetivo: avisar a los operarios cuando una mission tarda más de lo

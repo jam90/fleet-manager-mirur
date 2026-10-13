@@ -1,0 +1,18 @@
+{
+  "guid": "imperialfleet-position00-01-0001-018",
+  "name": "H2D1-VL",
+  "type_id": 12,
+  "pos_x": 30.0,
+  "pos_y": 4.826,
+  "orientation": -178.96,
+  "map_id": "imperialfleet-map0000000-01-0001-001",
+  "parent_id": "imperialfleet-position00-01-0001-017",
+  "docking_offsets": [],
+  "creada_por_mir": true,
+  "_origen": {
+    "robot": "mir-2",
+    "mapa": "suberri",
+    "guid": "28007f3c-c7b1-423c-a1cb-df885bec8781",
+    "capturado": "2026-10-13"
+  }
+}

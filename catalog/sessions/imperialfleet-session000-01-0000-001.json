@@ -1,0 +1,9 @@
+{
+  "guid": "imperialfleet-session000-01-0000-001",
+  "name": "suberri_mirur",
+  "description": "Site común de la flota MIRUR (GUIDs imperialfleet, ver docs/plan-admin.md)",
+  "_origen": {
+    "robot": "mir-2",
+    "capturado": "2026-10-13"
+  }
+}

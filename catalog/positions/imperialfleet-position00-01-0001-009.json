@@ -1,0 +1,18 @@
+{
+  "guid": "imperialfleet-position00-01-0001-009",
+  "name": "Charging station 48V 35A",
+  "type_id": 21,
+  "pos_x": 31.22365075494625,
+  "pos_y": 8.376913759471355,
+  "orientation": 88.0,
+  "map_id": "imperialfleet-map0000000-01-0001-001",
+  "parent_id": "imperialfleet-position00-01-0001-008",
+  "docking_offsets": [],
+  "creada_por_mir": true,
+  "_origen": {
+    "robot": "mir-2",
+    "mapa": "suberri",
+    "guid": "be0f2eee-8586-4405-b9fb-b73243c876d0",
+    "capturado": "2026-10-13"
+  }
+}
