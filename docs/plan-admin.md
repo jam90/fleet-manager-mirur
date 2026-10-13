@@ -281,6 +281,12 @@ Desplegados en mir-2 (2026-10-13, con `catalog_deploy.py missions`): el grupo
 llaman (`…-mission000-01-0001-001` a `…-010`), y el sonido `piezaH2D1`
 (`…-sound00000-01-0000-001`).
 
+Después (decisión 85): todo lo anterior desplegado también en mir-1 desde
+la pestaña; el marcador `MESA_TKNIKA` (`…-position00-01-0001-024`, entrada
+`-025`) y la mission `traer` (`…-mission000-01-0001-011`), capturados de
+mir-1 y desplegados solo allí; el grupo antiguo `mirur-tknika` borrado en
+los dos robots y `mirur-tknikav2` renombrado a `mirur-tknika`.
+
 ## 5. Arquitectura
 
 - **Configurador (genérico):** core + `fm/web`. Escritura de config en

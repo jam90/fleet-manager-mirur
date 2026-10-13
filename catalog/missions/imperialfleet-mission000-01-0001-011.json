@@ -1,0 +1,321 @@
+{
+  "guid": "imperialfleet-mission000-01-0001-011",
+  "name": "traer",
+  "description": "",
+  "group_id": "imperialfleet-missiongrp-01-0000-001",
+  "session_id": "imperialfleet-session000-01-0000-001",
+  "hidden": false,
+  "actions": [
+    {
+      "priority": 27,
+      "action_type": "adjust_localization",
+      "scope": null,
+      "parameters": []
+    },
+    {
+      "priority": 28,
+      "action_type": "set_footprint",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "footprint",
+          "value": "mirconst-guid-0000-0001-footprint005",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 29,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "22",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 1.0,
+          "input_name": "n_piezas_pedidas"
+        }
+      ]
+    },
+    {
+      "priority": 30,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "20",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 10.0,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 31,
+      "action_type": "docking",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "marker",
+          "value": "imperialfleet-position00-01-0001-024",
+          "input_name": null
+        },
+        {
+          "id": "marker_type",
+          "value": null,
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "blocked_docking_timeout",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "max_linear_speed",
+          "value": 0.25,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 32,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "20",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 20.0,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 33,
+      "action_type": "relative_move",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "x",
+          "value": -0.2,
+          "input_name": null
+        },
+        {
+          "id": "y",
+          "value": 0.0,
+          "input_name": null
+        },
+        {
+          "id": "orientation",
+          "value": 0.0,
+          "input_name": null
+        },
+        {
+          "id": "max_linear_speed",
+          "value": 0.25,
+          "input_name": null
+        },
+        {
+          "id": "max_angular_speed",
+          "value": 0.25,
+          "input_name": null
+        },
+        {
+          "id": "collision_detection",
+          "value": false,
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": "60",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 34,
+      "action_type": "relative_move",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "x",
+          "value": 0.0,
+          "input_name": null
+        },
+        {
+          "id": "y",
+          "value": 0.0,
+          "input_name": null
+        },
+        {
+          "id": "orientation",
+          "value": 90.0,
+          "input_name": null
+        },
+        {
+          "id": "max_linear_speed",
+          "value": 0.25,
+          "input_name": null
+        },
+        {
+          "id": "max_angular_speed",
+          "value": 0.25,
+          "input_name": null
+        },
+        {
+          "id": "collision_detection",
+          "value": false,
+          "input_name": null
+        },
+        {
+          "id": "blocked_path_timeout",
+          "value": "60",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 35,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "20",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 30.0,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 36,
+      "action_type": "sound",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "sound",
+          "value": "mirconst-guid-0000-0001-sounds000000",
+          "input_name": null
+        },
+        {
+          "id": "volume",
+          "value": 100.0,
+          "input_name": null
+        },
+        {
+          "id": "mode",
+          "value": "custom",
+          "input_name": null
+        },
+        {
+          "id": "duration",
+          "value": "00:00:01.000000",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 37,
+      "action_type": "wait_for_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "20",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 60.0,
+          "input_name": null
+        },
+        {
+          "id": "timeout",
+          "value": null,
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 38,
+      "action_type": "load_mission",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "mission_id",
+          "value": "imperialfleet-mission000-01-0001-004",
+          "input_name": null
+        }
+      ]
+    },
+    {
+      "priority": 39,
+      "action_type": "set_plc_register",
+      "scope": null,
+      "parameters": [
+        {
+          "id": "register",
+          "value": "20",
+          "input_name": null
+        },
+        {
+          "id": "action",
+          "value": "set",
+          "input_name": null
+        },
+        {
+          "id": "value",
+          "value": 0.0,
+          "input_name": null
+        }
+      ]
+    }
+  ],
+  "_origen": {
+    "robot": "mir-1",
+    "grupo": "mirur-tknika",
+    "guid": "e9c2048c-be33-11f1-a90d-000e8eb69199",
+    "capturado": "2026-10-13"
+  }
+}

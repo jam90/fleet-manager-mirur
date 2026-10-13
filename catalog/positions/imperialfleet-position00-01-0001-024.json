@@ -1,0 +1,29 @@
+{
+  "guid": "imperialfleet-position00-01-0001-024",
+  "name": "MESA_TKNIKA",
+  "type_id": 11,
+  "pos_x": 32.113,
+  "pos_y": 10.003,
+  "orientation": 92.0,
+  "map_id": "imperialfleet-map0000000-01-0001-001",
+  "parent_id": null,
+  "docking_offsets": [
+    {
+      "docking_type": null,
+      "name": null,
+      "x_offset": -0.809,
+      "y_offset": 0.017,
+      "orientation_offset": 1.475,
+      "bar_length": null,
+      "bar_distance": null,
+      "shelf_leg_asymmetry_x": null
+    }
+  ],
+  "creada_por_mir": false,
+  "_origen": {
+    "robot": "mir-1",
+    "mapa": "suberri",
+    "guid": "c3a1845d-be35-11f1-a90d-000e8eb69199",
+    "capturado": "2026-10-13"
+  }
+}

@@ -1436,6 +1436,27 @@ correcto. mir-1 tiene ya la session y el mapa `suberri_mirur`, las
 positions, el grupo `mirur-tknikav2` y sus missions con los mismos GUIDs
 que mir-2.
 
+## 2026-10-13 — Retirado el grupo antiguo; `mirur-tknikav2` pasa a `mirur-tknika`
+
+85. **El grupo `mirur-tknika` original se ha borrado en los dos robots y
+    `mirur-tknikav2` (`imperialfleet-missiongrp-01-0000-001`) se llama ahora
+    `mirur-tknika`**, también en el catálogo. Como el nombre y los nombres
+    de las missions coinciden, `fleet.yaml` no cambia: al arrancar, el FM
+    indexa 11 missions en mir-1 y 10 en mir-2, sin avisos. Antes de borrar
+    se comprobó que ninguna mission de otro grupo llamaba a las del grupo
+    antiguo y que ninguna estaba en cola, y se guardó una copia (JSON
+    crudo de cada mission con sus actions) fuera del repo. Se paró el FM
+    durante la operación, porque tenía indexados los GUIDs antiguos.
+    - mir-1 tenía en el grupo antiguo una mission que no estaba en el
+      catálogo, `traer`, que atraca en el marcador `MESA_TKNIKA` (solo en
+      mir-1). Por decisión del usuario se capturó antes de borrar:
+      `MESA_TKNIKA` → `…-position00-01-0001-024` (entrada, `-025`), con su
+      docking offset calibrado con mir-1, y `traer` →
+      `…-mission000-01-0001-011`, con su sub-mission apuntando a la
+      `Ir a zona de espera MIRUR` del catálogo. Desplegada solo en mir-1.
+    - Para renombrar un grupo basta con `PUT /mission_groups/<guid>
+      {"name": …}`; el GUID no cambia.
+
 ## Pendiente (a 2026-10-12)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
