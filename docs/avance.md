@@ -1492,7 +1492,7 @@ faltan y ninguno distinto.
     su matriz action × robot, y el asignador podrá descartar el robot que
     no tiene grabada la mission.
 
-## Pendiente (a 2026-10-12)
+## Pendiente (a 2026-10-13)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
 2026-09-17, en parte superadas (la order con `position_inputs` se probó con
@@ -1529,9 +1529,11 @@ robot después).
     robot nuevo o editado a mano en la web volvería a tener GUIDs propios.
     **2026-10-11:** desarrollado en `docs/plan-admin.md` (configurador +
     sincronización); estas comprobaciones son su fase 0.
-    **2026-10-13:** fase 0 en curso. El MiR no valida el formato UUID
-    (probado con sessions) y el estándar de GUID está fijado (decisiones
-    71–74).
+    **2026-10-13: hecho.** Fase 0 cerrada y sincronización en marcha
+    (decisiones 71–88): catálogo en `catalog/`, los dos robots con
+    session, mapa, positions y grupo `mirur-tknika` con GUIDs comunes,
+    pestaña Sincronización con estado de la flota y `fleet.yaml` por GUID.
+    Lo que queda va en los puntos 16–20.
 
 5. **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
    Objetivo: avisar a los operarios cuando una mission tarda más de lo
@@ -1614,3 +1616,31 @@ robot después).
     4 s en las marcas de tiempo con el `headerId` continuo). El bucle usa
     `time.monotonic()` y no se ve afectado; el `timestamp` VDA sí refleja
     el salto, como debe (es hora UTC).
+
+**Configurador y sincronización (siguiente sesión: configurador)**
+
+16. **Configurador del FM** (`docs/plan-admin.md` §2). Orden previsto:
+    (a) fase 1: `fleet.yaml` con catálogo único de actions (cada action
+    una vez, las missions ya por GUID) y cada robot con la lista de las
+    que tiene habilitadas; cargador y tests, sin UI; (b) pestaña en solo
+    lectura: matriz action × robot con el estado de sincronización de
+    cada casilla (✓ grabada / ✗ falta → enlace a Sincronización /
+    ! distinta), umbrales y catálogo de actions; (c) edición con
+    `ruamel.yaml` (sin perder comentarios), validación con el cargador,
+    copia `.bak` y recarga en caliente entre ticks (pregunta 3 del plan:
+    confirmar en caliente o reiniciando).
+17. **Asignador: descartar el robot que no tiene grabada la mission**
+    (decisión 88), con el motivo en el `REJECTED`. Relacionado con el
+    punto 7.
+18. **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
+    `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
+    mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día
+    se lleva a mir-2.
+19. **Sincronización, siguientes versiones:** capturar desde la UI (hoy,
+    `scripts/catalog_capture.py`); sustituir lo que es "distinto" (borrar
+    y crear, con vista previa y aviso si otra mission lo usa); desplegar
+    mapas a un robot cuyo site activo es otro (no probado).
+20. **Mapa activo:** los robots siguen trabajando con el mapa `suberri`
+    (GUIDs propios). Pasar a `suberri_mirur` (mismos GUIDs en toda la
+    flota) es decisión del usuario: cambia el `mapId` del `state` y las
+    positions que resuelve el driver por nombre en el mapa activo.

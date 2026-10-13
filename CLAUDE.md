@@ -32,7 +32,7 @@
 - Cuando haya que probar contra hardware, **pregunta al usuario** antes de
   lanzar cualquier mission: los robots se mueven físicamente.
 
-### Estado y entorno (actualizado 2026-09-21)
+### Estado y entorno (actualizado 2026-10-13)
 
 - **Estado del proyecto:** brief H0–H6 completo + factsheet + drivers por
   marca + interfaz web. Todo probado con los dos MiR250. Lo abierto está al
@@ -41,9 +41,12 @@
   `v0.3-ui`; después se sigue en `main` sin tag.
 - **Arquitectura real:** ver §4 (drivers en `fm/adapters/<marca>/`, core sin
   imports de MiR, UI en `fm/web/`). Planes cerrados: `docs/plan-drivers.md`,
-  `docs/plan-ui.md`. Plan abierto (2026-10-11, en diseño):
-  `docs/plan-admin.md` (configurador del FM + sincronización de missions,
-  positions y mapas con GUIDs comunes); su fase 0 son pruebas con robot.
+  `docs/plan-ui.md`. Plan abierto: `docs/plan-admin.md`. Hecho a
+  2026-10-13: fase 0 (GUIDs `imperialfleet-…`, §4), catálogo en `catalog/`
+  y pestaña **Sincronización** (`fm/adapters/mir/sync.py`,
+  `fm/web/sync_monitor.py`), con los dos robots sincronizados y
+  `fleet.yaml` por GUID. **Siguiente: el configurador** (punto 16 de
+  "Pendiente" en `docs/avance.md`).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con
