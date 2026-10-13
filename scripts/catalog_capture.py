@@ -28,37 +28,17 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import re
 import sys
 from datetime import date
 from pathlib import Path
 
 from _common import ROOT, client_for, load, robot_or_exit
 
+from fm.adapters.mir.sync import AUTO_CHILD_TYPES, FACTORY, GUIDISH, parse_std, std_guid  # noqa: E402
+
 CATALOG = ROOT / "catalog"
-PREFIX = "imperialfleet"
-# Tipos de position que el MiR crea solo al crear su madre (entrada de
-# marcador VL = 12, de cargador = 21).
-AUTO_CHILD_TYPES = (12, 21)
-# Recursos de fábrica: mismo GUID en todos los MiR, se referencian tal cual.
-FACTORY = "mirconst-"
-# Un valor de parámetro con forma de GUID (8-4-4-4-12, minúsculas y cifras).
-GUIDISH = re.compile(r"^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$")
 # Cabeceras de audio → extensión del fichero del catálogo.
 AUDIO_MAGIC = {b"RIFF": "wav", b"ID3": "mp3", b"\xff\xfb": "mp3", b"OggS": "ogg"}
-
-
-def std_guid(tipo: str, inst: int, padre: int, numero: int) -> str:
-    """GUID estándar: `imperialfleet-<tipo relleno a 10>-II-PPPP-NNN` (36 caracteres)."""
-    g = f"{PREFIX}-{tipo.ljust(10, '0')}-{inst:02d}-{padre:04d}-{numero:03d}"
-    assert len(g) == 36, g
-    return g
-
-
-def parse_std(guid: str) -> tuple[str, int, int, int]:
-    """Inversa de std_guid: (tipo, inst, padre, número)."""
-    _, tipo, inst, padre, numero = guid.split("-")
-    return tipo.rstrip("0"), int(inst), int(padre), int(numero)
 
 
 def read_catalog(folder: str) -> list[dict]:

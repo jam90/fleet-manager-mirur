@@ -169,6 +169,13 @@ Por qué:
 
 ### 3.4 Pestaña
 
+**Primera versión hecha (2026-10-13, decisiones 80–84):** catálogo con
+casillas (positions por mapa, missions por grupo), elección de robot,
+vista previa y despliegue con avance en directo. Queda pendiente: la vista
+de flota con el estado de cada robot sin pedir la vista previa, capturar
+desde la UI y sustituir lo que es distinto.
+
+
 - **Vista de flota:** una fila por robot ("al día", "3 diferencias",
   "offline", "pendiente"); al pulsarla, el detalle por recurso. Con 50
   robots no cabe una matriz recursos × robots.

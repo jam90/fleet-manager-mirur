@@ -1393,6 +1393,49 @@ Lectura de las missions de `mirur-tknika` en mir-2:
 - El usuario ha lanzado `MIRUR-prueba-parámetros` (copia en
   `mirur-tknikav2`) en mir-2: funciona bien.
 
+## 2026-10-13 — Pestaña Sincronización (primera versión)
+
+`fm/adapters/mir/sync.py` (lógica), tres rutas en `fm/web/server.py` y la
+pestaña en `index.html`. `pytest`: 113 en verde (9 nuevos). Probado contra
+los dos robots solo con vistas previas: mir-2, todo el catálogo "igual";
+mir-1, todo por crear.
+
+80. **Se sincroniza una selección, no todo el catálogo.** Lo habitual será
+    llevar una mission o unas positions. La selección se completa sola con
+    sus dependencias (`Catalog.closure`): una mission arrastra su grupo, su
+    session, sus positions, sus sub-missions y sus sonidos; una position,
+    su mapa; un marcador, su entrada. Como lo que el robot ya tiene igual
+    no se toca, sincronizar una mission suelta solo escribe esa mission.
+    "Todo" es seleccionarlo todo.
+81. **La lógica sale de los scripts a `fm/adapters/mir/sync.py`**, en
+    cuatro pasos: cierre de la selección, lectura del robot (solo GET),
+    planificación **pura** (una operación por recurso: crear, corregir,
+    igual o distinta) y ejecución. Si una operación falla, las que dependen
+    de ella se saltan. "Distinta" no se toca: sustituir queda para más
+    adelante, con su propia vista previa. `scripts/catalog_deploy.py` es
+    ahora un envoltorio (`<serial> <guid>… | --todo [--escribir]`). Tests
+    con un MiR falso en memoria que imita lo visto con robot (entrada de
+    marcador automática, GUIDs propios de actions y parámetros).
+82. **La sincronización es una capacidad opcional del driver**
+    (`driver.make_sync(catalog_dir)`, solo en `MirDriver`), no parte del
+    `RobotDriver`. La web la busca con `hasattr`, y el core sigue sin saber
+    de MiR; un robot `sim` sale como "no aplica". Cada robot usa un
+    cliente REST propio para sincronizar, distinto del del poll.
+83. **Vista previa obligatoria antes de desplegar.** El botón Desplegar
+    solo se activa si la vista previa corresponde a la selección y al robot
+    actuales. El servidor vuelve a planificar al desplegar, porque el robot
+    puede haber cambiado. Se rechaza (409) si el robot no responde, está
+    ocupado (order, carga o mission ajena) o ya tiene otro despliegue en
+    curso. El despliegue corre en un hilo por robot y su avance llega por
+    el WebSocket con el topic `fm/sync/<serial>`.
+84. **La captura sigue siendo por script** (`catalog_capture.py`). El botón
+    "capturar desde robot" queda para una versión posterior.
+
+El usuario desplegó el catálogo en **mir-1** desde la pestaña: todo
+correcto. mir-1 tiene ya la session y el mapa `suberri_mirur`, las
+positions, el grupo `mirur-tknikav2` y sus missions con los mismos GUIDs
+que mir-2.
+
 ## Pendiente (a 2026-10-12)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del

@@ -1,5 +1,6 @@
 """Servidor web: snapshot, envío (publica en el bus) y espejo por WebSocket."""
 import json
+import time
 
 from fastapi.testclient import TestClient
 
@@ -65,3 +66,81 @@ def test_websocket_recibe_el_ultimo_estado_al_conectar():
         assert first["topic"] == "vda5050/v3/SIM/sim-1/state"
         assert first["payload"]["serialNumber"] == "sim-1"
     assert list(srv.last) == ["vda5050/v3/SIM/sim-1/state"]
+
+
+# ------------------------------------------------------------ sincronización
+class FakeSync:
+    """Lo que devuelve `driver.make_sync()`: preview/deploy/catalog sin robot."""
+
+    class Op:
+        def __init__(self, guid, verb):
+            self.guid, self.verb, self.status = guid, verb, "pendiente"
+
+        def to_dict(self):
+            return {"guid": self.guid, "verb": self.verb, "status": self.status}
+
+    class Cat:
+        def summary(self):
+            return [{"guid": "g1", "kind": "mission", "name": "m"}]
+
+    def __init__(self):
+        self.deployed = []
+
+    def catalog(self):
+        return self.Cat()
+
+    def preview(self, guids):
+        if "nada" in guids:
+            raise ValueError("nada no está en el catálogo")
+        return None, [self.Op(g, "crear") for g in guids]
+
+    def deploy(self, guids, progress):
+        ops = self.preview(guids)[1]
+        for op in ops:
+            op.status = "hecho"
+            progress(op)
+        self.deployed.append(guids)
+        return ops
+
+
+def _server_with_sync():
+    srv, bus = _server()
+    sync = FakeSync()
+    srv.robots["sim-1"].driver.make_sync = lambda d: sync
+    srv.__init__(srv.cfg, srv.robots, bus)           # vuelve a buscar la capacidad
+    return srv, sync
+
+
+def test_sync_no_aplica_si_el_driver_no_la_ofrece():
+    srv, _ = _server()
+    c = TestClient(srv.app)
+    info = c.get("/api/sync").json()
+    assert info == {"catalog": [], "robots": [{"serial": "sim-1", "supported": False}]}
+    assert c.post("/api/sync/sim-1/preview", json={"guids": []}).status_code == 400
+    assert c.post("/api/sync/nadie/preview", json={"guids": []}).status_code == 404
+
+
+def test_sync_preview_y_deploy_con_avance_por_websocket():
+    srv, sync = _server_with_sync()
+    c = TestClient(srv.app)
+    info = c.get("/api/sync").json()
+    assert info["catalog"][0]["guid"] == "g1" and info["robots"][0]["supported"] is True
+    r = c.post("/api/sync/sim-1/preview", json={"guids": ["g1"]})
+    assert r.json() == {"ops": [{"guid": "g1", "verb": "crear", "status": "pendiente"}]}
+    assert c.post("/api/sync/sim-1/preview", json={"guids": ["nada"]}).status_code == 400
+
+    # Sin telemetría el robot cuenta como "no responde": no se despliega.
+    assert c.post("/api/sync/sim-1/deploy", json={"guids": ["g1"]}).status_code == 409
+    srv.robots["sim-1"].poll()
+    msgs = []
+    srv.mirror = lambda t, payload: msgs.append((t, payload))   # lo que iría al WebSocket
+    assert c.post("/api/sync/sim-1/deploy", json={"guids": ["g1"]}).json() == {"started": True}
+    for _ in range(200):                                        # el despliegue va en su hilo
+        if msgs and "done" in msgs[-1][1]:
+            break
+        time.sleep(0.01)
+    assert {t for t, _ in msgs} == {"fm/sync/sim-1"}
+    msgs = [{"payload": m} for _, m in msgs]
+    assert msgs[0]["payload"]["op"]["status"] == "hecho"
+    assert msgs[-1]["payload"] == {"done": True, "summary": {"hecho": 1}}
+    assert sync.deployed == [["g1"]]

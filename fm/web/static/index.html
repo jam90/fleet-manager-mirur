@@ -209,6 +209,40 @@
   .events .res.s-FAILED { font-weight: 700; }
   .events .t { color: var(--ink-3); } .events .who { color: var(--navy); font-weight: 700; }
   .empty { color: var(--ink-3); font-size: 13px; font-weight: 400; }
+
+  /* ---- Sincronización ---- */
+  .sync-grid { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(340px, 1.4fr); gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .sync-grid { grid-template-columns: 1fr; } }
+  .muted { color: var(--ink-3); font-weight: 400; }
+  .guid { display: block; color: var(--ink-3); font-size: 11px; overflow-wrap: anywhere; }
+  .cat-sec { border-top: 1px solid var(--line); padding-top: 8px; }
+  .cat-sec summary { cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--navy); }
+  .cat-list { list-style: none; margin: 6px 0 0; padding: 0 0 0 26px; display: grid; gap: 6px; font-size: 14px;
+    max-height: 320px; overflow: auto; }
+  .cat-list label { cursor: pointer; }
+  input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; vertical-align: -2px; }
+  .sync-robots { display: grid; gap: 6px; }
+  .sync-robot { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: var(--radius-sm); cursor: pointer; }
+  .sync-robot:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
+  .sync-robot.off { cursor: not-allowed; opacity: .6; }
+  .sync-sum { display: flex; flex-wrap: wrap; gap: 6px; }
+  .verb { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); }
+  .verb.v-crear { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
+  .verb.v-corregir { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+  .verb.v-distinta { color: var(--bad); background: var(--bad-bg); border-color: var(--bad); }
+  .ops { list-style: none; margin: 0; padding: 0; display: grid; font-size: 13px; max-height: 560px; overflow: auto; }
+  .ops li { display: grid; grid-template-columns: 2ch minmax(0, 1.1fr) minmax(0, 1.3fr) 9ch; gap: 10px;
+    padding: 7px 6px; border-bottom: 1px solid var(--line); align-items: start; }
+  .ops li.head { font-weight: 700; color: var(--navy); background: var(--surface-2); border-bottom: 0;
+    border-radius: var(--radius-sm); position: sticky; top: 0; }
+  .ops .mark { font-weight: 800; text-align: center; }
+  .ops .v-crear .mark { color: var(--ok); } .ops .v-corregir .mark { color: var(--warn); }
+  .ops .v-distinta .mark { color: var(--bad); } .ops li.v-igual { color: var(--ink-3); }
+  .ops .warnline { display: block; color: var(--warn); font-weight: 700; }
+  .ops .st { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .st-hecho { color: var(--ok); } .st-error { color: var(--bad); } .st-saltada { color: var(--warn); }
+  .st-sin-cambios { color: var(--ink-3); }
 </style>
 </head>
 <body>
@@ -381,26 +415,73 @@
       Validar con el mismo cargador del arranque, copia <code>.bak</code> de <code>fleet.yaml</code> sin perder comentarios y recarga en caliente entre ticks.</div>
   </main>
 
-  <!-- ===== Sincronización (docs/plan-admin.md §3). Depende de la fase 0:
-       ¿acepta el MiR GUIDs elegidos para missions, positions y mapas? ===== -->
+  <!-- ===== Sincronización (docs/plan-admin.md §3). Lleva a un robot una
+       selección del catálogo (catalog/); las dependencias las añade el
+       servidor (fm/adapters/mir/sync.py). ===== -->
   <main v-show="tab === 'sincronizacion'">
     <h2 class="page-title">Sincronización</h2>
-    <p class="page-sub">Llevar missions, positions y mapas creados en la web de un MiR al resto de la flota, con GUIDs comunes.</p>
-    <div class="panel">
-      <h3>Estado de la flota</h3>
-      <div class="todo"><span class="tag">en diseño</span>
-        Una fila por robot: “al día”, “3 diferencias”, “offline”, “pendiente” o “no aplica” (simulados). Al pulsarla, el detalle por recurso.</div>
-    </div>
-    <div class="grid-2">
+    <p class="page-sub">Llevar a un robot lo que hay en el catálogo (<code>catalog/</code>), con los mismos GUIDs en toda la flota.</p>
+    <div class="sync-grid">
       <div class="panel">
         <h3>Catálogo</h3>
-        <div class="todo"><span class="tag">en diseño</span>
-          Mapas, positions y missions capturados (<code>catalog/</code> en el repo), con su GUID en solo lectura, robot de origen y fecha.</div>
+        <p class="hint">Marca lo que quieras sincronizar. Lo que necesita (grupo, mapa, positions, sub-missions, sonidos)
+          se añade solo, y lo que el robot ya tiene igual no se toca.</p>
+        <div class="acts">
+          <button class="btn" id="sync-all" @click="selectAll(true)">Todo</button>
+          <button class="btn" id="sync-none" @click="selectAll(false)">Nada</button>
+          <span class="feedback">{{ nSelected }} seleccionados</span>
+        </div>
+        <p class="empty" v-if="!syncCatalog.length">El catálogo está vacío o ningún robot ofrece sincronización.</p>
+        <details v-for="sec in catSections" :key="sec.key" class="cat-sec" :open="sec.open">
+          <summary>
+            <input type="checkbox" :aria-label="'Seleccionar ' + sec.label" :checked="sec.all"
+                   :indeterminate.prop="sec.some && !sec.all" @click.stop @change="selectSection(sec, $event.target.checked)">
+            <span>{{ sec.label }}</span> <span class="chip">{{ sec.items.length }}</span>
+          </summary>
+          <ul class="cat-list">
+            <li v-for="it in sec.items" :key="it.guid">
+              <label><input type="checkbox" v-model="syncState.sel[it.guid]">
+                <b>{{ it.name }}</b> <span class="muted">{{ it.extra }}</span>
+                <span class="muted" v-if="it.origin_group && it.kind === 'mission'"> · de {{ it.origin_group }}</span></label>
+              <code class="guid">{{ it.guid }}</code>
+            </li>
+          </ul>
+        </details>
       </div>
+
       <div class="panel">
-        <h3>Acciones</h3>
-        <div class="todo"><span class="tag">en diseño</span>
-          Capturar desde un robot → vista previa (qué se crea o se sustituye en cada robot) → desplegar a todos o a los seleccionados.</div>
+        <h3>Robot</h3>
+        <div class="sync-robots">
+          <label v-for="r in syncState.robots" :key="r.serial" class="sync-robot" :class="{ off: !r.supported }">
+            <input type="radio" name="sync-target" :value="r.serial" v-model="syncState.target" :disabled="!r.supported">
+            <b>{{ r.serial }}</b>
+            <span class="pill" :class="syncRobotState(r).key">{{ syncRobotState(r).label }}</span>
+          </label>
+        </div>
+        <div class="acts">
+          <button class="btn" id="sync-preview" :disabled="!canPreview" @click="syncPreview">Vista previa</button>
+          <button class="btn primary" id="sync-deploy" :disabled="!canDeploy" @click="syncDeploy">Desplegar</button>
+          <span class="feedback">{{ syncState.msg }}</span>
+        </div>
+        <p class="hint" v-if="syncState.ops.length && !previewFresh">La selección o el robot han cambiado: vuelve a pedir la vista previa.</p>
+
+        <template v-if="syncState.ops.length">
+          <div class="sync-sum">
+            <span v-for="v in ['crear', 'corregir', 'igual', 'distinta']" :key="v" v-show="opCounts[v]" class="verb" :class="'v-' + v">
+              {{ opCounts[v] }} {{ VERB_LABEL[v] }}</span>
+          </div>
+          <ul class="ops">
+            <li class="head"><span></span><span>recurso</span><span>qué pasa</span><span>estado</span></li>
+            <li v-for="o in syncState.ops" :key="o.guid" :class="'v-' + o.verb">
+              <span class="mark">{{ VERB_MARK[o.verb] }}</span>
+              <span><span class="muted">{{ KIND_LABEL[o.kind] || o.kind }}</span> <b>{{ o.name }}</b><code class="guid">{{ o.guid }}</code></span>
+              <span>{{ VERB_LABEL[o.verb] }}<template v-if="o.detail"> · {{ o.detail }}</template>
+                <span class="warnline" v-if="o.warning">⚠ {{ o.warning }}</span></span>
+              <span class="st" :class="'st-' + o.status.replace(' ', '-')">{{ o.status === 'pendiente' ? '' : o.status }}</span>
+            </li>
+          </ul>
+        </template>
+        <p class="empty" v-else>Elige qué sincronizar y en qué robot, y pide la vista previa: aquí verás qué se crearía, qué se corrige y qué ya está.</p>
       </div>
     </div>
   </main>
@@ -430,6 +511,12 @@ const TABS = [
           '<path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/>' },
 ];
 
+// Sincronización: rótulos de las operaciones que devuelve el servidor (sync.py).
+const VERB_LABEL = { crear: 'crear', corregir: 'corregir', igual: 'ya está igual', distinta: 'distinta' };
+const VERB_MARK = { crear: '+', corregir: '~', igual: '=', distinta: '!' };
+const KIND_LABEL = { session: 'session', map: 'mapa', position: 'position', sound: 'sonido',
+                     missiongrp: 'grupo', mission: 'mission' };
+
 function hhmmss(iso) {
   const d = iso ? new Date(iso) : new Date();
   return isNaN(d) ? '' : d.toTimeString().slice(0, 8);
@@ -454,6 +541,7 @@ createApp({
 
     // ---------------- entrada: espejo del bus MQTT
     function onMessage(topic, payload) {
+      if (topic.startsWith('fm/sync/')) { onSync(topic.slice(8), payload); return; }
       const pt = parseTopic(topic);
       if (!pt) return;
       if (pt.serial === 'fleet') {
@@ -596,18 +684,120 @@ createApp({
       };
     }));
 
+    // ---------------- sincronización (docs/plan-admin.md §3)
+    const syncState = reactive({ catalog: [], robots: [], sel: {}, target: '', ops: [], opsKey: '',
+                                 msg: '', loading: false });
+    const syncCatalog = computed(() => syncState.catalog);
+    async function loadSync() {
+      try {
+        const info = await (await fetch('/api/sync')).json();
+        syncState.catalog = info.catalog;
+        syncState.robots = info.robots;
+        if (!syncState.target) {
+          const first = info.robots.find(r => r.supported);
+          if (first) syncState.target = first.serial;
+        }
+      } catch (e) { syncState.msg = 'no se pudo leer el catálogo'; }
+    }
+    // Secciones del catálogo: positions por mapa y missions por grupo. Las
+    // entradas de marcadores/cargadores no se eligen: van con su marcador.
+    const catSections = computed(() => {
+      const items = syncState.catalog;
+      const secs = [], add = (key, label, list, open = false) => {
+        if (!list.length) return;
+        const n = list.filter(i => syncState.sel[i.guid]).length;
+        secs.push({ key, label, items: list, all: n === list.length, some: n > 0, open });
+      };
+      add('session', 'Sessions', items.filter(i => i.kind === 'session'));
+      add('map', 'Mapas', items.filter(i => i.kind === 'map'));
+      for (const m of items.filter(i => i.kind === 'map'))
+        add('pos-' + m.guid, 'Positions de ' + m.name, items.filter(i => i.kind === 'position' && i.parent === m.guid && !i.auto));
+      add('sound', 'Sonidos', items.filter(i => i.kind === 'sound'));
+      add('group', 'Grupos', items.filter(i => i.kind === 'missiongrp'));
+      for (const g of items.filter(i => i.kind === 'missiongrp'))
+        add('mis-' + g.guid, 'Missions de ' + g.name, items.filter(i => i.kind === 'mission' && i.parent === g.guid), true);
+      return secs;
+    });
+    const selected = computed(() => Object.keys(syncState.sel).filter(g => syncState.sel[g]).sort());
+    const nSelected = computed(() => selected.value.length);
+    const selectSection = (sec, on) => { for (const i of sec.items) syncState.sel[i.guid] = on; };
+    const selectAll = on => { for (const sec of catSections.value) selectSection(sec, on); };
+    const currentKey = computed(() => syncState.target + '|' + selected.value.join(','));
+    const previewFresh = computed(() => syncState.opsKey === currentKey.value);
+    const targetInfo = computed(() => syncState.robots.find(r => r.serial === syncState.target));
+    const opCounts = computed(() => {
+      const c = {};
+      for (const o of syncState.ops) c[o.verb] = (c[o.verb] || 0) + 1;
+      return c;
+    });
+    const canPreview = computed(() => !!targetInfo.value && targetInfo.value.supported && nSelected.value > 0
+                                      && !syncState.loading && !targetInfo.value.deploying);
+    const canDeploy = computed(() => {
+      const t = targetInfo.value;
+      return previewFresh.value && t && t.online && !t.busy && !t.deploying && !syncState.loading
+             && ((opCounts.value.crear || 0) + (opCounts.value.corregir || 0)) > 0
+             && syncState.ops.every(o => o.status === 'pendiente');
+    });
+    function syncRobotState(r) {
+      if (!r.supported) return { key: '', label: 'no aplica' };
+      if (r.deploying) return { key: 'ejecutando', label: 'desplegando' };
+      if (!r.online) return { key: 'sinconexion', label: 'sin conexión' };
+      if (r.busy) return { key: 'encola', label: 'ocupado' };
+      return { key: 'libre', label: 'disponible' };
+    }
+    async function syncPreview() {
+      syncState.loading = true; syncState.msg = 'leyendo ' + syncState.target + '…';
+      const key = currentKey.value;
+      try {
+        const r = await fetch(`/api/sync/${syncState.target}/preview`, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value }) });
+        const body = await r.json();
+        if (!r.ok) { syncState.msg = 'error: ' + body.detail; return; }
+        syncState.ops = body.ops; syncState.opsKey = key; syncState.msg = '';
+      } finally { syncState.loading = false; }
+    }
+    async function syncDeploy() {
+      const n = (opCounts.value.crear || 0) + (opCounts.value.corregir || 0);
+      if (!confirm(`Desplegar en ${syncState.target}: ${n} cambios. Lo que ya está o es distinto no se toca. ¿Seguir?`)) return;
+      const r = await fetch(`/api/sync/${syncState.target}/deploy`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value }) });
+      if (!r.ok) { syncState.msg = 'no se despliega: ' + (await r.json()).detail; await loadSync(); return; }
+      syncState.msg = 'desplegando…';
+      const t = targetInfo.value; if (t) t.deploying = true;
+    }
+    // Avance del despliegue por el WebSocket (topic fm/sync/<serial>).
+    function onSync(serial, p) {
+      if (serial !== syncState.target) return;
+      if (p.op) {
+        const i = syncState.ops.findIndex(o => o.guid === p.op.guid);
+        if (i >= 0) syncState.ops[i] = p.op; else syncState.ops.push(p.op);
+      }
+      if (p.done) {
+        syncState.msg = p.error ? 'despliegue fallido: ' + p.error
+          : 'terminado: ' + Object.entries(p.summary).map(([k, v]) => `${v} ${k}`).join(' · ');
+        addEvent(serial, 'sincronización ' + syncState.msg);
+        loadSync();
+      }
+    }
+
     // ---------------- pestañas: la del #hash de la URL, o la primera si no es válida
     const tabFromHash = () => {
       const id = location.hash.slice(1);
       return TABS.some(t => t.id === id) ? id : TABS[0].id;
     };
     ui.tab = tabFromHash();
-    window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); });
+    window.addEventListener('hashchange', () => {
+      ui.tab = tabFromHash();
+      if (ui.tab === 'sincronizacion') loadSync();     // el catálogo cambia al capturar
+    });
+    if (ui.tab === 'sincronizacion') loadSync();
 
     loadFleet();
     connect();
     return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
+             syncState, syncCatalog, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
+             canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');

@@ -8,6 +8,12 @@ Principio (docs/plan-ui.md): la UI es un cliente VDA más.
   (`fleet/order`, `<serial>/instantActions`) y el FM lo recibe por su
   suscripción normal, por el mismo camino que cualquier otro emisor.
 
+Sincronización (docs/plan-admin.md §3): si el driver de un robot ofrece
+`make_sync(catalog_dir)` (hoy, solo MiR), la pestaña Sincronización puede
+previsualizar y desplegar en él una selección de `catalog/`. El despliegue
+corre en un hilo propio por robot (nunca en el bucle de 1 Hz) y su avance se
+emite por el mismo WebSocket con el topic `fm/sync/<serial>`.
+
 Concurrencia: uvicorn corre en un hilo propio con su event loop. Con el hilo
 principal comparte solo `MqttBus` (paho es thread-safe para `publish`;
 `HeaderCounter` lleva Lock) y datos de configuración de solo lectura. El
@@ -17,8 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import threading
+from collections import Counter
+import logging
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -36,6 +43,7 @@ from fm.robot import Robot
 
 log = logging.getLogger("fm.web")
 STATIC = Path(__file__).resolve().parent / "static"
+CATALOG = Path(__file__).resolve().parents[2] / "catalog"
 
 INSTANT_ALLOWED = ("startPause", "stopPause", "cancelOrder", "stateRequest")
 
@@ -49,9 +57,19 @@ class InstantIn(BaseModel):
     actionType: str
 
 
+class SyncIn(BaseModel):
+    guids: list[str]
+
+
 class WebServer:
-    def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus):
+    def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus,
+                 catalog_dir: Path = CATALOG):
         self.cfg, self.robots, self.bus = cfg, robots, bus
+        # Sincronización: solo los robots cuyo driver la ofrece (capacidad opcional).
+        self.syncs = {s: r.driver.make_sync(catalog_dir) for s, r in robots.items()
+                      if hasattr(r.driver, "make_sync")}
+        self._deploying: set[str] = set()
+        self._deploy_lock = threading.Lock()
         self.app = FastAPI(title="Fleet Manager", docs_url="/api/docs")
         self.loop: asyncio.AbstractEventLoop | None = None
         self.clients: set[WebSocket] = set()
@@ -95,6 +113,37 @@ class WebServer:
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "instant_actions": list(INSTANT_ALLOWED)}
+
+    # ------------------------------------------------------- sincronización
+    def sync_status(self, serial: str) -> dict:
+        r = self.robots[serial]
+        if serial not in self.syncs:
+            return {"serial": serial, "supported": False}
+        return {"serial": serial, "supported": True, "online": r.last_telemetry is not None,
+                "busy": r.busy, "deploying": serial in self._deploying}
+
+    def _sync_for(self, serial: str):
+        if serial not in self.robots:
+            raise HTTPException(404, f"robot '{serial}' desconocido")
+        if serial not in self.syncs:
+            raise HTTPException(400, f"el driver de '{serial}' no ofrece sincronización")
+        if serial in self._deploying:
+            raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
+        return self.syncs[serial]
+
+    def _run_deploy(self, serial: str, sync, guids: list[str]) -> None:
+        topic = f"fm/sync/{serial}"
+        try:
+            ops = sync.deploy(guids, progress=lambda op: self.mirror(topic, {"op": op.to_dict()}))
+            summary = dict(Counter(o.status for o in ops))
+            log.info("[web] despliegue en %s terminado: %s", serial, summary)
+            self.mirror(topic, {"done": True, "summary": summary})
+        except Exception as e:      # red caída al leer el robot, catálogo roto…
+            log.exception("[web] despliegue en %s fallido", serial)
+            self.mirror(topic, {"done": True, "error": str(e)})
+        finally:
+            with self._deploy_lock:
+                self._deploying.discard(serial)
 
     # ------------------------------------------------------------- entradas
     def send_fleet_order(self, action_type: str, params: dict) -> str:
@@ -142,6 +191,43 @@ class WebServer:
             if body.actionType not in INSTANT_ALLOWED:
                 raise HTTPException(400, f"instantAction '{body.actionType}' no admitida; hay {INSTANT_ALLOWED}")
             return {"actionId": self.send_instant(serial, body.actionType)}
+
+        # Las rutas de sincronización son `def` (no `async`): FastAPI las corre en
+        # su pool de hilos, porque leen ficheros y hacen REST bloqueante.
+        @app.get("/api/sync")
+        def sync_info():
+            first = next(iter(self.syncs.values()), None)
+            return {"catalog": first.catalog().summary() if first else [],
+                    "robots": [self.sync_status(s) for s in self.robots]}
+
+        @app.post("/api/sync/{serial}/preview")
+        def sync_preview(serial: str, body: SyncIn):
+            sync = self._sync_for(serial)
+            try:
+                _, ops = sync.preview(body.guids)
+            except ValueError as e:             # GUID que no está en el catálogo
+                raise HTTPException(400, str(e))
+            except Exception as e:              # robot inalcanzable, 4xx/5xx del robot…
+                raise HTTPException(502, f"no se pudo leer '{serial}': {e}")
+            return {"ops": [o.to_dict() for o in ops]}
+
+        @app.post("/api/sync/{serial}/deploy")
+        def sync_deploy(serial: str, body: SyncIn):
+            sync = self._sync_for(serial)
+            st = self.sync_status(serial)
+            if not st["online"]:
+                raise HTTPException(409, f"'{serial}' no responde: no se despliega")
+            if st["busy"]:
+                raise HTTPException(409, f"'{serial}' está ocupado (order, carga o mission ajena): "
+                                         "se despliega cuando quede libre")
+            with self._deploy_lock:
+                if serial in self._deploying:
+                    raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
+                self._deploying.add(serial)
+            threading.Thread(target=self._run_deploy, args=(serial, sync, body.guids),
+                             name=f"sync-{serial}", daemon=True).start()
+            log.info("[web] despliegue en %s: %d recursos seleccionados", serial, len(body.guids))
+            return {"started": True}
 
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

@@ -199,3 +199,10 @@ class MirDriver:
                                         step=r and r.step))
             out.append(ActionInfo(a.action_type, params, f"mission '{a.mission}'"))
         return out
+
+    # -------------------------------------------------------- sincronización
+    def make_sync(self, catalog_dir):
+        """Capacidad opcional (no está en `RobotDriver`): la web la busca con
+        `getattr` para la pestaña Sincronización. Ver `sync.py`."""
+        from fm.adapters.mir.sync import MirSync   # import tardío: solo si se usa
+        return MirSync(self.serial, self.cfg.host, self.cfg.auth, catalog_dir)
