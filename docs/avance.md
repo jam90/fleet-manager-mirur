@@ -1492,7 +1492,58 @@ faltan y ninguno distinto.
     su matriz action × robot, y el asignador podrá descartar el robot que
     no tiene grabada la mission.
 
-## Pendiente (a 2026-10-13)
+## 2026-10-14 — Configurador: decisiones previas y siguiente candidato en el asignador
+
+Repaso con el usuario de las cuatro preguntas abiertas del configurador
+(`docs/plan-admin.md` §2) antes de programarlo, e implementado el punto 7
+de "Pendiente". `pytest`: 121 en verde (6 nuevos). Sin probar con robot.
+
+### Decisiones nuevas
+
+89. **Si el robot elegido no puede traducir la `fleet/order`, se prueba el
+    siguiente del ranking** (antes se rechazaba la order entera). El
+    asignador devuelve el ranking completo (`AssignResult.ranking`) y sigue
+    siendo puro; el `Dispatcher` lo recorre. Traducir no toca la red, así
+    que probar varios robots no tiene efectos. Dos excepciones:
+    `VALIDATION_FAILURE` corta (la order está mal y ningún robot la
+    aceptaría), y un fallo de `execute` tampoco pasa al siguiente (tras un
+    timeout el MiR pudo encolarla igual: dos robots con la misma order).
+    Si fallan todos: el `errorType` común, o `NO_MOBILE_ROBOT_AVAILABLE`
+    si son distintos, y el motivo de cada robot en la descripción. Con
+    `prefer_not_charging`, el robot que carga va al final del ranking en
+    vez de quedar fuera: "preferir" no es "descartar".
+90. **El "robot sin la mission grabada" (punto 17) lo cubre la decisión
+    89**, sin que el core consulte la sincronización (que es de MiR): un
+    robot sin la mission ya falla al traducir porque su índice no tiene ese
+    GUID. Una mission grabada pero **distinta** no descarta al robot: solo
+    se detecta con la comprobación "A fondo", que se lanza a mano. Queda
+    como aviso en la matriz del configurador.
+91. **Aplicar la config: en caliente los cambios ligeros, reiniciando los
+    estructurales.** En caliente: umbrales, `battery_min`, habilitar una
+    action en un robot y los parámetros de las actions (son las casillas de
+    la matriz, lo más frecuente). Reiniciando: alta o baja de robots y
+    cambio de host o driver, porque un robot nuevo necesita su cliente
+    MQTT con Last Will, su hilo de poll y su `connection` retained; la
+    pestaña avisa "requiere reiniciar el FM". Un botón de reinicio
+    (`os.execv`) queda para más adelante. Responde la pregunta 3 del plan.
+92. **Nuevo formato de `fleet.yaml` sin compatibilidad con el antiguo y
+    sin sobrescrituras por robot.** Solo hay dos ficheros: se migran en el
+    mismo cambio y el formato antiguo da error al arrancar con la pista
+    para migrar (como en la fase 3 de drivers). Cada robot lleva solo la
+    lista de actions habilitadas: hoy no hay ningún caso real de action
+    distinta por robot, y sin sobrescrituras cada casilla de la matriz es
+    sí/no. Además, un dict en `robots.<serial>.actions` queda como señal
+    inequívoca del formato antiguo.
+93. **Edición del configurador por partes:** v1, casillas de la matriz,
+    umbrales y `battery_min` (todo en caliente; el catálogo de actions y
+    los robots, en solo lectura); v2, crear y editar actions del catálogo
+    (el flujo principal: mission capturada → action habilitada → desplegar;
+    la UI puede proponer qué inputs son de position y cuáles numéricos si
+    el JSON capturado trae el tipo del parámetro, por comprobar); v3, altas
+    y bajas de robots (piden reiniciar; mientras sean dos, a mano en el
+    YAML).
+
+## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
 2026-09-17, en parte superadas (la order con `position_inputs` se probó con
@@ -1585,11 +1636,9 @@ robot después).
    `order`/`instantActions` entrante contra `schemas/` y rechazar con
    `VALIDATION_FAILURE`. `fm/vda5050/schemas.py::validation_errors` ya
    existe (hoy solo la usan los tests). El README no lo promete.
-7. **Asignador: probar el siguiente candidato si el elegido rechaza**
-   (revisión del 2026-10-12). Hoy, si el robot con más batería rechaza al
-   traducir (p.ej. le falta la mission: `NO_ROUTE_TO_TARGET`), se rechaza
-   la `fleet/order` entera aunque otro robot sí pudiera. Cambia el
-   comportamiento: decidirlo antes.
+7. ~~**Asignador: probar el siguiente candidato si el elegido rechaza**~~
+   **Hecho (2026-10-14, decisión 89).** Falta probarlo con robot: una
+   action cuya mission solo tenga el robot con menos batería.
 
 **Sin probar con robot (solo tests)**
 
@@ -1619,19 +1668,20 @@ robot después).
 
 **Configurador y sincronización (siguiente sesión: configurador)**
 
-16. **Configurador del FM** (`docs/plan-admin.md` §2). Orden previsto:
-    (a) fase 1: `fleet.yaml` con catálogo único de actions (cada action
-    una vez, las missions ya por GUID) y cada robot con la lista de las
-    que tiene habilitadas; cargador y tests, sin UI; (b) pestaña en solo
-    lectura: matriz action × robot con el estado de sincronización de
-    cada casilla (✓ grabada / ✗ falta → enlace a Sincronización /
-    ! distinta), umbrales y catálogo de actions; (c) edición con
+16. **Configurador del FM** (`docs/plan-admin.md` §2, decisiones 91–93).
+    Orden: (a) fase 1: `fleet.yaml` con catálogo único de actions (cada
+    action una vez, las missions ya por GUID) y cada robot con la lista de
+    las que tiene habilitadas; sin formato antiguo ni sobrescrituras;
+    cargador y tests, sin UI; (b) pestaña en solo lectura: matriz action ×
+    robot con el estado de sincronización de cada casilla (✓ grabada /
+    ✗ falta → enlace a Sincronización / ! distinta), umbrales y catálogo
+    de actions; (c) edición v1 (casillas, umbrales, `battery_min`) con
     `ruamel.yaml` (sin perder comentarios), validación con el cargador,
-    copia `.bak` y recarga en caliente entre ticks (pregunta 3 del plan:
-    confirmar en caliente o reiniciando).
-17. **Asignador: descartar el robot que no tiene grabada la mission**
-    (decisión 88), con el motivo en el `REJECTED`. Relacionado con el
-    punto 7.
+    copia `.bak` y recarga en caliente entre ticks; v2, actions del
+    catálogo; v3, altas y bajas de robots con reinicio.
+17. ~~**Asignador: descartar el robot que no tiene grabada la mission**~~
+    Cubierto por la decisión 89 (decisión 90). La mission "distinta" queda
+    como aviso en la matriz.
 18. **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
     `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
     mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día

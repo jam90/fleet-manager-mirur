@@ -68,11 +68,13 @@ robots:
   mir-2: { host: 192.168.15.15, battery_min: 25, actions: [coger, dejar, recoger_pieza] }
 ```
 
-- Un robot puede **sobrescribir** campos de una action si de verdad hace
-  falta (forma dict en vez de lista); lo normal es la lista de nombres.
-- El formato actual (dict de actions por robot) sigue funcionando un
-  tiempo o da error al arrancar con la pista de cómo migrar, como se hizo
-  en la fase 3 de drivers. A decidir al implementarlo.
+- **Sin sobrescrituras por robot** (decisión 92, 2026-10-14): cada robot
+  lleva solo la lista de nombres. No hay ningún caso real, y así cada
+  casilla de la matriz es sí/no. Si algún día hace falta, se añade.
+- **Sin compatibilidad con el formato actual** (decisión 92): se migran
+  `fleet.yaml` y `fleet-sim.yaml` en el mismo cambio, y un dict en
+  `robots.<serial>.actions` da error al arrancar con la pista de cómo
+  migrar, como en la fase 3 de drivers.
 - Esta fase va **sin UI**, solo cargador + tests. Ya mejora el fichero aunque
   la UI no llegue.
 
@@ -86,6 +88,16 @@ robots:
   `number_inputs` (con rango), `required_inputs`, allowlist.
 - **Alta y baja de robots**: serial, driver, host.
 
+Se programa por partes (decisión 93): **v1** casillas de la matriz,
+umbrales y `battery_min` (catálogo de actions y robots en solo lectura);
+**v2** crear y editar actions del catálogo (mission del `catalog/` →
+nombre de `actionType` → clasificar sus parámetros); **v3** altas y bajas
+de robots.
+
+La casilla "! distinta" es solo un aviso: el asignador no descarta por eso
+(decisión 90). Un robot al que le falta la mission ya queda descartado al
+traducir: el `Dispatcher` prueba el siguiente del ranking (decisión 89).
+
 ### 2.3 Guardar y aplicar
 
 - **Guardar sin perder comentarios:** PyYAML los descarta al reescribir y
@@ -94,8 +106,11 @@ robots:
 - Antes de escribir: **validar con el mismo cargador del arranque** (si
   falla, no se guarda y se muestra el error) y dejar copia
   `fleet.yaml.<fecha>.bak`.
-- **Aplicar en caliente** (preferencia del desarrollador, pendiente de
-  confirmar): la web no toca el estado; encola "recargar config" y el hilo
+- **Aplicar los cambios ligeros en caliente** (decisión 91, confirmada el
+  2026-10-14): umbrales, `battery_min`, actions habilitadas y sus
+  parámetros. Las altas y bajas de robots y los cambios de host o driver
+  piden **reiniciar el FM** (cliente MQTT con Last Will, hilo de poll y
+  `connection` retained por robot); la pestaña lo avisa. En caliente, la web no toca el estado; encola "recargar config" y el hilo
   principal la aplica entre ticks (decisión 14). Después: volver a resolver
   los índices nombre → GUID de los robots afectados (en su hilo, como el
   poll) y republicar el `factsheet` (cambian sus `agvActions`). Una order
@@ -336,7 +351,9 @@ los dos robots y `mirur-tknikav2` renombrado a `mirur-tknika`.
 1. **Nuevo formato de `fleet.yaml`** (catálogo de actions), con tests y sin UI.
 2. **Pestañas en solo lectura:** matriz action × robot, umbrales, vista de
    flota de sincronización (comparando con los índices actuales por nombre).
-3. **Edición en el configurador** + guardado con `ruamel.yaml` + recarga.
+3. **Edición en el configurador** + guardado con `ruamel.yaml` + recarga,
+   en tres partes: v1 casillas y umbrales, v2 catálogo de actions, v3
+   robots (§2.2).
 4. **Catálogo + GUID estándar + capturar** (missions primero).
 5. **Desplegar missions** con vista previa, idempotente y con
    concurrencia limitada. Adoptar las missions existentes.
@@ -363,8 +380,9 @@ los dos robots y `mirur-tknikav2` renombrado a `mirur-tknika`.
    tampoco coinciden (26 en mir-1, 23 en mir-2).
 2. **¿Se usan sub-missions** (missions que llaman a otras)? Afecta al orden
    de despliegue y a los conflictos al sustituir.
-3. **Aplicar config en caliente o reiniciando el FM:** propuesta en caliente
-   (§2.3); confirmar.
+3. ~~**Aplicar config en caliente o reiniciando el FM**~~ **Respondida
+   (2026-10-14, decisión 91):** en caliente los cambios ligeros,
+   reiniciando los estructurales (§2.3).
 4. **Cómo se copian hoy** las missions entre los dos robots (¿exportar e
    importar en la web del MiR?): puede dar pistas sobre el formato y sobre
    si los GUIDs se conservan. Pista (2026-10-13): cada session expone

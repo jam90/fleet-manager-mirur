@@ -44,3 +44,14 @@ def test_prefer_not_charging():
     assert assign("coger", s, _cfg(prefer_not_charging=False)).serial == "mir-1"
     # si el que carga es el único, se le asigna
     assert assign("coger", {"mir-1": s["mir-1"]}, _cfg()).serial == "mir-1"
+
+
+def test_ranking_completo():
+    # El Dispatcher recorre el ranking si el elegido no puede traducir (decisión 89).
+    r = assign("coger", snaps(**{"mir-1": (60, False), "mir-2": (70, False)}), _cfg())
+    assert r.ranking == ["mir-2", "mir-1"]
+    # el que carga va al final, no fuera
+    s = {"mir-1": RobotSnapshot("mir-1", 90, False, charging=True),
+         "mir-2": RobotSnapshot("mir-2", 50, False)}
+    assert assign("coger", s, _cfg()).ranking == ["mir-2", "mir-1"]
+    assert assign("coger", s, _cfg(prefer_not_charging=False)).ranking == ["mir-1", "mir-2"]

@@ -15,7 +15,7 @@ from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
 from fm.vda5050.header import parse_topic, validate_header
 from fm.vda5050.order import Order, OrderRejected, parse_instant_actions, parse_order
-from fm.vda5050.state import E_VALIDATION_FAILURE, error_for_order
+from fm.vda5050.state import E_NO_MOBILE_ROBOT_AVAILABLE, E_VALIDATION_FAILURE, error_for_order
 
 log = logging.getLogger("fm.fleet")
 
@@ -135,8 +135,38 @@ class Dispatcher:
         result = assign(action.actionType, snaps, self.cfg)
         if not result.ok:
             raise OrderRejected(result.error_type, result.reason)
-        robot = self.robots[result.serial]
-        # El robot elegido puede aún rechazar (p.ej. mission inexistente en él).
-        req = robot.translate_order(order)
-        robot.execute(order, req)
-        return robot
+        # El asignador solo mira batería y ocupación; el robot elegido aún
+        # puede rechazar al traducir (p.ej. no tiene grabada la mission). En
+        # ese caso se prueba el siguiente del ranking (decisión 89). Traducir
+        # no toca la red ni el robot, así que probar varios no tiene efectos.
+        failures: dict[str, OrderRejected] = {}
+        for serial in result.ranking:
+            robot = self.robots[serial]
+            try:
+                req = robot.translate_order(order)
+            except OrderRejected as e:
+                # VALIDATION_FAILURE es culpa de la order (falta un parámetro,
+                # no es un número…): ningún otro robot la aceptaría.
+                if e.error_type == E_VALIDATION_FAILURE:
+                    raise
+                log.info("[fleet] %s no puede con %s (%s): pruebo el siguiente",
+                         serial, order.orderId, e)
+                failures[serial] = e
+                continue
+            # `execute` NO se reintenta en otro robot: tras un timeout el MiR
+            # pudo encolarla igual y acabarían dos robots con la misma order.
+            robot.execute(order, req)
+            return robot
+        raise self._all_failed(result.rejections, failures)
+
+    @staticmethod
+    def _all_failed(rejections: dict[str, str], failures: dict[str, OrderRejected]) -> OrderRejected:
+        """Ningún candidato pudo traducir. Si todos fallaron por lo mismo se
+        conserva ese errorType (con un solo candidato, el rechazo es el de
+        siempre); si no, NO_MOBILE_ROBOT_AVAILABLE. La descripción lleva el
+        motivo de cada robot, también de los que descartó el asignador."""
+        types = {e.error_type for e in failures.values()}
+        error_type = types.pop() if len(types) == 1 else E_NO_MOBILE_ROBOT_AVAILABLE
+        reasons = {**rejections, **{s: e.description for s, e in failures.items()}}
+        detail = "; ".join(f"{s}: {reasons[s]}" for s in sorted(reasons))
+        return OrderRejected(error_type, f"ningún robot puede atender la order: {detail}")

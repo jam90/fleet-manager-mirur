@@ -203,6 +203,15 @@ WARNING`, `errorReferences: [{orderId}]`) hasta que se acepte otra order.
 ejecución (mission `Aborted`) van a `state.errors[]` del robot como
 `ORDER_EXECUTION_FAILED`. Una `fleet/order` repetida se ignora sin respuesta.
 
+Si el robot elegido no puede traducir la order a una mission suya (le falta
+la mission o la position, o no tiene cargados los índices), se prueba el
+siguiente del ranking. Si fallan todos, el `REJECTED` lleva el motivo de
+cada robot y el `errorType` común (p.ej. `NO_ROUTE_TO_TARGET`), o
+`NO_MOBILE_ROBOT_AVAILABLE` si los motivos son distintos. En dos casos no se
+prueba otro robot: un `VALIDATION_FAILURE` (la order está mal y ningún robot
+la aceptaría) y un fallo al encolar la mission en el robot (tras un timeout el
+MiR pudo encolarla igual, y acabarían dos robots con la misma order).
+
 **Todos los robots ocupados → `REJECTED NO_MOBILE_ROBOT_AVAILABLE` y el FM
 olvida la order.** No hay cola interna ni reintentos: el sistema aguas arriba
 recibe el rechazo y decide cuándo reenviar (puede vigilar `+/state` y esperar

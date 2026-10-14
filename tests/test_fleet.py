@@ -7,7 +7,7 @@ from fm.config import FleetConfig, RobotConfig
 from fm.fleet import Dispatcher
 from fm.robot import Robot
 from fm.vda5050.header import HeaderCounter, make_header, topic
-from fm.vda5050.order import Action
+from fm.vda5050.order import Action, OrderRejected
 
 FLEET_MAN = "imperial_fleet"
 
@@ -142,3 +142,72 @@ def test_order_dirigida_con_post_fallido_deja_el_error_en_state():
     assert [e.errorType for e in errs] == ["ROBOT_UNREACHABLE"]
     assert errs[0].errorReferences[0].referenceValue == "o1"
     assert states == ["mir-1"] and robots["mir-1"].orders.active is None
+
+
+# ---------------------------------------------- siguiente candidato (decisión 89)
+class _RejectingDriver(FakeDriver):
+    """`translate` rechaza como el driver MiR cuando le falta la mission."""
+    def __init__(self, error_type="NO_ROUTE_TO_TARGET", description="la mission 'coger' no existe en el robot"):
+        super().__init__()
+        self.error = OrderRejected(error_type, description)
+
+    def translate(self, action):
+        raise self.error
+
+
+def _setup_two(battery1=90.0, battery2=50.0):
+    disp, robots, bus, states = _setup({"mir-1": "MiR", "mir-2": "MiR"})
+    robots["mir-1"].last_telemetry = Telemetry(battery=battery1)
+    robots["mir-2"].last_telemetry = Telemetry(battery=battery2)
+    return disp, robots, bus, states
+
+
+def _fleet(disp, bus):
+    disp.handle(topic(FLEET_MAN, "fleet", "order"), _order(FLEET_MAN, "fleet"))
+    return bus.published[-1][1]
+
+
+def test_si_el_elegido_no_puede_traducir_se_prueba_el_siguiente():
+    disp, robots, bus, states = _setup_two()
+    robots["mir-1"].driver = _RejectingDriver()          # más batería, pero sin la mission
+    resp = _fleet(disp, bus)
+    assert resp["status"] == "ASSIGNED" and resp["assignedSerial"] == "mir-2"
+    assert len(robots["mir-2"].driver.executed) == 1
+    assert robots["mir-1"].orders.active is None
+
+
+def test_todos_rechazan_por_lo_mismo_conserva_el_error_type():
+    disp, robots, bus, states = _setup_two()
+    for r in robots.values():
+        r.driver = _RejectingDriver()
+    resp = _fleet(disp, bus)
+    assert resp["status"] == "REJECTED" and resp["errorType"] == "NO_ROUTE_TO_TARGET"
+    assert "mir-1: la mission" in resp["errorDescription"]
+    assert "mir-2: la mission" in resp["errorDescription"]
+
+
+def test_todos_rechazan_por_motivos_distintos():
+    disp, robots, bus, states = _setup_two()
+    robots["mir-1"].driver = _RejectingDriver()
+    robots["mir-2"].driver = _RejectingDriver("MOBILE_ROBOT_NOT_AVAILABLE", "índices no cargados")
+    resp = _fleet(disp, bus)
+    assert resp["status"] == "REJECTED" and resp["errorType"] == "NO_MOBILE_ROBOT_AVAILABLE"
+    assert "mir-2: índices no cargados" in resp["errorDescription"]
+
+
+def test_error_de_la_order_no_prueba_otro_robot():
+    # Falta un parámetro: es la order la que está mal, no el robot.
+    disp, robots, bus, states = _setup_two()
+    robots["mir-1"].driver = _RejectingDriver("VALIDATION_FAILURE", "falta el parámetro obligatorio 'n'")
+    resp = _fleet(disp, bus)
+    assert resp["status"] == "REJECTED" and resp["errorType"] == "VALIDATION_FAILURE"
+    assert robots["mir-2"].driver.executed == []
+
+
+def test_post_fallido_no_prueba_otro_robot():
+    # Tras un timeout el MiR pudo encolarla: no se arriesga a duplicarla.
+    disp, robots, bus, states = _setup_two()
+    robots["mir-1"].driver = _BrokenDriver(ConnectionError("timeout"))
+    resp = _fleet(disp, bus)
+    assert resp["status"] == "REJECTED" and resp["errorType"] == "ROBOT_UNREACHABLE"
+    assert robots["mir-2"].driver.executed == []
