@@ -51,25 +51,35 @@ drivers:                            # defaults por marca (cualquier robot los pu
   mir:
     mission_group: "mirur-tknika"   # solo se indexan las missions de este grupo
     charge_mission: imperialfleet-mission000-01-0001-002   # Carga en estación MIRUR
+actions:                            # catálogo: cada actionType se define UNA vez
+  coger: { mission: imperialfleet-mission000-01-0001-001 }   # GUID del catálogo
+  dejar: { mission: "dejar" }                                # o nombre exacto
+  abrir_puerta:
+    mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
+    position_inputs: [target_pos]   # la order trae {"key": "target_pos", "value": "H2D2"}
 robots:
   mir-1:
     driver: mir                     # por defecto "mir"
     host: 192.168.15.5              # ↓ a partir de aquí lo interpreta el driver
     battery_min: 25                 # > battery_floor (histéresis)
-    actions:
-      coger: { mission: imperialfleet-mission000-01-0001-001 }   # GUID del catálogo
-      dejar: { mission: "dejar" }                                # o nombre exacto
-      abrir_puerta:
-        mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
-        position_inputs: [target_pos]   # la order trae {"key": "target_pos", "value": "H2D2"}
+    actions: [coger, dejar, abrir_puerta]   # habilitadas en este robot
+  mir-2:
+    host: 192.168.15.15
+    battery_min: 25
+    actions: [coger, dejar]
 ```
 
 El core solo lee `driver`, `manufacturer` (opcional; por defecto el del
-driver), `battery_min` y las claves de `actions` (qué actionTypes soporta el
-robot). El resto del bloque va crudo al driver, que lo valida al arrancar
-(`fm/adapters/mir/config.py`). Un `fleet.yaml` con `mission_group`,
-`positions_allowlist` o `auto_charge.mission` en la raíz (formato anterior)
-falla al arrancar con la pista de dónde va ahora cada clave.
+driver), `battery_min` y la lista `actions` de cada robot (qué actionTypes
+puede hacer), que tienen que estar en el catálogo `actions:`. Cada robot
+recibe la definición del catálogo de las actions que tiene habilitadas; esa
+definición, y el resto del bloque del robot, van crudos al driver, que los
+valida al arrancar (`fm/adapters/mir/config.py`). No hay forma de cambiar una
+action para un solo robot: si hace falta otra versión, es otra action del
+catálogo. Formatos anteriores fallan al arrancar con la pista de cómo
+migrar: `mission_group`, `positions_allowlist` o `auto_charge.mission` en la
+raíz, y definiciones de actions dentro de cada robot (formato anterior al
+2026-10-14).
 
 Por `action` (driver `mir`):
 
@@ -312,8 +322,9 @@ Añadir una marca es crear una carpeta y registrarla:
 2. **`make_driver(serial, raw, defaults, env)`** en el `__init__.py` del
    paquete: `raw` es el bloque `robots.<serial>` completo, `defaults` es
    `drivers.<marca>`. Valida ahí y lanza `ConfigError` con un mensaje claro.
-   Convención: `actions:` es un mapping `actionType → config de la marca`
-   (el core solo lee sus claves para saber qué robots soportan cada action).
+   Convención: `raw["actions"]` es un mapping `actionType → config de la
+   marca`. El core lo construye con las definiciones del catálogo `actions:`
+   de las actions habilitadas en el robot; el driver solo las valida.
 
 3. **Registrar** en `fm/adapters/__init__.py`: `DRIVERS["<marca>"] = "fm.adapters.<marca>"`.
 

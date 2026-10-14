@@ -45,8 +45,10 @@
   2026-10-13: fase 0 (GUIDs `imperialfleet-…`, §4), catálogo en `catalog/`
   y pestaña **Sincronización** (`fm/adapters/mir/sync.py`,
   `fm/web/sync_monitor.py`), con los dos robots sincronizados y
-  `fleet.yaml` por GUID. **Siguiente: el configurador** (punto 16 de
-  "Pendiente" en `docs/avance.md`).
+  `fleet.yaml` por GUID. Configurador: decisiones 89–94 (2026-10-14) y
+  fase (a) hecha (`fleet.yaml` con catálogo de actions). **Siguiente: fase
+  (b), la pestaña en solo lectura** (punto 16 de "Pendiente" en
+  `docs/avance.md`).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con
@@ -524,12 +526,16 @@ al robot del dock. Elegir una y anotarlo en `docs/avance.md`.
 
 ## 8. `config/fleet.yaml`
 
-> Formato vigente desde 2026-09-17 (fase 3 de drivers). El core solo lee
-> `driver`, `manufacturer`, `battery_min` y las claves de `actions`; el resto
-> del bloque de cada robot lo valida su driver (`fm/adapters/<driver>/config.py`)
-> fusionado con `drivers.<driver>`. Claves del formato anterior
-> (`mission_group`, `positions_allowlist`, `auto_charge.mission`,
-> `mqtt.manufacturer`) → error al arrancar con la pista de dónde van ahora.
+> Formato vigente desde 2026-10-14 (catálogo de actions, decisión 92). Cada
+> action se define una vez en `actions:` de la raíz y cada robot lista las
+> que tiene habilitadas; no hay sobrescrituras por robot. El core solo lee
+> `driver`, `manufacturer`, `battery_min` y esa lista; copia a
+> `raw["actions"]` la definición de cada action habilitada, y el driver
+> valida eso y el resto del bloque (`fm/adapters/<driver>/config.py`)
+> fusionado con `drivers.<driver>`. Formatos anteriores (definiciones dentro
+> de cada robot; `mission_group`, `positions_allowlist`,
+> `auto_charge.mission`, `mqtt.manufacturer` en la raíz) → error al arrancar
+> con la pista de cómo migrar.
 
 ```yaml
 mqtt:
@@ -546,33 +552,32 @@ drivers:                           # defaults por marca
     charge_mission: "Carga en estación"   # nombre EXACTO de la mission de carga (sin parámetros)
     # positions_allowlist: [H2D1-VL]     # opcional; si se omite, cualquier position del robot
 
+actions:                           # catálogo: cada actionType UNA vez para toda la flota
+  ir_a:
+    mission: "Ir a posición"               # GUID del catálogo o nombre en la web del MiR
+    position_inputs: [target_pos]          # inputs cuyo valor es un NOMBRE de position → GUID
+  transporte:
+    mission: "Transporte A→B"
+    position_inputs: [origen, destino]
+    required_inputs: [tipo_carga]          # obligatorio; ausente → validationError
+
 robots:
   mir-1:
     driver: mir                    # por defecto "mir"
     host: 192.168.15.5             # o MIR_HOST_MIR_1 en .env
     battery_min: 25                # % mínimo para aceptar orders (> battery_floor)
-    actions:
-      ir_a:
-        mission: "Ir a posición"               # nombre en la web del MiR
-        position_inputs: [target_pos]          # inputs cuyo valor es un NOMBRE de position → GUID
-      transporte:
-        mission: "Transporte A→B"
-        position_inputs: [origen, destino]
-        required_inputs: [tipo_carga]          # obligatorio; ausente → validationError
+    actions: [ir_a, transporte]    # habilitadas: nombres del catálogo
   mir-2:
     host: 192.168.15.15
     battery_min: 25
-    actions:
-      ir_a:
-        mission: "Ir a posición"
-        position_inputs: [target_pos]
+    actions: [ir_a]
   sim-1:                           # opcional: robot simulado (fm/adapters/sim)
     driver: sim
     battery: 90
-    actions: { ir_a: {} }
+    actions: [ir_a]                # el driver sim ignora la definición
 ```
 
-Semántica de cada `action` (driver `mir`):
+Semántica de cada `action` del catálogo (driver `mir`):
 
 - `mission`: GUID del catálogo (`imperialfleet-mission000-…`, común a la
   flota sincronizada; así está `config/fleet.yaml` desde el 2026-10-13,

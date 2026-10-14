@@ -49,6 +49,10 @@ sincronización el "cómo".
 
 ### 2.1 Cambio previo de formato de `fleet.yaml`: catálogo de actions
 
+**Hecho (2026-10-14).** `fm/config.py` copia a `raw["actions"]` de cada
+robot la definición de las actions que tiene habilitadas, así que los
+drivers no cambian. `FleetConfig.actions` guarda el catálogo para la UI.
+
 Hoy cada action se define **una vez por robot** con el mismo contenido
 (`coger`, `dejar`, `prueba_parametros_v2`… repetidos en mir-1 y mir-2).
 Con N robots eso no se puede mantener ni pintar en una UI. Nuevo formato:

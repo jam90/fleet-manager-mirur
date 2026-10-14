@@ -6,9 +6,16 @@ del bloque de cada robot (`host`, `actions.<tipo>.mission`, ...) se entrega
 crudo al driver de su marca, que lo valida en `fm/adapters/<marca>/config.py`.
 Así los errores de configuración saltan al arrancar, no en runtime, y el core
 no sabe qué claves necesita cada marca.
+
+Las actions se definen UNA vez en el catálogo `actions:` de la raíz y cada
+robot lista las que tiene habilitadas (decisiones 65 y 92): con N robots no
+se puede repetir cada definición en cada robot, ni pintarla en la UI. El
+core no interpreta las definiciones; solo copia la de cada action habilitada
+en `raw["actions"]`, así que el driver recibe el mismo dict de siempre.
 """
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from dataclasses import dataclass, field
@@ -40,8 +47,8 @@ class RobotConfig:
     driver: str = DEFAULT_DRIVER
     manufacturer: str | None = None               # None = el que declare el driver
     battery_min: float = 25.0                     # % mínimo para aceptar orders
-    action_types: frozenset[str] = frozenset()    # claves de `actions:` (convención de todos los drivers)
-    raw: dict = field(default_factory=dict)
+    action_types: frozenset[str] = frozenset()    # actions habilitadas (lista `robots.<serial>.actions`)
+    raw: dict = field(default_factory=dict)       # con `actions` ya expandido: actionType → definición
 
 
 @dataclass
@@ -68,6 +75,7 @@ class FleetConfig:
     auto_charge: AutoChargeConfig = field(default_factory=AutoChargeConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
     drivers: dict[str, dict] = field(default_factory=dict)   # defaults por marca: bloque `drivers:`
+    actions: dict[str, dict] = field(default_factory=dict)   # catálogo `actions:`, tal cual (lo valida el driver)
     prefer_not_charging: bool = True
 
     def driver_defaults(self, name: str) -> dict:
@@ -91,16 +99,20 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
     if "mission" in ac:
         raise ConfigError("'auto_charge.mission' ya no existe: muévelo a 'drivers.mir.charge_mission'")
 
+    catalog = _parse_catalog(raw.get("actions"))
     robots: dict[str, RobotConfig] = {}
     for serial, r in (raw.get("robots") or {}).items():
         r = r or {}
+        enabled = _enabled_actions(serial, r.get("actions"), catalog)
         robots[serial] = RobotConfig(
             serial=serial,
             driver=str(r.get("driver", DEFAULT_DRIVER)),
             manufacturer=r.get("manufacturer"),
             battery_min=float(r.get("battery_min", 25)),
-            action_types=frozenset(r.get("actions") or {}),
-            raw=r,
+            action_types=frozenset(enabled),
+            # Copia profunda: cada driver recibe su propia definición y no
+            # puede alterar la de otro robot ni el catálogo.
+            raw={**r, "actions": {a: copy.deepcopy(catalog[a]) for a in enabled}},
         )
 
     auto_charge = AutoChargeConfig(
@@ -125,6 +137,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         auto_charge=auto_charge,
         mqtt=mqtt,
         drivers={k: (v or {}) for k, v in (raw.get("drivers") or {}).items()},
+        actions=catalog,
         prefer_not_charging=bool((raw.get("assigner") or {}).get("prefer_not_charging", True)),
     )
 
@@ -135,3 +148,44 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
             log.warning("[%s] battery_min (%.0f%%) <= battery_floor (%.0f%%): sin histéresis",
                         r.serial, r.battery_min, auto_charge.battery_floor)
     return cfg
+
+
+def _parse_catalog(raw) -> dict[str, dict]:
+    """Bloque `actions:` de la raíz → `{actionType: definición}`. Solo se
+    comprueba la forma; el contenido (`mission`, `position_inputs`…) es de
+    cada marca y lo valida su driver."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError("'actions' (raíz) debe ser un mapping actionType → definición")
+    catalog: dict[str, dict] = {}
+    for name, spec in raw.items():
+        spec = {} if spec is None else spec          # `coger:` sin nada = `coger: {}`
+        if not isinstance(spec, dict):
+            raise ConfigError(f"actions.{name}: la definición debe ser un mapping (p.ej. {{mission: ...}})")
+        catalog[str(name)] = spec
+    return catalog
+
+
+def _enabled_actions(serial: str, raw, catalog: dict[str, dict]) -> list[str]:
+    """`robots.<serial>.actions` → lista de actionTypes del catálogo."""
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        # Formato anterior al 2026-10-14: cada robot repetía las definiciones.
+        # Se rechaza con la pista en vez de convivir con dos formatos (decisión 92).
+        raise ConfigError(
+            f"robots.{serial}.actions ya no lleva definiciones: muévelas al bloque 'actions:' "
+            f"de la raíz (una vez para toda la flota) y deja aquí la lista de las habilitadas, "
+            f"p.ej. actions: [{', '.join(map(str, list(raw)[:2]))}]")
+    if not isinstance(raw, list):
+        raise ConfigError(f"robots.{serial}.actions debe ser una lista de actionTypes")
+    names = [str(a) for a in raw]
+    dup = sorted({a for a in names if names.count(a) > 1})
+    if dup:
+        raise ConfigError(f"robots.{serial}.actions: repetidas {dup}")
+    unknown = [a for a in names if a not in catalog]
+    if unknown:
+        raise ConfigError(f"robots.{serial}.actions: {unknown} no están en el catálogo 'actions:' "
+                          f"(hay {sorted(catalog)})")
+    return names

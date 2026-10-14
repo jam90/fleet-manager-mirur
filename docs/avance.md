@@ -1543,6 +1543,25 @@ de "Pendiente". `pytest`: 121 en verde (6 nuevos). Sin probar con robot.
     y bajas de robots (piden reiniciar; mientras sean dos, a mano en el
     YAML).
 
+## 2026-10-14 — Fase (a) del configurador: catálogo de actions en `fleet.yaml`
+
+`pytest`: 129 en verde (8 nuevos). Arranque con `fleet-sim.yaml`
+comprobado. Sin probar con los robots, pero comprobado que cada driver MiR
+recibe exactamente el mismo bloque `actions` que con el formato anterior
+(mir-1 y mir-2, comparando con el `fleet.yaml` de antes de migrar).
+
+94. **El catálogo se resuelve en el core y el driver recibe el dict de
+    siempre.** `load_config` lee `actions:` de la raíz y la lista de cada
+    robot, y deja en `raw["actions"]` una copia (profunda) de la
+    definición de cada action habilitada. Así `fm/adapters/mir/config.py`
+    y el driver `sim` no cambian, y el core sigue sin interpretar las
+    definiciones (solo comprueba que son mappings). `FleetConfig.actions`
+    guarda el catálogo entero, también las actions que ningún robot tiene
+    habilitadas, que son válidas: la matriz del configurador las mostrará.
+    Errores al arrancar: definiciones dentro de un robot (formato anterior,
+    con la pista para migrar), lista con nombres que no están en el
+    catálogo o repetidos, y catálogo que no es un mapping.
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -1669,10 +1688,8 @@ robot después).
 **Configurador y sincronización (siguiente sesión: configurador)**
 
 16. **Configurador del FM** (`docs/plan-admin.md` §2, decisiones 91–93).
-    Orden: (a) fase 1: `fleet.yaml` con catálogo único de actions (cada
-    action una vez, las missions ya por GUID) y cada robot con la lista de
-    las que tiene habilitadas; sin formato antiguo ni sobrescrituras;
-    cargador y tests, sin UI; (b) pestaña en solo lectura: matriz action ×
+    Orden: ~~(a) fase 1: `fleet.yaml` con catálogo único de actions~~
+    **hecha el 2026-10-14** (decisión 94); (b) pestaña en solo lectura: matriz action ×
     robot con el estado de sincronización de cada casilla (✓ grabada /
     ✗ falta → enlace a Sincronización / ! distinta), umbrales y catálogo
     de actions; (c) edición v1 (casillas, umbrales, `battery_min`) con

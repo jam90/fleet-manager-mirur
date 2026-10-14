@@ -1,4 +1,6 @@
 """Carga de fleet.yaml: parte genérica (core) + parte del driver + registro."""
+from pathlib import Path
+
 import pytest
 
 from fm.adapters import make_driver
@@ -13,17 +15,19 @@ drivers:
   mir:
     mission_group: g
     charge_mission: Carga
+actions:
+  coger: { mission: coger }
+  ir_a: { mission: "Ir", position_inputs: [target_pos] }
+  dejar: { mission: dejar }
 robots:
   mir-1:
     host: 10.0.0.1
     battery_min: 30
-    actions:
-      coger: { mission: coger }
-      ir_a: { mission: "Ir", position_inputs: [target_pos] }
+    actions: [coger, ir_a]
   mir-2:
     manufacturer: MiR-Custom
     mission_group: otro
-    actions: { coger: { mission: coger } }
+    actions: [coger]
 """
 
 
@@ -39,6 +43,11 @@ def test_core_solo_lee_lo_generico(tmp_path):
     assert r1.driver == "mir" and r1.manufacturer is None and r1.battery_min == 30
     assert r1.action_types == {"coger", "ir_a"}
     assert r1.raw["host"] == "10.0.0.1"          # el core no lo interpreta
+    # el driver recibe las definiciones del catálogo, solo las habilitadas
+    assert r1.raw["actions"] == {"coger": {"mission": "coger"},
+                                 "ir_a": {"mission": "Ir", "position_inputs": ["target_pos"]}}
+    assert cfg.robots["mir-2"].action_types == {"coger"}
+    assert sorted(cfg.actions) == ["coger", "dejar", "ir_a"]   # `dejar` sin robot: vale
     assert cfg.driver_defaults("mir") == {"mission_group": "g", "charge_mission": "Carga"}
     assert cfg.auto_charge.battery_floor == 20 and not hasattr(cfg.auto_charge, "mission")
     assert cfg.mqtt.fleet_manufacturer == "imperial_fleet"
@@ -95,3 +104,57 @@ def test_number_inputs_y_allowlist_por_action():
                       ({"step": 0}, "step")):
         with pytest.raises(ConfigError, match=hint):
             parse_config("mir-1", {"host": "h", "actions": {"a": {"mission": "M", "number_inputs": {"n": bad}}}}, {}, {})
+
+
+# ---------------------------------------------- catálogo de actions (decisión 92)
+def _robots(actions_yaml, catalog="actions: { coger: { mission: coger } }"):
+    return f"{catalog}\nrobots:\n  mir-1:\n    host: h\n    actions: {actions_yaml}\n"
+
+
+def test_formato_antiguo_da_error_con_pista(tmp_path):
+    with pytest.raises(ConfigError, match=r"robots.mir-1.actions ya no lleva definiciones.*\[coger\]"):
+        load_config(_write(tmp_path, _robots("{ coger: { mission: coger } }")), env_path=tmp_path / "no.env")
+
+
+@pytest.mark.parametrize("actions, msg", [
+    ("[coger, volar]", r"\['volar'\] no están en el catálogo"),
+    ("[coger, coger]", r"repetidas \['coger'\]"),
+    ("coger", "debe ser una lista"),
+])
+def test_lista_de_actions_invalida(tmp_path, actions, msg):
+    with pytest.raises(ConfigError, match=msg):
+        load_config(_write(tmp_path, _robots(actions)), env_path=tmp_path / "no.env")
+
+
+def test_catalogo_invalido(tmp_path):
+    with pytest.raises(ConfigError, match="mapping"):
+        load_config(_write(tmp_path, _robots("[]", "actions: [coger]")), env_path=tmp_path / "no.env")
+    with pytest.raises(ConfigError, match="actions.coger"):
+        load_config(_write(tmp_path, _robots("[]", "actions: { coger: 3 }")), env_path=tmp_path / "no.env")
+
+
+def test_entrada_vacia_y_robot_sin_actions(tmp_path):
+    cfg = load_config(_write(tmp_path, _robots("[coger]", "actions: { coger: }")), env_path=tmp_path / "no.env")
+    assert cfg.robots["mir-1"].raw["actions"] == {"coger": {}}
+    cfg = load_config(_write(tmp_path, "robots: { mir-1: { host: h } }"), env_path=tmp_path / "no.env")
+    assert cfg.robots["mir-1"].action_types == frozenset() and cfg.robots["mir-1"].raw["actions"] == {}
+
+
+def test_cada_robot_recibe_su_copia(tmp_path):
+    # Un driver que tocara su definición no debe cambiar la de otro robot.
+    text = YAML.replace("actions: [coger]", "actions: [coger, ir_a]")
+    cfg = load_config(_write(tmp_path, text), env_path=tmp_path / "no.env")
+    cfg.robots["mir-1"].raw["actions"]["ir_a"]["position_inputs"].append("x")
+    assert cfg.robots["mir-2"].raw["actions"]["ir_a"]["position_inputs"] == ["target_pos"]
+    assert cfg.actions["ir_a"]["position_inputs"] == ["target_pos"]
+
+
+def test_ficheros_del_repo_cargan(tmp_path):
+    # fleet.yaml y fleet-sim.yaml migrados: el driver de cada robot los acepta.
+    env = {"MIR_AUTH": "Basic x"}
+    root = Path(__file__).resolve().parent.parent
+    for name in ("fleet.yaml", "fleet-sim.yaml"):
+        cfg = load_config(root / "config" / name, env_path=tmp_path / "no.env")
+        for r in cfg.robots.values():
+            if r.driver == "mir":
+                assert set(parse_config(r.serial, r.raw, cfg.driver_defaults("mir"), env).actions) == r.action_types
