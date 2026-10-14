@@ -147,6 +147,11 @@ class SimDriver:
         return None
 
     # ----------------------------------------------------------------- jobs
+    def reconfigure(self, other: "SimDriver") -> None:
+        """Gancho opcional (fm/reload.py): adopta la config de `other`. La
+        batería y la pose simuladas siguen donde estaban."""
+        self.cfg = other.cfg
+
     def translate(self, action: Action) -> Job:
         if action.actionType not in self.cfg.action_types:
             raise OrderRejected(E_INVALID_ORDER_ACTION,

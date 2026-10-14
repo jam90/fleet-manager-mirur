@@ -412,16 +412,22 @@ class MirSync:
     cliente REST: corre en un hilo aparte del poll de 1 Hz."""
 
     def __init__(self, serial: str, host: str, auth: str, catalog_dir: Path,
-                 wanted: Iterable[str] = ()):
+                 wanted: Iterable[str] | Callable[[], Iterable[str]] = ()):
         self.serial = serial
         self.catalog_dir = Path(catalog_dir)
-        # Missions que el robot necesita según fleet.yaml: GUID del catálogo o nombre.
-        self.wanted = list(wanted)
+        # Missions que el robot necesita según fleet.yaml: GUID del catálogo o
+        # nombre. El driver pasa una función: así sigue al día si la config
+        # cambia en caliente.
+        self._wanted = wanted
         # Lectura más larga que el poll: un POST /maps sube la imagen entera.
         self.client = MirClient(host, auth, timeout=(2.0, 20.0))
         # Comprobación periódica, vista previa y despliegue pueden pedirse a la
         # vez desde hilos distintos: el cliente REST se usa de uno en uno.
         self.lock = threading.Lock()
+
+    @property
+    def wanted(self) -> list[str]:
+        return list(self._wanted() if callable(self._wanted) else self._wanted)
 
     def catalog(self) -> Catalog:
         # Se relee cada vez: el catálogo cambia al capturar (git, script).

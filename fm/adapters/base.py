@@ -146,6 +146,13 @@ class RobotDriver(Protocol):
         """Gancho opcional: ficha técnica para el `factsheet`. Sin él, el
         core publica una genérica con el nombre del driver."""
 
+    def reconfigure(self, other: "RobotDriver") -> None:
+        """Gancho opcional: adoptar la config de `other`, un driver de la misma
+        marca recién construido con el `fleet.yaml` nuevo (cambio de actions
+        en caliente, fm/reload.py). Sin red: después el core vuelve a llamar
+        a `connect()` desde el hilo de poll. Sin el gancho, cambiar las
+        actions del robot pide reiniciar el FM."""
+
 
 # --- Ganchos opcionales ------------------------------------------------------
 # Un driver puede no implementarlos: el core siempre los llama a través de

@@ -60,6 +60,14 @@ class MirDriver:
         # tanto si se para a mano como si falla, y solo el message lo distingue.
         self._job_results: dict[str, str] = {}
 
+    def reconfigure(self, other: "MirDriver") -> None:
+        """Gancho opcional (fm/reload.py): adopta la config de `other`, un
+        driver recién construido con el `fleet.yaml` nuevo. Sin red: los
+        índices de las missions nuevas los carga el próximo `connect()`, que
+        el core pide en el hilo de poll. Hasta entonces se conservan los
+        índices actuales (todas las missions del grupo ya están indexadas)."""
+        self.cfg = other.cfg
+
     # ------------------------------------------------------------- conexión
     def connect(self) -> bool:
         """Resuelve nombres → GUID. Tolerante: si falla, se reintenta en el
@@ -211,7 +219,12 @@ class MirDriver:
         """Capacidad opcional (no está en `RobotDriver`): la web la busca con
         `getattr` para la pestaña Sincronización. Ver `sync.py`."""
         from fm.adapters.mir.sync import MirSync   # import tardío: solo si se usa
+        return MirSync(self.serial, self.cfg.host, self.cfg.auth, catalog_dir, self.sync_wanted)
+
+    def sync_wanted(self) -> list[str]:
+        """Missions que este robot necesita según su config ACTUAL (cambia al
+        reconfigurar en caliente): las de sus actions y la de carga."""
         wanted = [a.mission for a in self.cfg.actions.values()]
         if self.cfg.charge_mission:
             wanted.append(self.cfg.charge_mission)
-        return MirSync(self.serial, self.cfg.host, self.cfg.auth, catalog_dir, wanted)
+        return wanted

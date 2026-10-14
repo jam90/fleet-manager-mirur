@@ -105,8 +105,10 @@ traducir: el `Dispatcher` prueba el siguiente del ranking (decisión 89).
 ### 2.3 Guardar y aplicar
 
 - **Guardar sin perder comentarios:** PyYAML los descarta al reescribir y
-  `fleet.yaml` está comentado a propósito (didáctico). Usar `ruamel.yaml`
-  (dependencia nueva) en modo ida y vuelta.
+  `fleet.yaml` está comentado a propósito (didáctico). ~~Usar `ruamel.yaml`~~
+  **Hecho de otra forma (decisión 96):** se sustituye en el texto solo el
+  valor editado, con la posición que da `yaml.compose`; `ruamel.yaml`
+  normalizaba el formato de líneas no tocadas.
 - Antes de escribir: **validar con el mismo cargador del arranque** (si
   falla, no se guarda y se muestra el error) y dejar copia
   `fleet.yaml.<fecha>.bak`.
@@ -356,9 +358,9 @@ los dos robots y `mirur-tknikav2` renombrado a `mirur-tknika`.
 2. **Pestañas en solo lectura:** matriz action × robot, umbrales, vista de
    flota de sincronización (comparando con los índices actuales por nombre).
    **Hecha (2026-10-14, decisión 95).**
-3. **Edición en el configurador** + guardado con `ruamel.yaml` + recarga,
-   en tres partes: v1 casillas y umbrales, v2 catálogo de actions, v3
-   robots (§2.2).
+3. **Edición en el configurador** + guardado + recarga, en tres partes: v1
+   casillas y umbrales (**hecha el 2026-10-14**, decisiones 96–97), v2
+   catálogo de actions, v3 robots (§2.2).
 4. **Catálogo + GUID estándar + capturar** (missions primero).
 5. **Desplegar missions** con vista previa, idempotente y con
    concurrencia limitada. Adoptar las missions existentes.

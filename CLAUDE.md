@@ -46,8 +46,9 @@
   y pestaña **Sincronización** (`fm/adapters/mir/sync.py`,
   `fm/web/sync_monitor.py`), con los dos robots sincronizados y
   `fleet.yaml` por GUID. Configurador: decisiones 89–94 (2026-10-14) y
-  fases (a) (`fleet.yaml` con catálogo de actions) y (b) (pestaña en solo
-  lectura) hechas. **Siguiente: fase (c) v1, editar casillas y umbrales**
+  fases (a) (`fleet.yaml` con catálogo de actions), (b) (pestaña en solo
+  lectura) y (c) v1 (editar casillas, `battery_min` y umbrales, en
+  caliente) hechas. **Siguiente: v2, crear y editar actions del catálogo**
   (punto 16 de "Pendiente" en `docs/avance.md`).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
@@ -194,6 +195,8 @@ fleet-manager-mirur/
 ├── tests/                         ← pytest sin red; tests/adapters/ ← drivers y contrato
 └── fm/
     ├── config.py                  ← .env + fleet.yaml → parte GENÉRICA (driver, battery_min, action_types, raw)
+    ├── config_edit.py             ← configurador: edita solo el valor en el texto de fleet.yaml + valida + .bak
+    ├── reload.py                  ← aplicar config en caliente entre ticks (Reloader, restart_reasons)
     ├── robot.py                   ← Robot = driver + OrderTracker + última Telemetry
     ├── orders.py                  ← pick_action, OrderTracker (ciclo orderUpdateId, job_status → actionStates)
     ├── assigner.py                ← función pura: actionType + snapshots → robot | rechazo

@@ -20,7 +20,11 @@ Configurador (docs/plan-admin.md §2): `GET /api/config` da lo que el FM leyó
 de `fleet.yaml` (catálogo de actions, qué robot tiene cada una, umbrales). Si
 la sincronización está disponible, añade qué recursos del catálogo necesita
 cada action; la pestaña lo cruza con los informes de `SyncMonitor` para
-pintar en cada casilla si el robot tiene la mission. De momento, solo lectura.
+pintar en cada casilla si el robot tiene la mission. `POST /api/config` guarda
+ediciones (casillas, `battery_min`, umbrales) en `fleet.yaml` sin tocar el
+resto del fichero (`fm/config_edit.py`) y pide al `Reloader` que la config
+nueva se aplique en caliente entre ticks (`fm/reload.py`); el resultado llega
+por el WebSocket con el topic `fm/config`.
 
 Concurrencia: uvicorn corre en un hilo propio con su event loop. Con el hilo
 principal comparte solo `MqttBus` (paho es thread-safe para `publish`;
@@ -45,7 +49,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from fm.adapters.base import describe_actions
-from fm.config import FleetConfig
+from fm.config import ConfigError, FleetConfig, load_config
+from fm.config_edit import EditError, save, validate
 from fm.mqtt_bus import FLEET, MqttBus
 from fm.robot import Robot
 from fm.web.sync_monitor import SyncMonitor
@@ -74,10 +79,23 @@ class CheckIn(BaseModel):
     deep: bool = False
 
 
+class ConfigEditIn(BaseModel):
+    """Ediciones del configurador; ver `fm.config_edit.normalize`."""
+    robots: dict[str, dict[str, Any]] = {}
+    auto_charge: dict[str, Any] = {}
+    assigner: dict[str, Any] = {}
+
+
 class WebServer:
     def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus,
-                 catalog_dir: Path = CATALOG):
+                 catalog_dir: Path = CATALOG, config_path: str | Path | None = None, env_path=None):
         self.cfg, self.robots, self.bus = cfg, robots, bus
+        # Edición de la config: sin `config_path` o sin `reloader` (lo pone
+        # run_fm, que es quien tiene el hilo principal) la pestaña es de solo lectura.
+        self.config_path = Path(config_path) if config_path else None
+        self.env_path = env_path
+        self.reloader = None
+        self._save_lock = threading.Lock()
         # Sincronización: solo los robots cuyo driver la ofrece (capacidad opcional).
         self.syncs = {s: r.driver.make_sync(catalog_dir) for s, r in robots.items()
                       if hasattr(r.driver, "make_sync")}
@@ -130,9 +148,8 @@ class WebServer:
                 "instant_actions": list(INSTANT_ALLOWED)}
 
     def config_info(self) -> dict:
-        """Configuración cargada, para la pestaña Configurador (solo lectura).
-        Es la del arranque: si se edita `fleet.yaml` a mano, hace falta
-        reiniciar el FM para verla aquí."""
+        """Configuración en uso, para la pestaña Configurador. Si `fleet.yaml`
+        se ha editado a mano y no coincide, `file` lo dice (y si pide reiniciar)."""
         robots = []
         for s, r in self.robots.items():
             rc = r.cfg
@@ -156,7 +173,54 @@ class WebServer:
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "assigner": {"prefer_not_charging": self.cfg.prefer_not_charging},
                 "drivers": self.cfg.drivers,
-                "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer}
+                "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
+                "editable": self.config_path is not None and self.reloader is not None,
+                "file": self.file_status()}
+
+    def file_status(self) -> dict | None:
+        """¿El `fleet.yaml` del disco es la config en uso? Si no (editado a
+        mano), qué impide aplicarlo en caliente."""
+        if self.config_path is None:
+            return None
+        try:
+            disk = load_config(self.config_path, self.env_path)
+        except ConfigError as e:
+            return {"same": False, "error": str(e)}
+        if disk == self.cfg:
+            return {"same": True}
+        from fm.reload import restart_reasons
+        return {"same": False, "restart": restart_reasons(self.cfg, disk, self.robots)}
+
+    def _check_editable(self) -> Path:
+        if self.config_path is None or self.reloader is None:
+            raise HTTPException(501, "este FM no tiene la edición de la config activada")
+        return self.config_path
+
+    def save_config(self, edits: dict) -> dict:
+        """Guarda las ediciones y pide aplicarlas en caliente (hilo web)."""
+        path = self._check_editable()
+        with self._save_lock:                # dos navegadores guardando a la vez
+            try:
+                res = save(path, edits, self.env_path)
+            except (EditError, ConfigError) as e:
+                raise HTTPException(400, str(e))
+            if not res.changed:
+                return {"changed": False}
+            restart = self.reloader.request(res.cfg)
+        log.info("[web] fleet.yaml guardado (copia en %s)%s", res.backup.name,
+                 f"; requiere reiniciar: {'; '.join(restart)}" if restart else "")
+        return {"changed": True, "backup": res.backup.name, "restart": restart}
+
+    def reload_config(self) -> dict:
+        """Aplica el `fleet.yaml` tal como está en disco (editado a mano)."""
+        path = self._check_editable()
+        try:
+            cfg = validate(path, self.env_path)
+        except ConfigError as e:
+            raise HTTPException(400, str(e))
+        if cfg == self.cfg:
+            return {"changed": False}
+        return {"changed": True, "restart": self.reloader.request(cfg)}
 
     # ------------------------------------------------------- sincronización
     def sync_status(self, serial: str) -> dict:
@@ -224,8 +288,16 @@ class WebServer:
             return self.fleet_info()
 
         @app.get("/api/config")
-        def config():                       # `def`: lee catalog/ del disco
+        def config():                       # `def`: lee catalog/ y fleet.yaml del disco
             return self.config_info()
+
+        @app.post("/api/config")
+        def config_save(body: ConfigEditIn):
+            return self.save_config(body.model_dump())
+
+        @app.post("/api/config/reload")
+        def config_reload():
+            return self.reload_config()
 
         @app.post("/api/fleet/order")
         async def fleet_order(body: FleetOrderIn):

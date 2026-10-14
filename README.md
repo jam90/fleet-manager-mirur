@@ -377,11 +377,18 @@ sabe nada de MiR.
 Dos pestañas más, para el profesor y no para el operario (en la barra lateral,
 debajo; enlazables con `#configurador` y `#sincronizacion`):
 
-- **Configurador** (`GET /api/config`, de momento solo lectura): la matriz
-  action × robot de `fleet.yaml`, con una marca por casilla que dice si el
-  robot tiene grabada la mission y lo que usa (✓ / ✗ falta / ! distinta),
-  según la última comprobación de Sincronización; los umbrales, los robots y
-  el catálogo de actions. Muestra la configuración con la que arrancó el FM.
+- **Configurador** (`GET /api/config`): la matriz action × robot de
+  `fleet.yaml`, con una marca por casilla que dice si el robot tiene grabada
+  la mission y lo que usa (✓ / ✗ falta / ! distinta), según la última
+  comprobación de Sincronización; los umbrales, los robots y el catálogo de
+  actions. **Editar** permite cambiar las casillas, el `battery_min` de cada
+  robot y los umbrales (`POST /api/config`): se valida con el mismo cargador
+  del arranque, se deja copia `config/fleet.yaml.<fecha>.bak` y en el
+  fichero solo cambia el valor editado (comentarios y formato intactos). Se
+  aplica **en caliente**, entre dos ticks; lo estructural (robots nuevos o
+  quitados, host, driver, `drivers:`, MQTT) se guarda pero pide reiniciar
+  el FM, y la pestaña lo avisa. Si `fleet.yaml` se edita a mano con el FM en
+  marcha, la pestaña lo detecta y ofrece **Aplicar el fichero**.
 - **Sincronización**: lleva a cada robot lo que hay en `catalog/` (missions,
   positions, mapas…) con los mismos GUIDs en toda la flota
   (`docs/plan-admin.md` §3).
@@ -440,6 +447,8 @@ robot queda ocupado para siempre y no sale del dock. La de `mirur-tknika`
 ```
 run_fm.py               punto de entrada
 fm/config.py            .env + fleet.yaml → dataclasses
+fm/config_edit.py       edición de fleet.yaml desde el configurador (solo el valor editado)
+fm/reload.py            aplicar una config nueva en caliente, entre ticks
 fm/robot.py             runtime por robot: driver + OrderTracker + última Telemetry
 fm/orders.py            OrderTracker: ciclo orderUpdateId + seguimiento del job (vía driver)
 fm/assigner.py          assign(): función pura

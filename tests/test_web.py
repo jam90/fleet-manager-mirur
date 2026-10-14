@@ -197,3 +197,72 @@ def test_config_con_lo_que_necesita_cada_action():
     assert info["actions"][0]["needs"] == {"required": ["g1"]} and info["robots"][0]["sync"] is True
     sync.action_needs = lambda defs: 1 / 0          # catálogo roto: la pestaña sigue
     assert TestClient(srv.app).get("/api/config").json()["actions"][0]["needs"] is None
+
+
+# --------------------------------------------------- configurador: edición
+SIM_YAML = """\
+actions:
+  coger:
+  dejar:
+robots:
+  sim-1:
+    driver: sim
+    battery_min: 25
+    actions: [coger]   # comentario que debe quedarse
+"""
+
+
+def _server_editable(tmp_path):
+    from fm.adapters import make_driver
+    from fm.config import load_config
+    from fm.reload import Reloader
+    p = tmp_path / "fleet.yaml"
+    p.write_text(SIM_YAML, encoding="utf-8")
+    env = tmp_path / "no.env"
+    cfg = load_config(p, env)
+    robots = {s: Robot(rc, make_driver(rc, cfg), cfg.auto_charge) for s, rc in cfg.robots.items()}
+    bus = FakeBus({"sim-1": "SIM"})
+    srv = WebServer(cfg, robots, bus, config_path=p, env_path=env)
+    notes = []
+    srv.reloader = Reloader(cfg, robots, [srv], notify=notes.append)
+    return srv, p, notes
+
+
+def test_config_guardar_y_aplicar(tmp_path):
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    info = c.get("/api/config").json()
+    assert info["editable"] and info["file"] == {"same": True}
+    r = c.post("/api/config", json={"robots": {"sim-1": {"actions": ["coger", "dejar"]}},
+                                    "auto_charge": {"battery_floor": 15}}).json()
+    assert r["changed"] and r["restart"] == [] and r["backup"].endswith(".bak")
+    assert "actions: [coger, dejar]  # comentario que debe quedarse" in p.read_text(encoding="utf-8")
+    srv.reloader.apply_pending()                     # lo que hace el hilo principal en el tick
+    assert notes == [{"applied": True}]
+    info = c.get("/api/config").json()
+    assert info["robots"][0]["actions"] == ["coger", "dejar"] and info["auto_charge"]["battery_floor"] == 15
+    assert info["file"] == {"same": True}
+    # sin cambios / inválida
+    assert c.post("/api/config", json={"auto_charge": {"battery_floor": 15}}).json() == {"changed": False}
+    bad = c.post("/api/config", json={"robots": {"sim-1": {"actions": ["volar"]}}})
+    assert bad.status_code == 400 and "catálogo" in bad.json()["detail"]
+
+
+def test_config_editada_a_mano(tmp_path):
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    p.write_text(SIM_YAML.replace("battery_min: 25", "battery_min: 30"), encoding="utf-8")
+    assert c.get("/api/config").json()["file"] == {"same": False, "restart": []}
+    assert c.post("/api/config/reload").json() == {"changed": True, "restart": []}
+    srv.reloader.apply_pending()
+    assert srv.robots["sim-1"].cfg.battery_min == 30
+    p.write_text(SIM_YAML.replace("driver: sim", "driver: sim\n    pose: [0, 0, 0]"), encoding="utf-8")
+    # battery_min vuelve a 25 (en caliente) y aparece pose (pide reiniciar)
+    assert c.get("/api/config").json()["file"]["restart"] == ["robots.sim-1: cambia pose"]
+
+
+def test_config_sin_edicion_activada():
+    srv, _ = _server()
+    c = TestClient(srv.app)
+    assert c.get("/api/config").json()["editable"] is False
+    assert c.post("/api/config", json={}).status_code == 501

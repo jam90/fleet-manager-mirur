@@ -45,6 +45,9 @@ class Robot:
         self.poll_failures = 0           # fallos de red consecutivos
         self.next_poll_at = 0.0          # no volver a preguntar al robot antes de esto
         self.next_connect_at = 0.0       # no reintentar connect() antes de esto
+        # Config cambiada en caliente (fm/reload.py): volver a cargar los
+        # índices del driver en el próximo poll, que corre en el hilo del robot.
+        self.reindex = False
         self.orders = OrderTracker(self.serial)
         self.charge = ChargeGuard(self.serial, auto_charge or AutoChargeConfig())
 
@@ -85,7 +88,10 @@ class Robot:
             self.log.info("vuelve a responder tras %d fallos", self.poll_failures)
         self.poll_failures = 0
         self.next_poll_at = 0.0
-        if not self.connected and now >= self.next_connect_at:
+        if (not self.connected or self.reindex) and now >= self.next_connect_at:
+            # Se baja la bandera ANTES de conectar: si la config vuelve a
+            # cambiar mientras tanto, el siguiente poll reindexa otra vez.
+            self.reindex = False
             if not self.connect():       # reintento tras un arranque sin red
                 self.next_connect_at = now + CONNECT_RETRY_S
         self.orders.poll(self.driver)

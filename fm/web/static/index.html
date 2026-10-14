@@ -271,6 +271,13 @@
   .c-ok { color: var(--ok); } .c-falta { color: var(--warn); } .c-distinta { color: var(--bad); } .c-nd { color: var(--ink-3); }
   .warns { margin: 0; padding-left: 18px; font-size: 13px; color: var(--warn); }
   .warnline { display: block; color: var(--warn); font-weight: 700; font-size: 13px; }
+  .cfg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-block: 12px; }
+  .cfg-bar .tag { margin: 0; }
+  .cfg-msg.ok { color: var(--ok); font-weight: 700; } .cfg-msg.bad { color: var(--bad); font-weight: 700; }
+  .cfg-msg.warn { color: var(--warn); font-weight: 700; }
+  .num-in { font: inherit; width: 6em; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+            background: var(--surface); color: var(--ink); }
+  .num-in:focus { outline: 2px solid var(--accent); outline-offset: 0; }
   .cfg-robot { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .cfg-robot .serial { color: var(--navy); }
   .cfg-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
@@ -416,17 +423,41 @@
     </section>
   </main>
 
-  <!-- ===== Configurador (docs/plan-admin.md §2). Fase (b): solo lectura de
-       lo que el FM cargó de fleet.yaml (GET /api/config). Cada casilla de la
-       matriz cruza lo que necesita la action (sus recursos del catálogo) con
-       el último informe de SyncMonitor de ese robot (el mismo que usa la
-       pestaña Sincronización), así que se actualiza sola. ===== -->
+  <!-- ===== Configurador (docs/plan-admin.md §2). Muestra la config en uso
+       (GET /api/config). Cada casilla de la matriz cruza lo que necesita la
+       action (sus recursos del catálogo) con el último informe de
+       SyncMonitor de ese robot (el mismo que usa la pestaña Sincronización),
+       así que se actualiza sola. «Editar» (fase c v1) cambia casillas,
+       battery_min y umbrales sobre un borrador; «Guardar» manda solo lo que
+       ha cambiado (POST /api/config) y el FM lo aplica entre ticks; el
+       resultado llega por el WebSocket (topic fm/config). ===== -->
   <main v-show="tab === 'configurador'">
     <h2 class="page-title">Configurador</h2>
     <p class="page-sub">Lo que hoy se edita a mano en <code>config/fleet.yaml</code>. Pensado para el profesor, no para el operario.</p>
-    <div class="todo"><span class="tag">solo lectura</span>
-      Es la configuración con la que arrancó el FM. Para cambiarla, edita <code>config/fleet.yaml</code> y reinicia el FM;
-      la edición desde aquí llega en la siguiente fase.</div>
+    <div class="panel cfg-bar">
+      <template v-if="!cfgState.editable">
+        <span class="tag">solo lectura</span>
+        <span class="hint">Este FM no tiene activada la edición. Para cambiar la config, edita <code>config/fleet.yaml</code> y reinicia el FM.</span>
+      </template>
+      <template v-else-if="!cfgEdit.on">
+        <button class="btn primary" id="cfg-edit" @click="startEdit" :disabled="!cfgState.robots.length">Editar</button>
+        <span class="hint">Casillas de la matriz, batería mínima de cada robot y umbrales. Se aplica en caliente, sin reiniciar.</span>
+      </template>
+      <template v-else>
+        <button class="btn primary" id="cfg-save" @click="saveConfig" :disabled="!nChanges || cfgEdit.saving">Guardar {{ nChanges ? '(' + nChanges + ')' : '' }}</button>
+        <button class="btn" id="cfg-cancel" @click="cancelEdit" :disabled="cfgEdit.saving">Descartar</button>
+        <span class="hint">Se guarda en <code>fleet.yaml</code> cambiando solo esas líneas (comentarios incluidos), con copia <code>.bak</code>.</span>
+      </template>
+      <span class="feedback cfg-msg" :class="cfgEdit.msgCls" v-if="cfgEdit.msg">{{ cfgEdit.msg }}</span>
+    </div>
+    <div class="err warn" v-if="cfgState.file && !cfgState.file.same">
+      <template v-if="cfgState.file.error"><b>fleet.yaml no es válido ahora mismo</b> (¿editado a mano?): {{ cfgState.file.error }}.
+        El FM sigue con la config de antes.</template>
+      <template v-else-if="cfgState.file.restart && cfgState.file.restart.length"><b>fleet.yaml tiene cambios sin aplicar que piden reiniciar el FM:</b>
+        {{ cfgState.file.restart.join('; ') }}.</template>
+      <template v-else><b>fleet.yaml se ha cambiado a mano</b> y no coincide con la config en uso.
+        <button class="btn" @click="reloadFile" :disabled="cfgEdit.saving">Aplicar el fichero</button></template>
+    </div>
     <p class="empty" v-if="cfgState.error">{{ cfgState.error }}</p>
 
     <div class="panel">
@@ -442,14 +473,15 @@
           <thead>
             <tr><th scope="col">action</th>
               <th scope="col" v-for="r in cfgState.robots" :key="r.serial">{{ r.serial }}
-                <span class="muted sub">{{ r.actions.length }} actions</span></th></tr>
+                <span class="muted sub">{{ (cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions : r.actions).length }} actions</span></th></tr>
           </thead>
           <tbody>
             <tr v-for="a in cfgState.actions" :key="a.name">
               <th scope="row"><b>{{ a.name }}</b>
                 <span class="muted sub" v-if="missionLabel(a)">{{ missionLabel(a) }}</span></th>
               <td v-for="r in cfgState.robots" :key="r.serial" :class="{ on: cell(a, r).enabled }" :title="cell(a, r).title">
-                <input type="checkbox" disabled :checked="cell(a, r).enabled" :aria-label="a.name + ' en ' + r.serial">
+                <input type="checkbox" :disabled="!cfgEdit.on" :checked="cell(a, r).enabled" @change="toggleAction(a, r)"
+                       :aria-label="a.name + ' en ' + r.serial">
                 <span class="cm" :class="'c-' + cell(a, r).state">{{ cell(a, r).mark }}</span>
                 <a class="fix" v-if="cell(a, r).enabled && cell(a, r).state === 'falta'" href="#sincronizacion">sincronizar</a>
               </td>
@@ -467,18 +499,24 @@
       <div class="panel">
         <h3>Umbrales</h3>
         <dl class="kv">
-          <dt>Ir a cargar por debajo de</dt><dd>{{ cfgState.auto_charge.battery_floor }} % <code class="guid">auto_charge.battery_floor</code></dd>
-          <dt>Prioridad de la carga</dt><dd>{{ cfgState.auto_charge.priority }} <code class="guid">auto_charge.priority</code></dd>
-          <dt>Espera si la carga aborta</dt><dd>{{ cfgState.auto_charge.abort_cooldown_s }} s <code class="guid">auto_charge.abort_cooldown_s</code></dd>
-          <dt>No sacar al que carga</dt><dd>{{ cfgState.assigner.prefer_not_charging ? 'sí' : 'no' }}
-            <code class="guid">assigner.prefer_not_charging</code></dd>
+          <template v-for="f in THRESHOLDS" :key="f.key">
+            <dt><label :for="'cfg-' + f.key">{{ f.label }}</label></dt>
+            <dd v-if="cfgEdit.on && f.unit !== 'bool'"><input class="num-in" type="number" :id="'cfg-' + f.key" :min="0" :step="f.step"
+                  v-model.number="cfgEdit.draft[f.block][f.key]"> {{ f.unit }}
+              <code class="guid">{{ f.block }}.{{ f.key }}</code></dd>
+            <dd v-else-if="cfgEdit.on"><input type="checkbox" :id="'cfg-' + f.key" v-model="cfgEdit.draft[f.block][f.key]">
+              <code class="guid">{{ f.block }}.{{ f.key }}</code></dd>
+            <dd v-else>{{ f.unit === 'bool' ? (cfgState[f.block][f.key] ? 'sí' : 'no') : cfgState[f.block][f.key] + ' ' + f.unit }}
+              <code class="guid">{{ f.block }}.{{ f.key }}</code></dd>
+          </template>
         </dl>
         <p class="hint">Batería mínima para aceptar orders (<code>battery_min</code>); debe ser mayor que la de ir a cargar.</p>
         <dl class="kv">
           <template v-for="r in cfgState.robots" :key="r.serial">
-            <dt>{{ r.serial }}</dt>
-            <dd>{{ r.battery_min }} %
-              <span class="warnline" v-if="r.battery_min <= cfgState.auto_charge.battery_floor">⚠ no supera {{ cfgState.auto_charge.battery_floor }} %: sin histéresis</span></dd>
+            <dt><label :for="'cfg-bmin-' + r.serial">{{ r.serial }}</label></dt>
+            <dd><input v-if="cfgEdit.on" class="num-in" type="number" :id="'cfg-bmin-' + r.serial" min="0" max="100" step="1"
+                       v-model.number="cfgEdit.draft.robots[r.serial].battery_min"><template v-else>{{ r.battery_min }}</template> %
+              <span class="warnline" v-if="batteryMin(r) <= floor()">⚠ no supera {{ floor() }} %: sin histéresis</span></dd>
           </template>
         </dl>
       </div>
@@ -673,6 +711,7 @@ createApp({
     // ---------------- entrada: espejo del bus MQTT
     function onMessage(topic, payload) {
       if (topic.startsWith('fm/sync/')) { onSync(topic.slice(8), payload); return; }
+      if (topic === 'fm/config') { onConfigApplied(payload); return; }
       const pt = parseTopic(topic);
       if (!pt) return;
       if (pt.serial === 'fleet') {
@@ -993,9 +1032,78 @@ createApp({
       }
     }
 
-    // ---------------- configurador (docs/plan-admin.md §2), solo lectura
+    // ---------------- configurador (docs/plan-admin.md §2)
     const cfgState = reactive({ actions: [], robots: [], drivers: {}, error: '',
-                                auto_charge: {}, assigner: {} });
+                                auto_charge: {}, assigner: {}, editable: false, file: null });
+    // Edición (fase c v1): un borrador con lo editable; al guardar se manda
+    // solo lo que difiere de la config en uso.
+    const cfgEdit = reactive({ on: false, draft: null, saving: false, msg: '', msgCls: '', waitTimer: null });
+    const THRESHOLDS = [
+      { block: 'auto_charge', key: 'battery_floor', label: 'Ir a cargar por debajo de', unit: '%', step: 1 },
+      { block: 'auto_charge', key: 'priority', label: 'Prioridad de la carga', unit: '', step: 1 },
+      { block: 'auto_charge', key: 'abort_cooldown_s', label: 'Espera si la carga aborta', unit: 's', step: 5 },
+      { block: 'assigner', key: 'prefer_not_charging', label: 'No sacar al que carga', unit: 'bool' },
+    ];
+    const say = (msg, cls = '') => { cfgEdit.msg = msg; cfgEdit.msgCls = cls; };
+    function startEdit() {
+      cfgEdit.draft = {
+        robots: Object.fromEntries(cfgState.robots.map(r => [r.serial, { actions: [...r.actions], battery_min: r.battery_min }])),
+        auto_charge: { ...cfgState.auto_charge },
+        assigner: { ...cfgState.assigner },
+      };
+      cfgEdit.on = true; say('');
+    }
+    function cancelEdit() { cfgEdit.on = false; cfgEdit.draft = null; say(''); }
+    function toggleAction(a, r) {
+      const list = cfgEdit.draft.robots[r.serial].actions, i = list.indexOf(a.name);
+      if (i >= 0) list.splice(i, 1); else list.push(a.name);
+    }
+    const sameSet = (x, y) => x.length === y.length && x.every(v => y.includes(v));
+    // Solo lo cambiado, con la forma que espera POST /api/config. Las actions
+    // van en el orden del catálogo, para que la línea del YAML quede ordenada.
+    const cfgEdits = computed(() => {
+      const d = cfgEdit.draft, out = {};
+      if (!d) return out;
+      const order = cfgState.actions.map(a => a.name);
+      for (const r of cfgState.robots) {
+        const dr = d.robots[r.serial], e = {};
+        if (!sameSet(dr.actions, r.actions)) e.actions = order.filter(n => dr.actions.includes(n));
+        if (dr.battery_min !== r.battery_min) e.battery_min = dr.battery_min;
+        if (Object.keys(e).length) (out.robots = out.robots || {})[r.serial] = e;
+      }
+      for (const f of THRESHOLDS)
+        if (d[f.block][f.key] !== cfgState[f.block][f.key]) (out[f.block] = out[f.block] || {})[f.key] = d[f.block][f.key];
+      return out;
+    });
+    const nChanges = computed(() => Object.values(cfgEdits.value)
+      .reduce((n, b) => n + Object.values(b).reduce((m, v) => m + (v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).length : 1), 0), 0));
+    const floor = () => cfgEdit.on ? cfgEdit.draft.auto_charge.battery_floor : cfgState.auto_charge.battery_floor;
+    const batteryMin = r => cfgEdit.on ? cfgEdit.draft.robots[r.serial].battery_min : r.battery_min;
+    async function postConfig(url, body) {
+      cfgEdit.saving = true; say('guardando…');
+      try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                       body: body ? JSON.stringify(body) : undefined });
+        const out = await res.json();
+        if (!res.ok) { say('no se ha guardado: ' + out.detail, 'bad'); return; }
+        if (!out.changed) { say('no había nada que cambiar'); cancelEdit(); return; }
+        const where = out.backup ? `Guardado (copia en ${out.backup}). ` : '';
+        if (out.restart.length) { say(where + 'Requiere reiniciar el FM: ' + out.restart.join('; '), 'warn'); cancelEdit(); loadConfig(); return; }
+        say(where + 'Aplicando…');
+        // Si el aviso del WebSocket no llega (desconectado), se relee igual.
+        cfgEdit.waitTimer = setTimeout(() => { onConfigApplied({ applied: true, late: true }); }, 4000);
+      } catch (e) { say('no se pudo contactar con el FM', 'bad'); }
+      finally { cfgEdit.saving = false; }
+    }
+    const saveConfig = () => postConfig('/api/config', cfgEdits.value);
+    const reloadFile = () => postConfig('/api/config/reload');
+    // Aviso del hilo principal por el WebSocket (topic fm/config).
+    function onConfigApplied(p) {
+      clearTimeout(cfgEdit.waitTimer);
+      if (p.applied) { say(p.late ? 'Guardado; recargando la config…' : 'Aplicado en caliente.', 'ok'); cfgEdit.on = false; cfgEdit.draft = null; }
+      else say('Guardado, pero no aplicado: ' + (p.error || 'requiere reiniciar el FM: ' + (p.restart || []).join('; ')), 'bad');
+      loadConfig(); loadFleet();
+    }
     async function loadConfig() {
       try {
         Object.assign(cfgState, await (await fetch('/api/config')).json(), { error: '' });
@@ -1004,7 +1112,7 @@ createApp({
     // Una casilla: ¿habilitada? y ¿tiene el robot lo que la action necesita?
     // El estado sale del último informe de SyncMonitor (syncState.reports).
     function cell(a, r) {
-      const enabled = r.actions.includes(a.name);
+      const enabled = cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions.includes(a.name) : r.actions.includes(a.name);
       const out = (state, mark, detail) => ({ enabled, state, mark, detail, title: `${a.name} en ${r.serial}: ${detail}` });
       if (!r.sync) return out('na', '', enabled ? 'habilitada (el driver no ofrece sincronización)' : 'no habilitada');
       const n = a.needs;
@@ -1061,6 +1169,7 @@ createApp({
              canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
              fleetRows, whereIs, syncCheck, prepare,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
+             cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');

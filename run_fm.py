@@ -24,6 +24,7 @@ from fm.adapters import make_driver  # noqa: E402
 from fm.config import ConfigError, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus  # noqa: E402
+from fm.reload import Reloader  # noqa: E402
 from fm.robot import Robot  # noqa: E402
 from fm.vda5050.factsheet import factsheet_for  # noqa: E402
 from fm.vda5050.state import State  # noqa: E402
@@ -67,7 +68,8 @@ def main(argv=None) -> int:
     web = None
     if args.web_port:
         from fm.web.server import WebServer   # import tardío: fastapi solo si se usa
-        web = WebServer(cfg, robots, bus)     # instala el espejo antes de conectar al broker
+        web = WebServer(cfg, robots, bus,     # instala el espejo antes de conectar al broker
+                        config_path=args.config, env_path=args.env)
     bus.start()
 
     stop = False
@@ -116,12 +118,20 @@ def main(argv=None) -> int:
     dispatcher = Dispatcher(cfg, robots, bus, lambda r: publish_state(r, bus), publish_factsheet)
     dispatcher.subscribe()
 
+    # Config editada desde el configurador: la web la encola y se aplica aquí,
+    # entre ticks (fm/reload.py, decisión 91).
+    reloader = Reloader(cfg, robots, [dispatcher] + ([web] if web else []), publish_factsheet,
+                        notify=(lambda p: web.mirror("fm/config", p)) if web else (lambda p: None))
+    if web is not None:
+        web.reloader = reloader
+
     if web is not None:
         web.start(port=args.web_port)
 
     try:
         while not stop:
             t0 = time.monotonic()
+            reloader.apply_pending()
             dispatcher.drain()
             poll_all(grace)
             for r in robots.values():

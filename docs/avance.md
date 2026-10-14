@@ -1585,6 +1585,59 @@ Comprobada también a 390 px de ancho.
     La pestaña muestra la configuración del arranque; hasta la fase (c),
     para cambiarla se edita `fleet.yaml` y se reinicia el FM.
 
+## 2026-10-14 — Fase (c) v1 del configurador: editar casillas y umbrales
+
+`pytest`: 155 en verde (23 nuevos). Probado con la flota simulada (FM
+completo: guardar por API → aplicado en caliente en el tick siguiente, el
+`factsheet` retenido de `sim-1` cambia, un `pose` editado a mano se detecta
+como "pide reiniciar") y la UI con la config real copiada al scratchpad (solo
+la parte web, sin broker): Editar → marcar `recoger_pieza` en mir-1 y bajar
+`battery_floor` a 18 → Guardar → "Aplicado en caliente", y en el fichero
+solo cambian esas dos líneas.
+
+**Incidente durante la prueba (sin consecuencias):** el FM simulado de
+prueba se lanzó mientras el usuario tenía el FM real en marcha (arrancado
+unos minutos antes). Los dos usan el client id MQTT `fleet-manager` y se
+echaron mutuamente del broker cada 2 s durante ~45 s; una `fleet/order`
+de prueba (`dejar`) se publicó en el topic real y se perdió en una de esas
+desconexiones (comprobado: ningún MiR recibió order ni se movió;
+`fleet/connection` retenido quedó `ONLINE`, del FM real). Las pruebas de la
+web se hacen desde ahora sin broker (`WebServer` + `FakeBus`), y antes de
+lanzar un FM de prueba se comprueba que no haya otro (`pgrep -af run_fm`).
+Pendiente de decidir: client id distinto por instancia (punto 21).
+
+96. **`fleet.yaml` se edita en el texto, sustituyendo solo el valor**
+    (`fm/config_edit.py`), con la posición exacta de cada nodo que da
+    `yaml.compose` de PyYAML, en vez de `ruamel.yaml` (previsto en el
+    plan). Se probó `ruamel.yaml` en ida y vuelta sin editar nada y no
+    dejaba el fichero igual: `{ min: 1 }` → `{min: 1}` y la lista partida
+    de mir-2 en una línea de 110 caracteres. Así el diff en git es la línea
+    cambiada y no hace falta dependencia nueva. Si el valor cambia de
+    largo, el comentario de la derecha se recoloca en su columna. Una
+    clave que falta se inserta como primera de su bloque, con su sangría
+    (o el bloque `auto_charge`/`assigner` al final si falta entero).
+    Antes de escribir: validación con el cargador del arranque y con el
+    driver de cada robot; luego copia `fleet.yaml.<AAAAMMDD-hhmmss>.bak` y
+    escritura atómica (`.tmp` + `os.replace`). `config/*.bak` y
+    `config/*.tmp` van al `.gitignore`.
+97. **En caliente con el `Reloader` (`fm/reload.py`).** `restart_reasons`
+    decide: robots que entran o salen, cualquier clave de un robot que no
+    sea `actions`/`battery_min`, el bloque `drivers:` o MQTT → reiniciar;
+    lo demás, en caliente. La web encola la config validada y el hilo
+    principal la aplica al inicio del tick, toda o nada (primero construye
+    los drivers nuevos; si uno falla, no cambia nada). Al robot cuyas
+    actions cambian: gancho opcional nuevo del driver `reconfigure(otro)`
+    (adopta la config de un driver recién construido, sin red) y
+    `Robot.reindex`, que hace que el hilo de poll vuelva a llamar a
+    `connect()`; se republica su `factsheet`. Mientras tanto se conservan
+    los índices viejos (todas las missions del grupo ya están). Sin
+    `reconfigure`, cambiar actions pide reiniciar. `MirSync.wanted` lee la
+    config actual del driver, para que la Sincronización siga al día.
+    Edición manual de `fleet.yaml` con el FM en marcha: `GET /api/config`
+    compara el fichero con la config en uso y la pestaña ofrece "Aplicar
+    el fichero" (o dice qué pide reiniciar). El resultado del tick llega a
+    la web por el WebSocket (`fm/config`).
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -1713,10 +1766,12 @@ robot después).
 16. **Configurador del FM** (`docs/plan-admin.md` §2, decisiones 91–93).
     Orden: ~~(a) fase 1: `fleet.yaml` con catálogo único de actions~~
     **hecha el 2026-10-14** (decisión 94); ~~(b) pestaña en solo
-    lectura~~ **hecha el 2026-10-14** (decisión 95); (c) edición v1 (casillas, umbrales, `battery_min`) con
-    `ruamel.yaml` (sin perder comentarios), validación con el cargador,
-    copia `.bak` y recarga en caliente entre ticks; v2, actions del
-    catálogo; v3, altas y bajas de robots con reinicio.
+    lectura~~ **hecha el 2026-10-14** (decisión 95); ~~(c) edición v1~~
+    (casillas, umbrales, `battery_min`) **hecha el 2026-10-14**
+    (decisiones 96–97). Siguen v2, crear y editar actions del catálogo, y
+    v3, altas y bajas de robots con reinicio. Sin probar con el FM real:
+    cambiar las actions de un MiR en caliente y ver que reindexa y que el
+    asignador ya lo tiene en cuenta.
 17. ~~**Asignador: descartar el robot que no tiene grabada la mission**~~
     Cubierto por la decisión 89 (decisión 90). La mission "distinta" queda
     como aviso en la matriz.
@@ -1732,3 +1787,8 @@ robot después).
     (GUIDs propios). Pasar a `suberri_mirur` (mismos GUIDs en toda la
     flota) es decisión del usuario: cambia el `mapId` del `state` y las
     positions que resuelve el driver por nombre en el mapa activo.
+21. **Client id MQTT fijo (`fleet-manager`):** dos FM contra el mismo
+    broker se echan mutuamente (visto el 2026-10-14 con un FM de prueba).
+    Opciones: añadir el PID o un sufijo aleatorio al client id, o un
+    `--client-id`; o detectar al arrancar que ya hay un FM `ONLINE` y
+    negarse a arrancar. A decidir.
