@@ -80,7 +80,8 @@ class CheckIn(BaseModel):
 
 
 class ConfigEditIn(BaseModel):
-    """Ediciones del configurador; ver `fm.config_edit.normalize`."""
+    """Ediciones del configurador; ver `fm.config_edit.plan`."""
+    actions: dict[str, dict[str, Any] | None] = {}
     robots: dict[str, dict[str, Any]] = {}
     auto_charge: dict[str, Any] = {}
     assigner: dict[str, Any] = {}
@@ -167,8 +168,16 @@ class WebServer:
                 needs = first.action_needs(self.cfg.actions)
             except Exception as e:          # catálogo roto: la pestaña sigue, sin casillas de estado
                 log.warning("[web] no se pudo cruzar el catálogo de actions con catalog/: %s", e)
+        # Para el formulario de actions: missions del catálogo y sus inputs.
+        choices = None
+        if first is not None and hasattr(first, "form_choices"):
+            try:
+                choices = first.form_choices()
+            except Exception as e:
+                log.warning("[web] no se pudieron leer las missions de catalog/: %s", e)
         return {"actions": [{"name": n, "definition": d, "needs": needs.get(n)}
                             for n, d in self.cfg.actions.items()],
+                "choices": choices,
                 "robots": robots,
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "assigner": {"prefer_not_charging": self.cfg.prefer_not_charging},

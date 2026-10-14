@@ -82,6 +82,19 @@ def is_std(value) -> bool:
     return isinstance(value, str) and value.startswith(PREFIX + "-") and len(value) == 36
 
 
+def guess_input_kind(param: dict) -> str:
+    """Tipo de un input de Blockly por su parámetro en la mission capturada:
+    el de un bloque de movimiento (`id: position`) o con un GUID de position
+    como valor por defecto es una position; con un número, un número; lo
+    demás, texto. Es solo una propuesta para el formulario."""
+    value = param.get("value")
+    if param.get("id") == "position" or (isinstance(value, str) and "position" in value):
+        return "position"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return "number"
+    return "text"
+
+
 # ------------------------------------------------------------------ catálogo
 @dataclass
 class Catalog:
@@ -473,6 +486,26 @@ class MirSync:
     def _preview(self, cat: Catalog, selected: Iterable[str]) -> list[Op]:
         guids = cat.closure(selected)
         return plan(cat, fetch_view(self.client, cat, guids), guids, self.serial)
+
+    def form_choices(self) -> dict:
+        """Para el formulario de actions del configurador (sin red): missions
+        del catálogo con sus inputs de Blockly y el tipo que parece tener cada
+        uno, y los nombres de las positions del catálogo (para la allowlist)."""
+        cat = self.catalog()
+        missions = []
+        for g, d in sorted(cat.items.items(), key=lambda x: x[1]["name"].lower()):
+            if cat.kind(g) != "mission":
+                continue
+            inputs: dict[str, str] = {}
+            for a in d["actions"]:
+                for p in a.get("parameters", []):
+                    if p.get("input_name") and p["input_name"] not in inputs:
+                        inputs[p["input_name"]] = guess_input_kind(p)
+            missions.append({"guid": g, "name": d["name"],
+                             "inputs": [{"name": n, "kind": k} for n, k in inputs.items()]})
+        positions = sorted({d["name"] for g, d in cat.items.items()
+                            if cat.kind(g) == "position" and not d.get("creada_por_mir")})
+        return {"missions": missions, "positions": positions}
 
     def preview(self, selected: Iterable[str]) -> tuple[Catalog, list[Op]]:
         cat = self.catalog()

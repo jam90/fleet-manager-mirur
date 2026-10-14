@@ -1638,6 +1638,41 @@ Pendiente de decidir: client id distinto por instancia (punto 21).
     el fichero" (o dice qué pide reiniciar). El resultado del tick llega a
     la web por el WebSocket (`fm/config`).
 
+## 2026-10-14 — Configurador v2: crear, editar y borrar actions del catálogo
+
+`pytest`: 167 en verde (12 nuevos) más `test_ficheros_del_repo_cargan`,
+que falla por el `fleet.yaml` de trabajo del usuario (a medio editar:
+`traer` habilitada en los robots pero aún sin definir en el catálogo).
+Probado en el navegador con una copia del `fleet.yaml` de HEAD, solo la
+parte web y sin broker: Nueva action `traer` → mission `traer` del catálogo
+→ el formulario propone `n_piezas_pedidas` como número → rango 1–10–1 →
+marcarla en mir-1 (✓; en mir-2 sale ✗ porque no la tiene grabada) →
+Guardar → "Aplicado en caliente"; en el fichero, el bloque nuevo al final
+del catálogo y la línea de mir-1.
+
+98. **Formulario de actions con las claves del driver MiR** (mission,
+    `position_inputs`, `number_inputs` con rango, `required_inputs`,
+    `positions_allowlist`). El core sigue sin interpretarlas:
+    `fm/config_edit.py` escribe la definición que llega y la valida el
+    driver al guardar; el formulario es presentación. Las claves que el
+    formulario no conoce se conservan. Al elegir una mission del catálogo
+    se proponen sus inputs con el tipo que parecen tener
+    (`MirSync.form_choices` / `guess_input_kind`: `id: position` o GUID de
+    position → position; valor numérico → número; lo demás → texto); cada
+    uno se puede dejar "sin declarar". Una mission fuera del catálogo se
+    escribe por nombre, con sus inputs a mano.
+99. **Reglas del catálogo:** no se renombra una action (el `actionType` es
+    el contrato con Node-RED: se crea la nueva y se borra la vieja); solo
+    se borra si ningún robot la tiene marcada (la UI lo impide y, si llega
+    igual, el cargador lo rechaza al validar); una action nueva se puede
+    crear y habilitar en los robots en el mismo "Guardar" (el editor
+    aplica primero el catálogo). En el texto, la edición es **clave a
+    clave**: solo cambian las claves distintas (los comentarios de las
+    demás siguen), una clave nueva va al final de su bloque, una borrada
+    se lleva sus líneas, y el comentario `# <nombre>` de `mission` se
+    pone al día. Una action nueva se añade al final del catálogo con el
+    mismo formato que el resto (bloque, y el rango en flujo).
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -1768,8 +1803,9 @@ robot después).
     **hecha el 2026-10-14** (decisión 94); ~~(b) pestaña en solo
     lectura~~ **hecha el 2026-10-14** (decisión 95); ~~(c) edición v1~~
     (casillas, umbrales, `battery_min`) **hecha el 2026-10-14**
-    (decisiones 96–97). Siguen v2, crear y editar actions del catálogo, y
-    v3, altas y bajas de robots con reinicio. Sin probar con el FM real:
+    (decisiones 96–97); ~~v2, crear y editar actions del catálogo~~
+    **hecha el 2026-10-14** (decisiones 98–99). Sigue v3, altas y bajas
+    de robots con reinicio. Sin probar con el FM real:
     cambiar las actions de un MiR en caliente y ver que reindexa y que el
     asignador ya lo tiene en cuenta.
 17. ~~**Asignador: descartar el robot que no tiene grabada la mission**~~

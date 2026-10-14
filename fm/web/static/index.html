@@ -278,6 +278,15 @@
   .num-in { font: inherit; width: 6em; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
             background: var(--surface); color: var(--ink); }
   .num-in:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .act-form { border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 14px; display: grid; gap: 12px; }
+  .act-form h4 { margin: 0; color: var(--navy); }
+  .act-form .field input:not([type=checkbox]), .act-form .field select { max-width: 32em; }
+  .inputs { border-collapse: collapse; font-size: 13px; font-weight: 400; }
+  .inputs th, .inputs td { text-align: left; padding: 4px 8px 4px 0; vertical-align: middle; }
+  .inputs th { color: var(--ink-3); font-weight: 600; }
+  .num-in.sm { width: 5em; }
+  .allow { display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 400; color: var(--ink); }
+  .deleted { opacity: .55; } .deleted b { text-decoration: line-through; }
   .cfg-robot { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .cfg-robot .serial { color: var(--navy); }
   .cfg-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
@@ -476,11 +485,11 @@
                 <span class="muted sub">{{ (cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions : r.actions).length }} actions</span></th></tr>
           </thead>
           <tbody>
-            <tr v-for="a in cfgState.actions" :key="a.name">
-              <th scope="row"><b>{{ a.name }}</b>
+            <tr v-for="a in viewActions" :key="a.name" :class="{ deleted: a.status === 'borrada' }">
+              <th scope="row"><b>{{ a.name }}</b> <span class="chip" v-if="a.status">{{ a.status }}</span>
                 <span class="muted sub" v-if="missionLabel(a)">{{ missionLabel(a) }}</span></th>
               <td v-for="r in cfgState.robots" :key="r.serial" :class="{ on: cell(a, r).enabled }" :title="cell(a, r).title">
-                <input type="checkbox" :disabled="!cfgEdit.on" :checked="cell(a, r).enabled" @change="toggleAction(a, r)"
+                <input type="checkbox" :disabled="!cfgEdit.on || a.status === 'borrada'" :checked="cell(a, r).enabled" @change="toggleAction(a, r)"
                        :aria-label="a.name + ' en ' + r.serial">
                 <span class="cm" :class="'c-' + cell(a, r).state">{{ cell(a, r).mark }}</span>
                 <a class="fix" v-if="cell(a, r).enabled && cell(a, r).state === 'falta'" href="#sincronizacion">sincronizar</a>
@@ -543,12 +552,70 @@
 
     <div class="panel">
       <h3>Catálogo de actions</h3>
-      <p class="hint">Cada action se define una vez para toda la flota (<code>actions:</code> en <code>fleet.yaml</code>).</p>
+      <p class="hint">Cada action se define una vez para toda la flota (<code>actions:</code> en <code>fleet.yaml</code>).
+        El nombre es el <code>actionType</code> que manda Node-RED: no se renombra (crea la nueva y borra la vieja).</p>
+      <div class="acts" v-if="cfgEdit.on && !actForm.open">
+        <button class="btn" id="act-new" @click="openActForm(null)">Nueva action</button>
+      </div>
+
+      <!-- Formulario de una action (claves del driver MiR: mission e inputs). -->
+      <div class="act-form" v-if="actForm.open">
+        <h4>{{ actForm.isNew ? 'Nueva action' : 'Editar ' + actForm.name }}</h4>
+        <label class="field" v-if="actForm.isNew">Nombre (<code>actionType</code>)
+          <input id="act-name" v-model.trim="actForm.name" placeholder="p. ej. traer" autocomplete="off"></label>
+        <label class="field">Mission
+          <select id="act-mission" v-model="actForm.mission" @change="onMissionChange">
+            <option value="">— elige —</option>
+            <option v-for="m in cfgChoices.missions" :key="m.guid" :value="m.guid">{{ m.name }}</option>
+            <option value="__otra__">Otra (nombre exacto en la web del MiR)…</option>
+          </select></label>
+        <label class="field" v-if="actForm.mission === '__otra__'">Nombre de la mission en la web del MiR
+          <input id="act-mission-other" v-model.trim="actForm.missionOther" autocomplete="off"></label>
+        <p class="hint" v-if="actForm.mission === '__otra__'">No está en el catálogo: no se podrá comprobar ni sincronizar, y sus inputs hay que escribirlos a mano.</p>
+
+        <div class="field">Inputs de la mission
+          <table class="inputs" v-if="actForm.inputs.length">
+            <thead><tr><th>input</th><th>qué es</th><th>rango opcional: mín · máx · paso</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="(i, n) in actForm.inputs" :key="n">
+                <td><code>{{ i.name }}</code></td>
+                <td><select v-model="i.kind" :aria-label="'tipo de ' + i.name">
+                  <option value="position">position (nombre → GUID)</option>
+                  <option value="number">número</option>
+                  <option value="text">texto obligatorio</option>
+                  <option value="none">no declarar</option></select></td>
+                <td><template v-if="i.kind === 'number'">
+                  <input class="num-in sm" type="number" v-model.number="i.min" placeholder="mín" :aria-label="'mínimo de ' + i.name">
+                  <input class="num-in sm" type="number" v-model.number="i.max" placeholder="máx" :aria-label="'máximo de ' + i.name">
+                  <input class="num-in sm" type="number" v-model.number="i.step" placeholder="paso" :aria-label="'paso de ' + i.name"></template></td>
+                <td><button class="btn" v-if="i.manual" @click="actForm.inputs.splice(n, 1)" :aria-label="'quitar ' + i.name">✕</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="hint" v-else>Esta mission no tiene inputs.</p>
+          <div class="acts"><input class="num-in" style="width: 14em" v-model.trim="actForm.newInput" placeholder="añadir input a mano" @keyup.enter="addInput">
+            <button class="btn" @click="addInput" :disabled="!actForm.newInput">Añadir</button></div>
+          <span class="hint">«No declarar»: si la order lo trae y la mission lo tiene, se pasa igual, pero no es obligatorio.</span>
+        </div>
+
+        <div class="field" v-if="actForm.inputs.some(i => i.kind === 'position')">Positions admitidas (ninguna marcada = cualquiera del robot)
+          <div class="allow">
+            <label v-for="p in allowOptions" :key="p"><input type="checkbox" :value="p" v-model="actForm.allow"> {{ p }}</label>
+          </div>
+        </div>
+        <p class="err" v-if="actForm.error">{{ actForm.error }}</p>
+        <div class="acts">
+          <button class="btn primary" id="act-ok" @click="acceptActForm">Aceptar</button>
+          <button class="btn" @click="actForm.open = false">Cancelar</button>
+          <span class="hint">Queda en el borrador: se escribe en <code>fleet.yaml</code> al pulsar «Guardar».</span>
+        </div>
+      </div>
+
       <ul class="cfg-actions">
-        <li v-for="a in cfgState.actions" :key="a.name">
-          <div><b>{{ a.name }}</b>
+        <li v-for="a in viewActions" :key="a.name" :class="{ deleted: a.status === 'borrada' }">
+          <div><b>{{ a.name }}</b> <span class="chip" v-if="a.status">{{ a.status }}</span>
             <span class="muted"> · {{ enabledIn(a).length ? 'en ' + enabledIn(a).join(', ') : 'ningún robot la tiene habilitada' }}</span></div>
-          <dl class="kv">
+          <dl class="kv" v-if="a.status !== 'borrada'">
             <template v-for="(v, k) in a.definition" :key="k">
               <dt>{{ k }}</dt>
               <dd v-if="k === 'mission' && a.needs && a.needs.mission_name">{{ a.needs.mission_name }}<code class="guid">{{ v }}</code></dd>
@@ -556,6 +623,15 @@
                 <span class="warnline" v-if="k === 'mission' && a.needs && !a.needs.mission_guid">no está en el catálogo de missions: no se puede comprobar ni sincronizar</span></dd>
             </template>
           </dl>
+          <div class="acts" v-if="cfgEdit.on && !actForm.open">
+            <template v-if="a.status === 'borrada'"><button class="btn" @click="undoAction(a)">Deshacer</button></template>
+            <template v-else>
+              <button class="btn" @click="openActForm(a)">Editar</button>
+              <button class="btn" @click="deleteAction(a)" :disabled="enabledIn(a).length > 0"
+                      :title="enabledIn(a).length ? 'Desmárcala antes en todos los robots' : ''">Borrar</button>
+              <button class="btn" v-if="a.status" @click="undoAction(a)">Deshacer</button>
+            </template>
+          </div>
         </li>
       </ul>
     </div>
@@ -1047,13 +1123,14 @@ createApp({
     const say = (msg, cls = '') => { cfgEdit.msg = msg; cfgEdit.msgCls = cls; };
     function startEdit() {
       cfgEdit.draft = {
+        actions: {},                  // nombre → { definition, comments } | null (borrar)
         robots: Object.fromEntries(cfgState.robots.map(r => [r.serial, { actions: [...r.actions], battery_min: r.battery_min }])),
         auto_charge: { ...cfgState.auto_charge },
         assigner: { ...cfgState.assigner },
       };
       cfgEdit.on = true; say('');
     }
-    function cancelEdit() { cfgEdit.on = false; cfgEdit.draft = null; say(''); }
+    function cancelEdit() { cfgEdit.on = false; cfgEdit.draft = null; actForm.open = false; say(''); }
     function toggleAction(a, r) {
       const list = cfgEdit.draft.robots[r.serial].actions, i = list.indexOf(a.name);
       if (i >= 0) list.splice(i, 1); else list.push(a.name);
@@ -1064,7 +1141,12 @@ createApp({
     const cfgEdits = computed(() => {
       const d = cfgEdit.draft, out = {};
       if (!d) return out;
-      const order = cfgState.actions.map(a => a.name);
+      for (const [name, ch] of Object.entries(d.actions)) {
+        const orig = cfgState.actions.find(a => a.name === name);
+        if (ch === null ? orig : !orig || JSON.stringify(ch.definition) !== JSON.stringify(orig.definition))
+          (out.actions = out.actions || {})[name] = ch;
+      }
+      const order = viewActions.value.map(a => a.name);
       for (const r of cfgState.robots) {
         const dr = d.robots[r.serial], e = {};
         if (!sameSet(dr.actions, r.actions)) e.actions = order.filter(n => dr.actions.includes(n));
@@ -1075,8 +1157,100 @@ createApp({
         if (d[f.block][f.key] !== cfgState[f.block][f.key]) (out[f.block] = out[f.block] || {})[f.key] = d[f.block][f.key];
       return out;
     });
-    const nChanges = computed(() => Object.values(cfgEdits.value)
-      .reduce((n, b) => n + Object.values(b).reduce((m, v) => m + (v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).length : 1), 0), 0));
+    // Cuántos cambios: uno por action del catálogo y uno por campo de lo demás.
+    const nChanges = computed(() => Object.entries(cfgEdits.value).reduce((n, [blk, b]) => n + Object.values(b)
+      .reduce((m, v) => m + (blk !== 'actions' && v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).length : 1), 0), 0));
+
+    // ---- catálogo de actions (v2): la vista mezcla la config en uso con el borrador
+    const cfgChoices = computed(() => cfgState.choices || { missions: [], positions: [] });
+    function guessNeeds(def, orig) {
+      if (orig && orig.definition.mission === def.mission) return orig.needs;
+      const m = cfgChoices.value.missions.find(x => x.guid === def.mission || x.name === def.mission);
+      // Aproximación hasta guardar: la mission (sin sus dependencias).
+      return m ? { mission_guid: m.guid, mission_name: m.name, required: [m.guid] } : { mission_guid: null, required: [] };
+    }
+    const viewActions = computed(() => {
+      const d = cfgEdit.on ? cfgEdit.draft.actions : {};
+      const out = cfgState.actions.map(a => {
+        if (!(a.name in d)) return a;
+        if (d[a.name] === null) return { ...a, status: 'borrada' };
+        return { name: a.name, definition: d[a.name].definition, needs: guessNeeds(d[a.name].definition, a), status: 'cambiada' };
+      });
+      for (const [name, ch] of Object.entries(d))
+        if (ch && !cfgState.actions.some(a => a.name === name))
+          out.push({ name, definition: ch.definition, needs: guessNeeds(ch.definition, null), status: 'nueva' });
+      return out;
+    });
+    const actForm = reactive({ open: false, isNew: false, name: '', mission: '', missionOther: '', inputs: [],
+                               allow: [], newInput: '', error: '', extra: {} });
+    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist'];
+    const catInputs = guid => (cfgChoices.value.missions.find(m => m.guid === guid) || { inputs: [] }).inputs;
+    // Definición (claves del driver MiR) → filas del formulario, y al revés.
+    function openActForm(a) {
+      const def = a ? a.definition : {};
+      const inCat = cfgChoices.value.missions.some(m => m.guid === def.mission);
+      const rows = [], add = (name, kind, r = {}) => rows.push({ name, kind, min: r.min ?? '', max: r.max ?? '', step: r.step ?? '' });
+      for (const n of def.position_inputs || []) add(n, 'position');
+      const num = def.number_inputs || [];
+      if (Array.isArray(num)) num.forEach(n => add(n, 'number'));
+      else for (const [n, r] of Object.entries(num)) add(n, 'number', r || {});
+      for (const n of def.required_inputs || []) add(n, 'text');
+      for (const i of catInputs(def.mission)) if (!rows.some(r => r.name === i.name)) add(i.name, 'none');
+      if (!inCat) rows.forEach(r => { r.manual = true; });
+      Object.assign(actForm, { open: true, isNew: !a, name: a ? a.name : '', error: '', newInput: '',
+        mission: !a ? '' : inCat ? def.mission : '__otra__', missionOther: inCat ? '' : (def.mission || ''),
+        inputs: rows, allow: [...(def.positions_allowlist || [])],
+        extra: Object.fromEntries(Object.entries(def).filter(([k]) => !KNOWN.includes(k))) });
+    }
+    function onMissionChange() {
+      if (actForm.mission === '__otra__') return;
+      // Propuesta del catálogo; lo que ya estaba decidido para un input del mismo nombre se respeta.
+      const prev = Object.fromEntries(actForm.inputs.map(i => [i.name, i]));
+      actForm.inputs = catInputs(actForm.mission).map(i => prev[i.name] && !prev[i.name].manual ? prev[i.name]
+        : { name: i.name, kind: i.kind, min: '', max: '', step: '' });
+    }
+    function addInput() {
+      const n = actForm.newInput;
+      if (n && !actForm.inputs.some(i => i.name === n))
+        actForm.inputs.push({ name: n, kind: 'text', min: '', max: '', step: '', manual: true });
+      actForm.newInput = '';
+    }
+    const allowOptions = computed(() => [...new Set([...cfgChoices.value.positions, ...actForm.allow])].sort());
+    function acceptActForm() {
+      const f = actForm, name = f.name;
+      const mission = f.mission === '__otra__' ? f.missionOther : f.mission;
+      const taken = viewActions.value.some(a => a.name === name && a.status !== 'borrada');
+      f.error = !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(name) ? 'Nombre: letras, números, «_», «-» o «.», empezando por letra.'
+        : f.isNew && taken ? `Ya hay una action «${name}».`
+        : !mission ? 'Elige la mission.' : '';
+      const num = f.inputs.filter(i => i.kind === 'number');
+      const bad = num.find(i => i.min !== '' && i.max !== '' && i.min > i.max);
+      if (!f.error && bad) f.error = `${bad.name}: el mínimo es mayor que el máximo.`;
+      if (f.error) return;
+      const def = { mission, ...f.extra };
+      const pos = f.inputs.filter(i => i.kind === 'position').map(i => i.name);
+      if (pos.length) def.position_inputs = pos;
+      if (num.length) {
+        const ranged = num.some(i => i.min !== '' || i.max !== '' || i.step !== '');
+        def.number_inputs = !ranged ? num.map(i => i.name) : Object.fromEntries(num.map(i =>
+          [i.name, Object.fromEntries(['min', 'max', 'step'].filter(k => i[k] !== '').map(k => [k, i[k]]))]));
+      }
+      const req = f.inputs.filter(i => i.kind === 'text').map(i => i.name);
+      if (req.length) def.required_inputs = req;
+      if (pos.length && f.allow.length) def.positions_allowlist = [...f.allow];
+      const m = cfgChoices.value.missions.find(x => x.guid === mission);
+      cfgEdit.draft.actions[name] = { definition: def, comments: m ? { mission: m.name } : {} };
+      f.open = false;
+    }
+    function deleteAction(a) {
+      if (a.status === 'nueva') { delete cfgEdit.draft.actions[a.name]; return; }
+      cfgEdit.draft.actions[a.name] = null;
+    }
+    function undoAction(a) {
+      delete cfgEdit.draft.actions[a.name];
+      if (a.status === 'nueva')
+        for (const r of Object.values(cfgEdit.draft.robots)) r.actions = r.actions.filter(n => n !== a.name);
+    }
     const floor = () => cfgEdit.on ? cfgEdit.draft.auto_charge.battery_floor : cfgState.auto_charge.battery_floor;
     const batteryMin = r => cfgEdit.on ? cfgEdit.draft.robots[r.serial].battery_min : r.battery_min;
     async function postConfig(url, body) {
@@ -1126,7 +1300,8 @@ createApp({
       return out('ok', '✓', `grabada (comprobación ${rep.level}, ${ago(rep.checked_at)})`);
     }
     const missionLabel = a => (a.needs && a.needs.mission_name) || a.definition.mission || '';
-    const enabledIn = a => cfgState.robots.filter(r => r.actions.includes(a.name)).map(r => r.serial);
+    const enabledIn = a => cfgState.robots.filter(r => (cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions : r.actions)
+                                                       .includes(a.name)).map(r => r.serial);
     const catName = v => (typeof v === 'string' && catByGuid.value[v]) ? catByGuid.value[v].name : '';
     function fmtVal(v) {
       if (Array.isArray(v)) return v.join(', ');
@@ -1139,7 +1314,7 @@ createApp({
     const cfgWarnings = computed(() => {
       const w = [];
       for (const r of cfgState.robots)
-        for (const a of cfgState.actions) {
+        for (const a of viewActions.value) {
           const c = cell(a, r);
           if (c.enabled && c.state === 'falta') w.push(`${r.serial} tiene habilitada «${a.name}», pero ${c.detail}.`);
         }
@@ -1170,6 +1345,8 @@ createApp({
              fleetRows, whereIs, syncCheck, prepare,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
+             deleteAction, undoAction,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');

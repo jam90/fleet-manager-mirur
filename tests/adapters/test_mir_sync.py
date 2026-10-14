@@ -229,3 +229,14 @@ def test_action_needs_para_la_matriz_del_configurador(cat):
     assert needs["fuera"] == {"mission": "no-catalogada", "mission_guid": None,
                               "mission_name": None, "required": []}
     assert needs["sin_mission"]["mission_guid"] is None
+
+
+def test_form_choices_inputs_y_su_tipo(cat):
+    from fm.adapters.mir.sync import MirSync, guess_input_kind
+    assert guess_input_kind({"id": "position", "value": "x"}) == "position"
+    assert guess_input_kind({"id": "value", "value": 1.0}) == "number"
+    assert guess_input_kind({"id": "value", "value": "hola"}) == "text"
+    ch = MirSync("mir-1", "0.0.0.0", "Basic x", cat.root).form_choices()
+    assert {m["guid"] for m in ch["missions"]} == {M_MAIN, M_SUB}
+    assert all(isinstance(m["inputs"], list) for m in ch["missions"])
+    assert isinstance(ch["positions"], list)

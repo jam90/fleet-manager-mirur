@@ -47,9 +47,10 @@
   `fm/web/sync_monitor.py`), con los dos robots sincronizados y
   `fleet.yaml` por GUID. Configurador: decisiones 89–94 (2026-10-14) y
   fases (a) (`fleet.yaml` con catálogo de actions), (b) (pestaña en solo
-  lectura) y (c) v1 (editar casillas, `battery_min` y umbrales, en
-  caliente) hechas. **Siguiente: v2, crear y editar actions del catálogo**
-  (punto 16 de "Pendiente" en `docs/avance.md`).
+  lectura), (c) v1 (editar casillas, `battery_min` y umbrales, en
+  caliente) y v2 (crear, editar y borrar actions del catálogo) hechas.
+  **Siguiente: v3, altas y bajas de robots** (punto 16 de "Pendiente" en
+  `docs/avance.md`).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con

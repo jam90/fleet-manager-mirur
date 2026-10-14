@@ -382,7 +382,10 @@ debajo; enlazables con `#configurador` y `#sincronizacion`):
   la mission y lo que usa (✓ / ✗ falta / ! distinta), según la última
   comprobación de Sincronización; los umbrales, los robots y el catálogo de
   actions. **Editar** permite cambiar las casillas, el `battery_min` de cada
-  robot y los umbrales (`POST /api/config`): se valida con el mismo cargador
+  robot y los umbrales, y crear, editar o borrar actions del catálogo con un
+  formulario que propone los inputs de la mission elegida (`POST
+  /api/config`; una action no se renombra, y solo se borra si ningún robot
+  la tiene): se valida con el mismo cargador
   del arranque, se deja copia `config/fleet.yaml.<fecha>.bak` y en el
   fichero solo cambia el valor editado (comentarios y formato intactos). Se
   aplica **en caliente**, entre dos ticks; lo estructural (robots nuevos o

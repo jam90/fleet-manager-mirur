@@ -266,3 +266,21 @@ def test_config_sin_edicion_activada():
     c = TestClient(srv.app)
     assert c.get("/api/config").json()["editable"] is False
     assert c.post("/api/config", json={}).status_code == 501
+
+
+def test_config_crear_action_y_habilitarla_a_la_vez(tmp_path):
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    r = c.post("/api/config", json={"actions": {"traer": {"definition": {}, "comments": {}}},
+                                    "robots": {"sim-1": {"actions": ["coger", "traer"]}}})
+    assert r.status_code == 200 and r.json()["restart"] == []
+    srv.reloader.apply_pending()
+    info = c.get("/api/config").json()
+    assert [a["name"] for a in info["actions"]] == ["coger", "dejar", "traer"]
+    assert info["robots"][0]["actions"] == ["coger", "traer"]
+    # borrarla mientras un robot la tiene: no se guarda
+    bad = c.post("/api/config", json={"actions": {"traer": None}})
+    assert bad.status_code == 400 and "no están en el catálogo" in bad.json()["detail"]
+    # quitarla del robot y borrarla, en la misma edición
+    ok = c.post("/api/config", json={"actions": {"traer": None}, "robots": {"sim-1": {"actions": ["coger"]}}})
+    assert ok.status_code == 200 and "traer" not in p.read_text(encoding="utf-8")
