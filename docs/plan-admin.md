@@ -364,7 +364,7 @@ los dos robots y `mirur-tknikav2` renombrado a `mirur-tknika`.
 3. **Edición en el configurador** + guardado + recarga, en tres partes: v1
    casillas y umbrales (**hecha el 2026-10-14**, decisiones 96–97), v2
    catálogo de actions (**hecha el 2026-10-14**, decisiones 98–99), v3
-   robots (§2.2).
+   robots con reinicio desde la web (**hecha el 2026-10-14**, decisión 108).
 4. **Catálogo + GUID estándar + capturar** (missions primero).
 5. **Desplegar missions** con vista previa, idempotente y con
    concurrencia limitada. Adoptar las missions existentes.

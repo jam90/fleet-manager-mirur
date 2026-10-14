@@ -16,13 +16,21 @@ eso hay dos tipos de cliente:
 - un cliente de *presencia* por robot: solo lleva su LWT y publica su
   `connection`. Si el FM muere, el broker emite `CONNECTION_BROKEN` en cada
   `<serial>/connection` (smoke §13.9).
+
+**Un solo FM por broker** (decisión 107): antes de conectar, `running_fm()`
+mira los `connection` retenidos; si alguno dice `ONLINE`, ya hay un FM vivo
+(uno parado deja `OFFLINE`; uno muerto, `CONNECTION_BROKEN`) y `run_fm` no
+arranca. Dos FM a la vez se echan del broker (mismo client id) y, si no, los
+dos atenderían cada `fleet/order`: el mismo trabajo a dos robots.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import threading
+import time
 from typing import Callable
 
 import paho.mqtt.client as mqtt
@@ -84,6 +92,10 @@ class MqttBus:
         return self.manufacturers.get(serial) == manufacturer
 
     # ------------------------------------------------------------ ciclo vida
+    def connection_topics(self) -> list[str]:
+        """Los `connection` que publicaría este FM: `fleet` y sus robots."""
+        return [self.topic(s, "connection") for s in [FLEET, *self.serials]]
+
     def start(self, timeout: float = 10.0) -> None:
         for c in [self._main, *self._presence.values()]:
             c.connect(self.host, self.port, keepalive=30)
@@ -154,3 +166,53 @@ class MqttBus:
 
     def _on_message(self, client, userdata, msg):
         self.inbox.put((msg.topic, msg.payload))
+
+
+# ------------------------------------------------- ¿hay ya un FM en marcha?
+def online_entries(retained: dict[str, bytes]) -> list[tuple[str, str]]:
+    """`connection` retenidos (topic → payload) que dicen `ONLINE`, con su
+    `timestamp`. Función pura: es lo que decide si `run_fm` arranca."""
+    out = []
+    for t, payload in sorted(retained.items()):
+        try:
+            d = json.loads(payload)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("connectionState") == "ONLINE":
+            out.append((t, str(d.get("timestamp", "?"))))
+    return out
+
+
+def running_fm(host: str, port: int, topics: list[str], wait: float = 1.0) -> list[tuple[str, str]] | None:
+    """Lee los retenidos de `topics` con un cliente de usar y tirar (client id
+    propio, para no echar a nadie) y devuelve los que están `ONLINE`. None si
+    no se pudo preguntar al broker: entonces decide el arranque normal."""
+    retained: dict[str, bytes] = {}
+    done = threading.Event()
+
+    def on_connect(client, userdata, flags, reason_code, properties=None):
+        if reason_code == 0:
+            client.subscribe([(t, 1) for t in topics])
+        done.set()
+
+    def on_message(client, userdata, msg):
+        if msg.retain:
+            retained[msg.topic] = msg.payload
+
+    c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"fleet-manager-probe-{os.getpid()}",
+                    protocol=mqtt.MQTTv311, clean_session=True)
+    c.on_connect, c.on_message = on_connect, on_message
+    try:
+        c.connect(host, port, keepalive=10)
+    except OSError as e:
+        log.warning("no se pudo comprobar si hay otro FM (%s); se sigue", e)
+        return None
+    c.loop_start()
+    try:
+        if not done.wait(3.0):
+            return None
+        time.sleep(wait)                  # el broker manda los retenidos al suscribirse
+    finally:
+        c.disconnect()
+        c.loop_stop()
+    return online_entries(retained)

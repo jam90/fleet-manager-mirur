@@ -387,3 +387,28 @@ def test_retirar_y_quitar_desde_la_web():
     assert plan["robots"] == ["sim-1"] and plan["blockers"] == []
     assert c.post("/api/retire", json={"guid": "M1"}).status_code == 200
     assert forgot == [("M1", True, ["sim-1"])] and not store            # retirar: catálogo + reserva
+
+
+# --------------------------------------------- altas/bajas de robots y reinicio (v3)
+def test_alta_de_robot_pide_reiniciar_y_reinicio(tmp_path):
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    info = c.get("/api/config").json()
+    assert info["can_restart"] is False and "sim" in info["drivers_available"] and "mir" in info["drivers_available"]
+    assert info["robots"][0]["busy"] is False and info["robots"][0]["order"] is None
+    r = c.post("/api/config", json={"robots": {"sim-2": {"driver": "sim", "battery_min": 30, "actions": ["coger"]}}})
+    assert r.status_code == 200 and r.json()["restart"] == ["robots nuevos: sim-2"]
+    assert "  sim-2:\n    driver: sim\n    battery_min: 30\n    actions: [coger]\n" in p.read_text(encoding="utf-8")
+    assert c.get("/api/config").json()["file"] == {"same": False, "restart": ["robots nuevos: sim-2"]}
+    assert c.post("/api/restart").status_code == 501
+    asked = []
+    srv.on_restart = lambda: asked.append(True)
+    assert c.get("/api/config").json()["can_restart"] is True
+    assert c.post("/api/restart").json() == {"restarting": True} and asked == [True]
+
+
+def test_baja_de_robot_por_la_api(tmp_path):
+    srv, p, notes = _server_editable(tmp_path)
+    p.write_text(SIM_YAML + "  sim-2:\n    driver: sim\n    actions: []\n", encoding="utf-8")
+    r = TestClient(srv.app).post("/api/config", json={"robots": {"sim-2": None}})
+    assert r.status_code == 200 and "sim-2" not in p.read_text(encoding="utf-8")

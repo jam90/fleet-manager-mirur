@@ -48,12 +48,15 @@
   `fleet.yaml` por GUID. Configurador: decisiones 89–94 (2026-10-14) y
   fases (a) (`fleet.yaml` con catálogo de actions), (b) (pestaña en solo
   lectura), (c) v1 (editar casillas, `battery_min` y umbrales, en
-  caliente) y v2 (crear, editar y borrar actions del catálogo) hechas.
-  Pestaña **Crear** (`fm/adapters/mir/create.py`, decisiones 100–102):
+  caliente), v2 (crear, editar y borrar actions del catálogo) y v3 (altas
+  y bajas de robots, con «Reiniciar el FM ahora») hechas.
+  Pestaña **Crear** (`fm/adapters/mir/create.py`, decisiones 100–104):
   mission vacía o position (en la pose del robot) con GUID estándar,
-  borrador en `catalog/` y Capturar; falta probarla con un MiR real
-  (punto 22). Siguiente del configurador: v3, altas y bajas de robots
-  (punto 16 de "Pendiente" en `docs/avance.md`).
+  borrador en `catalog/`, Capturar y Borrar, probada por el usuario con
+  mir-1. En Sincronización, sobrantes y «Retirar de la flota» con el número
+  reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Un solo FM
+  por broker (decisión 107). Lo abierto, ordenado, al final de
+  `docs/avance.md` ("Pendiente"; los `#N` son identificadores fijos).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con
@@ -62,6 +65,11 @@
   `--config config/fleet-sim.yaml` para probar sin robots; `--robot mir-2`
   para uno solo; `--web-port 0` sin web. Mosquitto local en `localhost:1883`
   (sin websockets; el 9001 y el 8080 los ocupan otros servicios del PC).
+  **Un solo FM por broker** (decisión 107): si ve otro `ONLINE` en los
+  `connection` retenidos, sale con código 3 (`--force` si ese ONLINE es
+  antiguo). Antes de lanzar un FM de prueba, mira si el usuario tiene uno:
+  `pgrep -af '^(\S*/)?python[0-9.]* .*run_fm\.py'` (anclado a `python`: un
+  patrón suelto encuentra la propia shell).
 - **Robots:** mir-1 `192.168.15.5`, mir-2 `192.168.15.15`; token en `.env`.
   Missions de prueba en el grupo `mirur-tknika`: `coger`, `dejar`,
   `Ir a zona de espera MIRUR`, `Simular Apertura Puerta H2DX MIRUR`

@@ -17,7 +17,8 @@ Tres operaciones sobre el texto, todas a partir de una ruta de claves:
 
 Qué se puede editar (decisión 93): v1, las actions habilitadas y
 `battery_min` de cada robot, `auto_charge.*` y `assigner.prefer_not_charging`;
-v2, el catálogo `actions:` (crear, cambiar y borrar definiciones). El
+v2, el catálogo `actions:` (crear, cambiar y borrar definiciones); v3, altas
+y bajas de robots y su `host` (piden reiniciar el FM, `fm/reload.py`). El
 contenido de una definición es del driver: aquí no se interpreta, lo valida
 el driver al guardar.
 
@@ -49,7 +50,11 @@ GLOBAL_KEYS: dict[tuple[str, str], type] = {
     ("auto_charge", "abort_cooldown_s"): float,
     ("assigner", "prefer_not_charging"): bool,
 }
-ROBOT_KEYS = ("actions", "battery_min")
+ROBOT_KEYS = ("actions", "battery_min", "host")          # editables en un robot que ya está
+NEW_ROBOT_KEYS = ("driver", "host", "battery_min", "actions")   # al dar de alta, en este orden
+# Serial de un robot: segmento del topic MQTT y nombre de fichero; corto y sin sorpresas.
+SERIAL = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 # Nombre de action (= actionType VDA): que se pueda escribir en YAML sin comillas.
 ACTION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 COMMENT_GAP = "   "          # espacios antes de un comentario nuevo, como en fleet.yaml
@@ -106,7 +111,21 @@ def plan(text: str, edits: dict) -> list[Op]:
             continue
         definition, comments = _definition(name, change)
         ops += _diff_action(name, catalog.get(name, ...), definition, comments)
+    robots_now = current.get("robots") or {}
+    gone = [s for s, r in (edits.get("robots") or {}).items() if r is None and s in robots_now]
+    if robots_now and len(gone) == len(robots_now) and not any(
+            r is not None and s not in robots_now for s, r in (edits.get("robots") or {}).items()):
+        raise EditError("tiene que quedar al menos un robot")
+    # Altas antes que bajas: así `robots:` nunca se queda vacío a medias.
     for serial, r in (edits.get("robots") or {}).items():
+        if r is not None and serial not in robots_now:
+            ops.append(Op(("robots", serial), _new_robot(serial, r)))
+    for serial, r in (edits.get("robots") or {}).items():
+        if r is None and serial in robots_now:
+            ops.append(Op(("robots", serial), delete=True))
+    for serial, r in (edits.get("robots") or {}).items():
+        if r is None or serial not in robots_now:      # altas y bajas, ya hechas
+            continue
         for key, value in (r or {}).items():
             if key not in ROBOT_KEYS:
                 raise EditError(f"robots.{serial}.{key} no se puede editar desde aquí")
@@ -114,6 +133,8 @@ def plan(text: str, edits: dict) -> list[Op]:
                 if not isinstance(value, list) or not all(isinstance(a, str) and a for a in value):
                     raise EditError(f"robots.{serial}.actions debe ser una lista de nombres")
                 ops.append(Op(("robots", serial, "actions"), list(value)))
+            elif key == "host":
+                ops.append(Op(("robots", serial, "host"), _host(f"robots.{serial}.host", value)))
             else:
                 ops.append(Op(("robots", serial, key), _number(f"robots.{serial}.{key}", value, float)))
     for block in ("auto_charge", "assigner"):
@@ -128,6 +149,34 @@ def plan(text: str, edits: dict) -> list[Op]:
             else:
                 ops.append(Op((block, key), _number(f"{block}.{key}", value, typ)))
     return ops
+
+
+def _host(where: str, value) -> str:
+    if not isinstance(value, str) or not HOST.match(value.strip()):
+        raise EditError(f"{where}: escribe una IP o un nombre de equipo (p. ej. 192.168.15.25)")
+    return value.strip()
+
+
+def _new_robot(serial: str, r: dict) -> dict:
+    """Bloque de un robot nuevo, con las claves en un orden fijo. El driver
+    valida el resto al guardar (p. ej. que un `mir` tenga `host`)."""
+    if not SERIAL.match(serial):
+        raise EditError(f"'{serial}' no vale como serial: minúsculas, números y '-', empezando por letra "
+                        "(p. ej. mir-3)")
+    unknown = set(r) - set(NEW_ROBOT_KEYS)
+    if unknown:
+        raise EditError(f"robots.{serial}: no se puede dar {sorted(unknown)} al darlo de alta")
+    if not isinstance(r.get("driver"), str) or not r["driver"]:
+        raise EditError(f"robots.{serial}: falta el driver")
+    block: dict = {"driver": r["driver"]}
+    if r.get("host"):
+        block["host"] = _host(f"robots.{serial}.host", r["host"])
+    block["battery_min"] = _number(f"robots.{serial}.battery_min", r.get("battery_min", 25), float)
+    acts = r.get("actions") or []
+    if not isinstance(acts, list) or not all(isinstance(a, str) and a for a in acts):
+        raise EditError(f"robots.{serial}.actions debe ser una lista de nombres")
+    block["actions"] = list(acts)
+    return block
 
 
 def _definition(name: str, change) -> tuple[dict, dict]:
@@ -191,6 +240,8 @@ def _block_depth(path: tuple[str, ...]) -> int:
     """Cuántos niveles en bloque lleva lo que se escribe en `path`."""
     if path[0] == "actions":
         return max(0, 4 - len(path))     # action entera: 2; una de sus claves: 1
+    if path[0] == "robots" and len(path) == 2:
+        return 1                         # robot nuevo: en bloque, su lista de actions en flujo
     return 0
 
 
@@ -329,7 +380,7 @@ def apply_edits(text: str, edits: dict) -> str:
     componer el YAML: las posiciones cambian al tocar el texto."""
     ops = plan(text, edits)
     for op in ops:
-        if op.path[0] == "robots" and _find_robot(text, op.path[1]) is None:
+        if op.path[0] == "robots" and len(op.path) > 2 and _find_robot(text, op.path[1]) is None:
             raise EditError(f"el robot '{op.path[1]}' no está en fleet.yaml")
         text = _delete(text, op) if op.delete else _set(text, op)
     # Comprobación final: lo que se lee del texto nuevo es lo que se pidió.

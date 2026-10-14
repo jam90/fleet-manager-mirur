@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fm.adapters import make_driver  # noqa: E402
 from fm.config import ConfigError, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
-from fm.mqtt_bus import MqttBus  # noqa: E402
+from fm.mqtt_bus import MqttBus, running_fm  # noqa: E402
 from fm.reload import Reloader  # noqa: E402
 from fm.robot import Robot  # noqa: E402
 from fm.vda5050.factsheet import factsheet_for  # noqa: E402
@@ -39,6 +40,8 @@ def parse_args(argv=None):
     p.add_argument("--config", default="config/fleet.yaml")
     p.add_argument("--env", default=".env")
     p.add_argument("--web-port", type=int, default=8050, help="puerto de la interfaz web (0 = sin web)")
+    p.add_argument("--force", action="store_true",
+                   help="arrancar aunque el broker diga que ya hay otro FM ONLINE (si ese ONLINE es antiguo)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -65,6 +68,17 @@ def main(argv=None) -> int:
 
     bus = MqttBus(cfg.mqtt.host, cfg.mqtt.port, {s: robots[s].manufacturer for s in serials},
                   cfg.mqtt.fleet_manufacturer)
+    # Un solo FM por broker (decisión 107): otro FM ONLINE → no arrancar.
+    others = running_fm(cfg.mqtt.host, cfg.mqtt.port, bus.connection_topics())
+    if others:
+        where = "; ".join(f"{t} (ONLINE desde {ts})" for t, ts in others)
+        if not args.force:
+            log.error("ya hay un Fleet Manager conectado a este broker: %s. Dos FM a la vez se echan "
+                      "del broker y atenderían los dos cada fleet/order. Páralo antes (Ctrl-C) o, si "
+                      "ese ONLINE es antiguo, arranca con --force.", where)
+            return 3
+        log.warning("--force: se arranca aunque el broker dice ONLINE en %s", where)
+
     web = None
     if args.web_port:
         from fm.web.server import WebServer   # import tardío: fastapi solo si se usa
@@ -73,6 +87,14 @@ def main(argv=None) -> int:
     bus.start()
 
     stop = False
+    restart = False
+
+    def _request_restart() -> None:
+        """Desde la web (pestaña Configurador, decisión 108): salir del bucle,
+        cerrar limpio (OFFLINE) y volver a arrancar con los mismos argumentos.
+        Lo que cambia la estructura de la flota solo se monta al arrancar."""
+        nonlocal stop, restart
+        restart = stop = True
 
     def _on_signal(signum, frame):
         nonlocal stop
@@ -124,6 +146,7 @@ def main(argv=None) -> int:
                         notify=(lambda p: web.mirror("fm/config", p)) if web else (lambda p: None))
     if web is not None:
         web.reloader = reloader
+        web.on_restart = _request_restart
 
     if web is not None:
         web.start(port=args.web_port)
@@ -144,6 +167,11 @@ def main(argv=None) -> int:
         if web is not None:
             web.stop()
         bus.stop()
+    if restart:
+        # El nuevo proceso comprueba el broker (decisión 107): ve OFFLINE y arranca.
+        log.info("[fm] reiniciando: %s %s", sys.executable, " ".join(sys.argv))
+        logging.shutdown()
+        os.execv(sys.executable, [sys.executable, *sys.argv])
     return 0
 
 

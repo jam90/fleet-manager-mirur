@@ -1783,50 +1783,85 @@ el robot ocupado; parando las missions en marcha, borró sus pruebas.
      robot no la usa; una position se retira de la flota o nada. Código
      común en `fm/adapters/mir/remove.py` (también lo usa la pestaña Crear).
 
+## 2026-10-14 — Un solo FM por broker (punto #21)
+
+`pytest`: 193 en verde (2 nuevos). Probado con el Mosquitto local y la
+flota simulada (comprobando antes que el usuario no tenía un FM en marcha):
+con un FM arrancado, un segundo sale con código 3 y el mensaje con los
+topics `ONLINE`; el primero no sufre ninguna desconexión.
+
+107. **Un FM no arranca si ya hay otro conectado al broker.** Antes de
+     conectar, `mqtt_bus.running_fm()` lee con un cliente de usar y tirar
+     (client id propio: no echa a nadie) los `connection` retenidos de
+     `fleet` y de sus robots; si alguno dice `ONLINE`, `run_fm` sale con
+     código 3. Un FM parado deja `OFFLINE` y uno muerto `CONNECTION_BROKEN`
+     (Last Will), así que un `ONLINE` retenido es casi siempre un FM vivo;
+     para el caso raro de uno antiguo, `--force`. **No** se cambia el
+     client id a uno único: así los dos FM convivirían sin echarse, pero
+     atenderían los dos cada `fleet/order` (el mismo trabajo a dos robots).
+     Si no se puede preguntar al broker, decide el arranque normal.
+
+## 2026-10-14 — Configurador v3: altas y bajas de robots, y reinicio desde la web
+
+`pytest`: 202 en verde (9 nuevos). Probado con el Mosquitto local y la
+flota simulada (comprobado antes que no había otro FM): alta de `sim-3` por
+la API → «requiere reiniciar» → `POST /api/restart` → el mismo proceso (mismo
+PID, `os.execv`) vuelve con `sim-3` conectado; desde el navegador, baja de
+`sim-3` → Guardar → «Reiniciar el FM ahora» → la página se reconecta sola
+con `sim-1` y `sim-2`; y el formulario de alta de un `mir` con su host. Al
+probar salieron dos fallos, corregidos: la API no aceptaba `null` (la baja)
+en `robots`, y el aviso «requiere reiniciar» se borraba nada más salir.
+
+108. **Altas y bajas de robots desde el Configurador, con reinicio desde la
+     web.** En el panel Robots (modo edición): «Añadir robot» (serial,
+     driver, host si no es `sim`, batería mínima y actions), cambiar el
+     `host` y «Quitar robot». En `fleet.yaml`, como siempre, solo esas
+     líneas: el robot nuevo va al final de `robots:` (antes que las bajas,
+     para que el bloque nunca quede vacío) y una baja se lleva sus líneas;
+     tiene que quedar al menos un robot, y el driver valida el bloque al
+     guardar (un `mir` sin host no se guarda). Todo esto es estructural
+     (decisión 91): se guarda y la pestaña ofrece **«Reiniciar el FM
+     ahora»**, que se adelanta a lo que la decisión 91 dejaba para más
+     adelante porque sin él cada alta obliga a ir al terminal. El bucle
+     principal sale, cierra limpio (`OFFLINE`) y `run_fm` se relanza con
+     los mismos argumentos (`os.execv`); el proceso nuevo pasa la
+     comprobación de la decisión 107 porque el anterior dejó `OFFLINE`.
+     Antes de reiniciar, la pestaña avisa de los robots que están
+     trabajando: el robot termina, pero el FM pierde de vista esa order.
+
 ## Pendiente (a 2026-10-14)
 
-Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
-2026-09-17, en parte superadas (la order con `position_inputs` se probó con
-robot después).
+Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
+citan en decisiones anteriores ("punto 21"), así que no se renumeran; lo
+cerrado se quita (su historia está en la entrada de su fecha). Cerrados el
+2026-10-14: #4 (GUIDs comunes), #17 (descartar robot sin la mission), #20
+(mapa activo: ya es `suberri_mirur`), #21 (un solo FM por broker, decisión 107)
+y #16 (configurador completo: v3, decisión 108).
 
-**Funcionalidad**
+**En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
 
-1. **Missions definitivas** ("coge 5 contactores y llévalos a la balda 3"):
-   crearlas en la web del MiR y añadirlas a `fleet.yaml` con
-   `number_inputs` / `position_inputs` / `required_inputs`.
-2. **Flujo Node-RED emisor de `fleet/order`**: topic
+- *(nada en curso: #21 y #16 cerrados el 2026-10-14)*
+
+**Aguas arriba (a cargo de otro compañero, sobre este FM)**
+
+- **#1** **Missions definitivas** ("coge 5 contactores y llévalos a la balda 3"):
+   crearlas (pestaña Crear → web del MiR → Capturar → Sincronización →
+   Configurador) con sus `number_inputs` / `position_inputs` /
+   `required_inputs`.
+- **#2** **Flujo Node-RED emisor de `fleet/order`**: topic
    `vda5050/v3/imperial_fleet/fleet/order`, header
    `imperial_fleet`/`fleet`. Los números pueden ir como número o texto.
-3. **Acceso a la web desde otros equipos**: comprobar si WSL está en modo
-   `mirrored` o NAT (en NAT: `netsh portproxy` + regla de firewall).
 
-4. **GUIDs comunes en toda la flota** (idea anotada el 2026-10-09). El
-    usuario ha visto que al crear missions desde fuera de la interfaz web
-    (por API) se puede fijar el GUID: vale cualquier cadena de 36
-    caracteres. Si missions, positions, mission_groups y mapas se crean así
-    en todos los robots con el mismo GUID, desaparece el gotcha 2 del brief
-    (§9) y podrían simplificarse los índices nombre → GUID por robot y el
-    `mapId` del `state` (hoy distinto en cada MiR). Antes de adoptarlo,
-    comprobar:
-    - qué endpoints lo aceptan (`POST /missions`, `/positions`,
-      `/mission_groups`, `/maps`…) y si el MiR valida el formato UUID;
-    - cómo copiar una mission con sus actions (`missions/<guid>/actions`) y
-      sus positions a otro robot manteniendo GUIDs;
-    - qué pasa con las positions que crea el MiR solo (entry positions de
-      marcadores y cargadores, `type_id` 12/21) y con los mapas ya
-      existentes (habría que recrearlos o migrarlos);
-    - si un backup/restore o una actualización del MiR conserva los GUIDs.
-    Aunque se adopte, mantener la resolución por nombre como respaldo: un
-    robot nuevo o editado a mano en la web volvería a tener GUIDs propios.
-    **2026-10-11:** desarrollado en `docs/plan-admin.md` (configurador +
-    sincronización); estas comprobaciones son su fase 0.
-    **2026-10-13: hecho.** Fase 0 cerrada y sincronización en marcha
-    (decisiones 71–88): catálogo en `catalog/`, los dos robots con
-    session, mapa, positions y grupo `mirur-tknika` con GUIDs comunes,
-    pestaña Sincronización con estado de la flota y `fleet.yaml` por GUID.
-    Lo que queda va en los puntos 16–20.
+**Configurador y sincronización, más adelante**
 
-5. **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
+- **#19** **Sincronización, siguientes versiones:** capturar desde la UI lo que
+    no se creó en la pestaña Crear (lo creado allí ya se captura desde la
+    UI, decisión 102; lo demás, con `scripts/catalog_capture.py`); sustituir lo que es "distinto" (borrar
+    y crear, con vista previa y aviso si otra mission lo usa); desplegar
+    mapas a un robot cuyo site activo es otro (no probado).
+**Funcionalidad nueva**
+
+- **#5** **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
    Objetivo: avisar a los operarios cuando una mission tarda más de lo
    normal. Ejemplos: "posible obstáculo / camino bloqueado" si la fase de
    "ir a recoger" se alarga, o "problema en almacén" si el robot pasa allí
@@ -1870,75 +1905,52 @@ robot después).
    - **Primer paso con robot:** leer `GET /mission_queue/<id>/actions` de
      una entrada ya terminada (solo lectura) para ver si da fases y tiempos.
      De eso depende si el paso 3 es viable o hay que usar `mission_text`.
-
-6. **Validación con schemas en runtime (`--validate`)**, pedida en el brief
+- **#6** **Validación con schemas en runtime (`--validate`)**, pedida en el brief
    (§10.1, H6) y sin implementar (revisión del 2026-10-12): validar cada
    `order`/`instantActions` entrante contra `schemas/` y rechazar con
    `VALIDATION_FAILURE`. `fm/vda5050/schemas.py::validation_errors` ya
    existe (hoy solo la usan los tests). El README no lo promete.
-7. ~~**Asignador: probar el siguiente candidato si el elegido rechaza**~~
-   **Hecho (2026-10-14, decisión 89).** Falta probarlo con robot: una
-   action cuya mission solo tenga el robot con menos batería.
 
-**Sin probar con robot (solo tests)**
+**Probar con robot (hecho, solo con tests o con simulación)**
 
-8. `required_inputs` (parámetro de texto): no hay mission que lo use.
-9. Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
-10. Order update (`orderUpdateId > 0`) sobre una order terminada.
-11. Robot que se apaga y vuelve a encenderse con el FM en marcha.
+- **#7** **Asignador, siguiente candidato** (decisión 89): una action cuya
+   mission solo tenga el robot con menos batería.
+- **#8** `required_inputs` (parámetro de texto): no hay mission que lo use.
+- **#9** Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
+- **#10** Order update (`orderUpdateId > 0`) sobre una order terminada.
+- **#11** Robot que se apaga y vuelve a encenderse con el FM en marcha.
     2026-10-12: probado solo con los dos MiR apagados desde el arranque
     (backoff 1-2-4-8 s, `state` con `ROBOT_UNREACHABLE`, `fleet/order` →
     `REJECTED NO_MOBILE_ROBOT_AVAILABLE`). Falta encenderlos con el FM en
     marcha: ver que el primer `connect()` carga los índices (decisión 70).
+- **#18** **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
+    `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
+    mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día
+    se lleva a mir-2.
+- **#22** **Configurador y pestañas de administración con el FM real:** cambiar
+    en caliente las actions de un MiR y ver que reindexa y que el
+    asignador lo tiene en cuenta; desplegar con el robot ocupado (solo
+    crear, decisión 103); quitar un sobrante de un robot y retirar algo de
+    prueba de la flota (decisiones 105–106); alta de un MiR real y
+    «Reiniciar el FM ahora» con los robots (decisión 108). Ya probado por el usuario:
+    crear, abrir en la web del MiR, capturar y borrar (decisiones 100–104).
+
+**Entorno**
+
+- **#3** **Acceso a la web desde otros equipos**: comprobar si WSL está en modo
+   `mirrored` o NAT (en NAT: `netsh portproxy` + regla de firewall).
 
 **Menor**
 
-12. `prueba_parametros_v2` desde una tablet (deslizador).
-13. `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
+- **#12** `prueba_parametros_v2` desde una tablet (deslizador).
+- **#13** `powerSupply.charging` desde `/status`: hoy se aproxima con "mission de
    carga del FM en marcha" (decisión 35, coincidió en la prueba real). Solo
    haría falta si el robot carga sin que lo mande el FM.
-14. Retained antiguo en el Mosquitto local: `vda5050/v3/MiR/fleet/connection`
+- **#14** Retained antiguo en el Mosquitto local: `vda5050/v3/MiR/fleet/connection`
     (de antes de la decisión 30; el código actual ya no lo publica). Se borra
     con `mosquitto_pub -r -n -t vda5050/v3/MiR/fleet/connection`.
-15. Nota para leer logs: en WSL2 el reloj de pared salta a veces unos
+- **#15** Nota para leer logs: en WSL2 el reloj de pared salta a veces unos
     segundos al resincronizarse con Windows (visto el 2026-10-12: hueco de
     4 s en las marcas de tiempo con el `headerId` continuo). El bucle usa
     `time.monotonic()` y no se ve afectado; el `timestamp` VDA sí refleja
     el salto, como debe (es hora UTC).
-
-**Configurador y sincronización (siguiente sesión: configurador)**
-
-16. **Configurador del FM** (`docs/plan-admin.md` §2, decisiones 91–93).
-    Orden: ~~(a) fase 1: `fleet.yaml` con catálogo único de actions~~
-    **hecha el 2026-10-14** (decisión 94); ~~(b) pestaña en solo
-    lectura~~ **hecha el 2026-10-14** (decisión 95); ~~(c) edición v1~~
-    (casillas, umbrales, `battery_min`) **hecha el 2026-10-14**
-    (decisiones 96–97); ~~v2, crear y editar actions del catálogo~~
-    **hecha el 2026-10-14** (decisiones 98–99). Sigue v3, altas y bajas
-    de robots con reinicio. Sin probar con el FM real:
-    cambiar las actions de un MiR en caliente y ver que reindexa y que el
-    asignador ya lo tiene en cuenta.
-17. ~~**Asignador: descartar el robot que no tiene grabada la mission**~~
-    Cubierto por la decisión 89 (decisión 90). La mission "distinta" queda
-    como aviso en la matriz.
-18. **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
-    `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
-    mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día
-    se lleva a mir-2.
-19. **Sincronización, siguientes versiones:** capturar desde la UI lo que
-    no se creó en la pestaña Crear (lo creado allí ya se captura desde la
-    UI, decisión 102; lo demás, con `scripts/catalog_capture.py`); sustituir lo que es "distinto" (borrar
-    y crear, con vista previa y aviso si otra mission lo usa); desplegar
-    mapas a un robot cuyo site activo es otro (no probado).
-20. ~~**Mapa activo:** pasar de `suberri` a `suberri_mirur`.~~ Visto el
-    2026-10-14: los dos robots ya trabajan en `suberri_mirur`.
-22. **Pestaña Crear con un MiR real:** ~~crear, abrir en la web del MiR y
-    capturar~~ hecho por el usuario el 2026-10-14 (mission
-    `prueba-creacion` y una position en mir-1). Falta: desplegar con el
-    robot ocupado (decisión 103) y borrar esas pruebas con el botón
-    «Borrar» (decisión 104), que el usuario va a usar para probarlo.
-21. **Client id MQTT fijo (`fleet-manager`):** dos FM contra el mismo
-    broker se echan mutuamente (visto el 2026-10-14 con un FM de prueba).
-    Opciones: añadir el PID o un sufijo aleatorio al client id, o un
-    `--client-id`; o detectar al arrancar que ya hay un FM `ONLINE` y
-    negarse a arrancar. A decidir.

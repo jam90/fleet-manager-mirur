@@ -54,6 +54,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from fm.adapters import DRIVERS
 from fm.adapters.base import describe_actions
 from fm.config import ConfigError, FleetConfig, load_config
 from fm.config_edit import EditError, save, validate
@@ -97,7 +98,7 @@ class CaptureIn(BaseModel):
 class ConfigEditIn(BaseModel):
     """Ediciones del configurador; ver `fm.config_edit.plan`."""
     actions: dict[str, dict[str, Any] | None] = {}
-    robots: dict[str, dict[str, Any]] = {}
+    robots: dict[str, dict[str, Any] | None] = {}       # None = baja del robot
     auto_charge: dict[str, Any] = {}
     assigner: dict[str, Any] = {}
 
@@ -111,6 +112,7 @@ class WebServer:
         self.config_path = Path(config_path) if config_path else None
         self.env_path = env_path
         self.reloader = None
+        self.on_restart = None                 # lo pone run_fm: reiniciar el FM (decisión 108)
         self._save_lock = threading.Lock()
         self._create_lock = threading.Lock()   # dos altas a la vez sacarían el mismo número
         # Sincronización: solo los robots cuyo driver la ofrece (capacidad opcional).
@@ -174,7 +176,9 @@ class WebServer:
                         if k not in ("actions", "driver", "manufacturer", "battery_min")}
             robots.append({"serial": s, "driver": rc.driver, "manufacturer": r.manufacturer,
                            "battery_min": rc.battery_min, "actions": sorted(rc.action_types),
-                           "settings": settings, "sync": s in self.syncs})
+                           "settings": settings, "sync": s in self.syncs,
+                           # para avisar antes de reiniciar: el FM perdería de vista sus orders
+                           "busy": r.busy, "order": r.orders.active.order.orderId if r.orders.busy else None})
         # Qué necesita cada action del catálogo: no depende del robot (el
         # catálogo es común), así que basta con el primer robot que sincroniza.
         first = next(iter(self.syncs.values()), None)
@@ -200,6 +204,8 @@ class WebServer:
                 "drivers": self.cfg.drivers,
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "editable": self.config_path is not None and self.reloader is not None,
+                "can_restart": self.on_restart is not None,
+                "drivers_available": sorted(DRIVERS),
                 "file": self.file_status()}
 
     def file_status(self) -> dict | None:
@@ -508,6 +514,14 @@ class WebServer:
         @app.post("/api/create/{serial}/capture")
         def capture(serial: str, body: CaptureIn):
             return self.capture(serial, body.guid)
+
+        @app.post("/api/restart")
+        def restart():
+            if self.on_restart is None:
+                raise HTTPException(501, "este FM no se puede reiniciar desde la web")
+            log.warning("[web] reinicio del FM pedido desde la interfaz")
+            self.on_restart()
+            return {"restarting": True}
 
         @app.post("/api/config/reload")
         def config_reload():

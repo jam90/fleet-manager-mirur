@@ -124,6 +124,13 @@ como mucho 0,5 s a los robots que respondían: un robot apagado no altera la
 cadencia de 1 Hz de los demás. Ctrl-C / SIGTERM →
 `connection: OFFLINE`; muerte brusca → el broker publica `CONNECTION_BROKEN`.
 
+**Un solo FM por broker.** Al arrancar, antes de conectar, el FM lee los
+`connection` retenidos de `fleet` y de sus robots: si alguno está `ONLINE`,
+ya hay otro FM vivo y este no arranca (código 3, con el topic y la hora en el
+log). Dos FM a la vez se echarían del broker (mismo client id) y atenderían
+los dos cada `fleet/order`. Si ese `ONLINE` es antiguo (p. ej. tras caerse
+el broker), `--force` arranca igual.
+
 Log (una línea por robot y tick, filtrable por `[serial]`):
 
 ```
@@ -405,9 +412,11 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
   la tiene): se valida con el mismo cargador
   del arranque, se deja copia `config/fleet.yaml.<fecha>.bak` y en el
   fichero solo cambia el valor editado (comentarios y formato intactos). Se
-  aplica **en caliente**, entre dos ticks; lo estructural (robots nuevos o
-  quitados, host, driver, `drivers:`, MQTT) se guarda pero pide reiniciar
-  el FM, y la pestaña lo avisa. Si `fleet.yaml` se edita a mano con el FM en
+  aplica **en caliente**, entre dos ticks. En el panel Robots se dan de alta
+  y de baja robots y se cambia su host: eso es estructural (también
+  `drivers:` y MQTT), se guarda y la pestaña ofrece **Reiniciar el FM
+  ahora** (`POST /api/restart`: cierre limpio y el proceso se relanza con
+  los mismos argumentos). Si `fleet.yaml` se edita a mano con el FM en
   marcha, la pestaña lo detecta y ofrece **Aplicar el fichero**.
 - **Sincronización**: lleva a cada robot lo que hay en `catalog/` (missions,
   positions, mapas…) con los mismos GUIDs en toda la flota

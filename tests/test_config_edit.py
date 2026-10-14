@@ -55,8 +55,8 @@ def test_clave_ausente_se_inserta_con_la_sangria_del_bloque():
 
 
 @pytest.mark.parametrize("edits, msg", [
-    ({"robots": {"sim-1": {"host": "x"}}}, "no se puede editar"),
-    ({"robots": {"nadie": {"battery_min": 30}}}, "no está en fleet.yaml"),
+    ({"robots": {"sim-1": {"pose": [0, 0, 0]}}}, "no se puede editar"),
+    ({"robots": {"nadie": {"battery_min": 30}}}, "falta el driver"),        # serial nuevo = alta
     ({"robots": {"sim-1": {"battery_min": "mucho"}}}, "número"),
     ({"robots": {"sim-1": {"actions": "coger"}}}, "lista"),
     ({"auto_charge": {"priority": 2.5}}, "entero"),
@@ -198,3 +198,51 @@ def test_catalogo_del_repo_editar_una_action_toca_una_linea():
     d = {**d, "positions_allowlist": ["Deshecho", "Montaje"]}
     new = apply_edits(text, {"actions": {"prueba_parametros_v2": _act(d)}})
     assert len(_lines_changed(text, new)) == 1
+
+
+
+# ------------------------------------------------ altas y bajas de robots (v3)
+def test_alta_de_robot_al_final_de_robots():
+    text = YAML + "\n# Comentario tras los robots: se queda debajo.\n"
+    new = apply_edits(text, {"robots": {"mir-3": {"driver": "mir", "host": " 192.168.15.25 ", "battery_min": 30,
+                                                  "actions": ["coger"]}}})
+    assert ("    actions: [coger]\n"
+            "  mir-3:\n    driver: mir\n    host: 192.168.15.25\n    battery_min: 30\n    actions: [coger]\n"
+            "\n# Comentario tras los robots") in new
+
+
+def test_baja_de_robot_quita_sus_lineas():
+    new = apply_edits(YAML, {"robots": {"sim-2": None}})
+    assert "sim-2" not in new and new == YAML[:YAML.index("  sim-2:")]
+    assert apply_edits(YAML, {"robots": {"no-existe": None}}) == YAML
+    with pytest.raises(EditError, match="al menos un robot"):
+        apply_edits(YAML, {"robots": {"sim-1": None, "sim-2": None}})
+    # quitar todos pero dar de alta otro a la vez: vale
+    new = apply_edits(YAML, {"robots": {"sim-1": None, "sim-2": None, "sim-3": {"driver": "sim"}}})
+    assert "  sim-3:\n    driver: sim\n    battery_min: 25\n    actions: []\n" in new
+
+
+def test_cambiar_host():
+    text = YAML.replace("  sim-1:\n    driver: sim\n", "  sim-1:\n    driver: sim\n    host: 10.0.0.1      # IP\n")
+    new = apply_edits(text, {"robots": {"sim-1": {"host": "10.0.0.99"}}})
+    assert _lines_changed(text, new) == [("    host: 10.0.0.1      # IP", "    host: 10.0.0.99     # IP")]
+
+
+@pytest.mark.parametrize("edits, msg", [
+    ({"robots": {"Mir 3": {"driver": "mir"}}}, "no vale como serial"),
+    ({"robots": {"mir-3": {"driver": "mir", "host": "no vale/"}}}, "IP o un nombre"),
+    ({"robots": {"mir-3": {"driver": "mir", "pose": [0, 0, 0]}}}, "al darlo de alta"),
+])
+def test_altas_invalidas(edits, msg):
+    with pytest.raises(EditError, match=msg):
+        apply_edits(YAML, edits)
+
+
+def test_alta_validada_por_su_driver(tmp_path):
+    p = tmp_path / "fleet.yaml"
+    p.write_text(YAML, encoding="utf-8")
+    with pytest.raises(ConfigError, match="host"):                       # un mir sin host
+        save(p, {"robots": {"mir-3": {"driver": "mir", "actions": ["coger"]}}}, env_path=tmp_path / "no.env")
+    with pytest.raises(ConfigError, match="desconocido"):
+        save(p, {"robots": {"x-1": {"driver": "kuka"}}}, env_path=tmp_path / "no.env")
+    assert p.read_text(encoding="utf-8") == YAML
