@@ -15,7 +15,10 @@ from tests.test_fleet import FakeBus
 
 def _server():
     cfg = FleetConfig(robots={"sim-1": RobotConfig("sim-1", driver="sim", battery_min=25,
-                                                   action_types=frozenset({"coger", "dejar"}))})
+                                                   action_types=frozenset({"coger", "dejar"}),
+                                                   raw={"driver": "sim", "battery": 90,
+                                                        "actions": {"coger": {}, "dejar": {}}})},
+                      actions={"coger": {"mission": "m"}, "dejar": {}, "volar": {}})
     d = SimDriver(SimRobotConfig("sim-1", {"coger", "dejar"}))
     robots = {"sim-1": Robot(cfg.robots["sim-1"], d)}
     bus = FakeBus({"sim-1": "SIM"})
@@ -172,3 +175,25 @@ def test_sync_check_bajo_demanda():
         time.sleep(0.01)
     assert sync.checks == [True] and msgs[0]["report"]["level"] == "completa"
     assert c.get("/api/sync").json()["reports"]["sim-1"]["state"] == {"g1": "ok"}
+
+
+# ------------------------------------------------------------ configurador
+def test_config_solo_lectura():
+    srv, _ = _server()
+    info = TestClient(srv.app).get("/api/config").json()
+    assert [a["name"] for a in info["actions"]] == ["coger", "dejar", "volar"]   # también las sin robot
+    assert info["actions"][0] == {"name": "coger", "definition": {"mission": "m"}, "needs": None}
+    r = info["robots"][0]
+    assert r["actions"] == ["coger", "dejar"] and r["manufacturer"] == "SIM" and r["sync"] is False
+    assert r["settings"] == {"battery": 90}        # sin actions, driver… (van en sus campos)
+    assert info["auto_charge"]["battery_floor"] == 20
+    assert info["assigner"] == {"prefer_not_charging": True}
+
+
+def test_config_con_lo_que_necesita_cada_action():
+    srv, sync = _server_with_sync()
+    sync.action_needs = lambda defs: {n: {"required": ["g1"] if d.get("mission") else []} for n, d in defs.items()}
+    info = TestClient(srv.app).get("/api/config").json()
+    assert info["actions"][0]["needs"] == {"required": ["g1"]} and info["robots"][0]["sync"] is True
+    sync.action_needs = lambda defs: 1 / 0          # catálogo roto: la pestaña sigue
+    assert TestClient(srv.app).get("/api/config").json()["actions"][0]["needs"] is None

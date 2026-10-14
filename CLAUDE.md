@@ -46,9 +46,9 @@
   y pestaña **Sincronización** (`fm/adapters/mir/sync.py`,
   `fm/web/sync_monitor.py`), con los dos robots sincronizados y
   `fleet.yaml` por GUID. Configurador: decisiones 89–94 (2026-10-14) y
-  fase (a) hecha (`fleet.yaml` con catálogo de actions). **Siguiente: fase
-  (b), la pestaña en solo lectura** (punto 16 de "Pendiente" en
-  `docs/avance.md`).
+  fases (a) (`fleet.yaml` con catálogo de actions) y (b) (pestaña en solo
+  lectura) hechas. **Siguiente: fase (c) v1, editar casillas y umbrales**
+  (punto 16 de "Pendiente" en `docs/avance.md`).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con

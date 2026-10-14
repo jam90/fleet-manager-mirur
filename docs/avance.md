@@ -1562,6 +1562,29 @@ recibe exactamente el mismo bloque `actions` que con el formato anterior
     con la pista para migrar), lista con nombres que no están en el
     catálogo o repetidos, y catálogo que no es un mapping.
 
+## 2026-10-14 — Fase (b) del configurador: pestaña en solo lectura
+
+`pytest`: 132 en verde (3 nuevos). Probada con la config real y los dos
+robots: solo la parte web, desde un script sin el bucle del FM (sin
+auto-carga ni orders), con una comprobación rápida (solo GET) por robot.
+Todas las casillas habilitadas salen ✓; `recoger_pieza` en mir-1 sale ✓
+atenuado (la mission está grabada aunque no la tiene habilitada).
+Comprobada también a 390 px de ancho.
+
+95. **La matriz se calcula en el navegador cruzando dos cosas que ya
+    existían**, sin peticiones nuevas al robot: qué recursos del catálogo
+    necesita cada action (`GET /api/config`, que lo pide a
+    `MirSync.action_needs`: no depende del robot, basta con el primero que
+    sincroniza) y el último informe de `SyncMonitor` de cada robot (el de
+    la pestaña Sincronización, que llega también por el WebSocket). Así
+    las casillas se actualizan solas tras cada comprobación o despliegue.
+    `action_needs` es un método opcional del objeto de sincronización,
+    como `check`: el servidor web sigue sin saber qué es una mission.
+    Cada casilla marca también el estado de las actions **no**
+    habilitadas, atenuado: dice si habilitarla exigiría sincronizar antes.
+    La pestaña muestra la configuración del arranque; hasta la fase (c),
+    para cambiarla se edita `fleet.yaml` y se reinicia el FM.
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -1689,10 +1712,8 @@ robot después).
 
 16. **Configurador del FM** (`docs/plan-admin.md` §2, decisiones 91–93).
     Orden: ~~(a) fase 1: `fleet.yaml` con catálogo único de actions~~
-    **hecha el 2026-10-14** (decisión 94); (b) pestaña en solo lectura: matriz action ×
-    robot con el estado de sincronización de cada casilla (✓ grabada /
-    ✗ falta → enlace a Sincronización / ! distinta), umbrales y catálogo
-    de actions; (c) edición v1 (casillas, umbrales, `battery_min`) con
+    **hecha el 2026-10-14** (decisión 94); ~~(b) pestaña en solo
+    lectura~~ **hecha el 2026-10-14** (decisión 95); (c) edición v1 (casillas, umbrales, `battery_min`) con
     `ruamel.yaml` (sin perder comentarios), validación con el cargador,
     copia `.bak` y recarga en caliente entre ticks; v2, actions del
     catálogo; v3, altas y bajas de robots con reinicio.

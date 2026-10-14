@@ -216,3 +216,16 @@ def test_required_y_comprobaciones_rapida_y_completa(cat):
     s.client.db["missions"][M_SUB]["name"] = "editada en la web"
     assert s.check()["state"][M_SUB] == "ok"              # la rápida solo mira si existe
     assert s.check(deep=True)["state"][M_SUB] == "distinta"
+
+
+def test_action_needs_para_la_matriz_del_configurador(cat):
+    from fm.adapters.mir.sync import MirSync
+    s = MirSync("mir-1", "0.0.0.0", "Basic x", cat.root)
+    needs = s.action_needs({"por_guid": {"mission": M_MAIN}, "por_nombre": {"mission": "sub"},
+                            "fuera": {"mission": "no-catalogada"}, "sin_mission": {}})
+    assert needs["por_guid"]["required"] == cat.closure([M_MAIN])
+    assert needs["por_guid"]["mission_name"] == "principal"
+    assert needs["por_nombre"]["mission_guid"] == M_SUB
+    assert needs["fuera"] == {"mission": "no-catalogada", "mission_guid": None,
+                              "mission_name": None, "required": []}
+    assert needs["sin_mission"]["mission_guid"] is None

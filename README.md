@@ -374,6 +374,18 @@ Nada de lo que hace la UI es un camino aparte: se ve en `mosquitto_sub`.
 `/api/docs` es el OpenAPI. Un robot de otra marca aparece solo: la página no
 sabe nada de MiR.
 
+Dos pestañas más, para el profesor y no para el operario (en la barra lateral,
+debajo; enlazables con `#configurador` y `#sincronizacion`):
+
+- **Configurador** (`GET /api/config`, de momento solo lectura): la matriz
+  action × robot de `fleet.yaml`, con una marca por casilla que dice si el
+  robot tiene grabada la mission y lo que usa (✓ / ✗ falta / ! distinta),
+  según la última comprobación de Sincronización; los umbrales, los robots y
+  el catálogo de actions. Muestra la configuración con la que arrancó el FM.
+- **Sincronización**: lleva a cada robot lo que hay en `catalog/` (missions,
+  positions, mapas…) con los mismos GUIDs en toda la flota
+  (`docs/plan-admin.md` §3).
+
 ### `factsheet` (FM → bus, retained)
 
 Ficha del robot y del protocolo (§6.11), construida por el core a partir de

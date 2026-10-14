@@ -16,6 +16,12 @@ emite por el mismo WebSocket con el topic `fm/sync/<serial>`. Además,
 `SyncMonitor` comprueba cada 5 min qué tiene cada robot del catálogo
 (`sync_monitor.py`) y emite el informe por el mismo topic.
 
+Configurador (docs/plan-admin.md §2): `GET /api/config` da lo que el FM leyó
+de `fleet.yaml` (catálogo de actions, qué robot tiene cada una, umbrales). Si
+la sincronización está disponible, añade qué recursos del catálogo necesita
+cada action; la pestaña lo cruza con los informes de `SyncMonitor` para
+pintar en cada casilla si el robot tiene la mission. De momento, solo lectura.
+
 Concurrencia: uvicorn corre en un hilo propio con su event loop. Con el hilo
 principal comparte solo `MqttBus` (paho es thread-safe para `publish`;
 `HeaderCounter` lleva Lock) y datos de configuración de solo lectura. El
@@ -123,6 +129,35 @@ class WebServer:
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "instant_actions": list(INSTANT_ALLOWED)}
 
+    def config_info(self) -> dict:
+        """Configuración cargada, para la pestaña Configurador (solo lectura).
+        Es la del arranque: si se edita `fleet.yaml` a mano, hace falta
+        reiniciar el FM para verla aquí."""
+        robots = []
+        for s, r in self.robots.items():
+            rc = r.cfg
+            settings = {k: v for k, v in rc.raw.items()
+                        if k not in ("actions", "driver", "manufacturer", "battery_min")}
+            robots.append({"serial": s, "driver": rc.driver, "manufacturer": r.manufacturer,
+                           "battery_min": rc.battery_min, "actions": sorted(rc.action_types),
+                           "settings": settings, "sync": s in self.syncs})
+        # Qué necesita cada action del catálogo: no depende del robot (el
+        # catálogo es común), así que basta con el primer robot que sincroniza.
+        first = next(iter(self.syncs.values()), None)
+        needs = {}
+        if first is not None and hasattr(first, "action_needs"):
+            try:
+                needs = first.action_needs(self.cfg.actions)
+            except Exception as e:          # catálogo roto: la pestaña sigue, sin casillas de estado
+                log.warning("[web] no se pudo cruzar el catálogo de actions con catalog/: %s", e)
+        return {"actions": [{"name": n, "definition": d, "needs": needs.get(n)}
+                            for n, d in self.cfg.actions.items()],
+                "robots": robots,
+                "auto_charge": asdict(self.cfg.auto_charge),
+                "assigner": {"prefer_not_charging": self.cfg.prefer_not_charging},
+                "drivers": self.cfg.drivers,
+                "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer}
+
     # ------------------------------------------------------- sincronización
     def sync_status(self, serial: str) -> dict:
         r = self.robots[serial]
@@ -187,6 +222,10 @@ class WebServer:
         @app.get("/api/fleet")
         async def fleet():
             return self.fleet_info()
+
+        @app.get("/api/config")
+        def config():                       # `def`: lee catalog/ del disco
+            return self.config_info()
 
         @app.post("/api/fleet/order")
         async def fleet_order(body: FleetOrderIn):

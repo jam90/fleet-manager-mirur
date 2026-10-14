@@ -120,7 +120,7 @@
   .todo a, .page-sub a { color: var(--accent); font-weight: 700; }
   .tag { display: table; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     padding: 1px 7px; border-radius: var(--radius-sm); color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
-  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 
   /* ---- tarjetas de robot: blancas, planas; el estado lo da la etiqueta ---- */
   .robots { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
@@ -256,6 +256,27 @@
   .w-ok { color: var(--ok); border-color: var(--ok) !important; } .w-falta { color: var(--warn); border-color: var(--warn-line) !important; }
   .w-distinta, .w-corregir { color: var(--bad); border-color: var(--bad) !important; }
   .w-mixto { color: var(--ink-2); }
+  /* Configurador */
+  .grid-2 > .panel, main > .panel { min-width: 0; }   /* que la matriz haga scroll dentro, no la página */
+  .matrix-wrap { overflow-x: auto; }            /* con muchos robots, scroll dentro del panel */
+  .matrix { border-collapse: collapse; font-size: 14px; min-width: 100%; }
+  .matrix th, .matrix td { border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; white-space: nowrap; }
+  .matrix thead th { color: var(--navy); background: var(--surface-2); font-weight: 700; }
+  .matrix tbody th { position: sticky; left: 0; background: var(--surface); font-weight: 400; z-index: 1; }
+  .matrix .sub { display: block; font-size: 11px; }
+  .matrix td .cm { margin-left: 6px; }
+  .matrix td:not(.on) .cm { opacity: .5; }       /* no habilitada: el estado es solo informativo */
+  .matrix .fix { margin-left: 6px; font-size: 12px; color: var(--accent); font-weight: 700; }
+  .cm { font-weight: 800; }
+  .c-ok { color: var(--ok); } .c-falta { color: var(--warn); } .c-distinta { color: var(--bad); } .c-nd { color: var(--ink-3); }
+  .warns { margin: 0; padding-left: 18px; font-size: 13px; color: var(--warn); }
+  .warnline { display: block; color: var(--warn); font-weight: 700; font-size: 13px; }
+  .cfg-robot { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .cfg-robot .serial { color: var(--navy); }
+  .cfg-actions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
+                 grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+  .cfg-actions li { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 6px;
+                    align-content: start; }
 </style>
 </head>
 <body>
@@ -395,37 +416,111 @@
     </section>
   </main>
 
-  <!-- ===== Configurador (docs/plan-admin.md §2). Esqueleto: se rellena en
-       las fases 2 (solo lectura) y 3 (edición), tras las pruebas con robot. ===== -->
+  <!-- ===== Configurador (docs/plan-admin.md §2). Fase (b): solo lectura de
+       lo que el FM cargó de fleet.yaml (GET /api/config). Cada casilla de la
+       matriz cruza lo que necesita la action (sus recursos del catálogo) con
+       el último informe de SyncMonitor de ese robot (el mismo que usa la
+       pestaña Sincronización), así que se actualiza sola. ===== -->
   <main v-show="tab === 'configurador'">
     <h2 class="page-title">Configurador</h2>
     <p class="page-sub">Lo que hoy se edita a mano en <code>config/fleet.yaml</code>. Pensado para el profesor, no para el operario.</p>
+    <div class="todo"><span class="tag">solo lectura</span>
+      Es la configuración con la que arrancó el FM. Para cambiarla, edita <code>config/fleet.yaml</code> y reinicia el FM;
+      la edición desde aquí llega en la siguiente fase.</div>
+    <p class="empty" v-if="cfgState.error">{{ cfgState.error }}</p>
+
+    <div class="panel">
+      <h3>Qué robot hace qué action</h3>
+      <p class="hint">La casilla marcada indica que el robot tiene la action habilitada en <code>fleet.yaml</code>. La marca de
+        al lado dice si el robot tiene grabada la mission y todo lo que usa, según la última comprobación de
+        <a href="#sincronizacion">Sincronización</a>:
+        <span class="cm c-ok">✓</span> grabada, <span class="cm c-falta">✗</span> falta,
+        <span class="cm c-distinta">!</span> distinta (editada en el robot; solo se ve con «A fondo»),
+        <span class="cm c-nd">?</span> sin comprobar o fuera del catálogo.</p>
+      <div class="matrix-wrap" v-if="cfgState.actions.length">
+        <table class="matrix">
+          <thead>
+            <tr><th scope="col">action</th>
+              <th scope="col" v-for="r in cfgState.robots" :key="r.serial">{{ r.serial }}
+                <span class="muted sub">{{ r.actions.length }} actions</span></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="a in cfgState.actions" :key="a.name">
+              <th scope="row"><b>{{ a.name }}</b>
+                <span class="muted sub" v-if="missionLabel(a)">{{ missionLabel(a) }}</span></th>
+              <td v-for="r in cfgState.robots" :key="r.serial" :class="{ on: cell(a, r).enabled }" :title="cell(a, r).title">
+                <input type="checkbox" disabled :checked="cell(a, r).enabled" :aria-label="a.name + ' en ' + r.serial">
+                <span class="cm" :class="'c-' + cell(a, r).state">{{ cell(a, r).mark }}</span>
+                <a class="fix" v-if="cell(a, r).enabled && cell(a, r).state === 'falta'" href="#sincronizacion">sincronizar</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="empty" v-else-if="!cfgState.error">No hay actions en el catálogo de <code>fleet.yaml</code>.</p>
+      <ul class="warns" v-if="cfgWarnings.length">
+        <li v-for="(w, i) in cfgWarnings" :key="i">{{ w }}</li>
+      </ul>
+    </div>
+
     <div class="grid-2">
       <div class="panel">
-        <h3>Qué robot hace qué action</h3>
-        <div class="todo"><span class="tag">en diseño</span>
-          Matriz action × robot con casillas. Si un robot no tiene la mission, aviso con enlace a
-          <a href="#sincronizacion">Sincronización</a>.</div>
-      </div>
-      <div class="panel">
         <h3>Umbrales</h3>
-        <div class="todo"><span class="tag">en diseño</span>
-          Auto-carga (<code>battery_floor</code>, prioridad, cooldown), <code>battery_min</code> por robot y opciones del asignador.</div>
+        <dl class="kv">
+          <dt>Ir a cargar por debajo de</dt><dd>{{ cfgState.auto_charge.battery_floor }} % <code class="guid">auto_charge.battery_floor</code></dd>
+          <dt>Prioridad de la carga</dt><dd>{{ cfgState.auto_charge.priority }} <code class="guid">auto_charge.priority</code></dd>
+          <dt>Espera si la carga aborta</dt><dd>{{ cfgState.auto_charge.abort_cooldown_s }} s <code class="guid">auto_charge.abort_cooldown_s</code></dd>
+          <dt>No sacar al que carga</dt><dd>{{ cfgState.assigner.prefer_not_charging ? 'sí' : 'no' }}
+            <code class="guid">assigner.prefer_not_charging</code></dd>
+        </dl>
+        <p class="hint">Batería mínima para aceptar orders (<code>battery_min</code>); debe ser mayor que la de ir a cargar.</p>
+        <dl class="kv">
+          <template v-for="r in cfgState.robots" :key="r.serial">
+            <dt>{{ r.serial }}</dt>
+            <dd>{{ r.battery_min }} %
+              <span class="warnline" v-if="r.battery_min <= cfgState.auto_charge.battery_floor">⚠ no supera {{ cfgState.auto_charge.battery_floor }} %: sin histéresis</span></dd>
+          </template>
+        </dl>
       </div>
-      <div class="panel">
-        <h3>Catálogo de actions</h3>
-        <div class="todo"><span class="tag">en diseño</span>
-          Por action: mission asociada, <code>position_inputs</code>, <code>number_inputs</code> con rango,
-          <code>required_inputs</code> y allowlist de positions.</div>
-      </div>
+
       <div class="panel">
         <h3>Robots</h3>
-        <div class="todo"><span class="tag">en diseño</span>
-          Alta y baja de robots: serial, driver y host.</div>
+        <div v-for="r in cfgState.robots" :key="r.serial" class="cfg-robot">
+          <b class="serial">{{ r.serial }}</b>
+          <span class="muted">driver {{ r.driver }} · publica como {{ r.manufacturer }}
+            · {{ r.sync ? 'sincronizable' : 'sin sincronización' }}</span>
+          <dl class="kv" v-if="Object.keys(r.settings).length">
+            <template v-for="(v, k) in r.settings" :key="k"><dt>{{ k }}</dt><dd>{{ fmtVal(v) }}</dd></template>
+          </dl>
+        </div>
+        <template v-for="(d, name) in cfgState.drivers" :key="name">
+          <p class="hint">Valores por defecto del driver <b>{{ name }}</b> (<code>drivers.{{ name }}</code>; cada robot los puede cambiar):</p>
+          <dl class="kv">
+            <template v-for="(v, k) in d" :key="k"><dt>{{ k }}</dt>
+              <dd v-if="catName(v)">{{ catName(v) }}<code class="guid">{{ v }}</code></dd><dd v-else>{{ fmtVal(v) }}</dd></template>
+          </dl>
+        </template>
       </div>
     </div>
-    <div class="todo"><b>Guardar y aplicar</b>
-      Validar con el mismo cargador del arranque, copia <code>.bak</code> de <code>fleet.yaml</code> sin perder comentarios y recarga en caliente entre ticks.</div>
+
+    <div class="panel">
+      <h3>Catálogo de actions</h3>
+      <p class="hint">Cada action se define una vez para toda la flota (<code>actions:</code> en <code>fleet.yaml</code>).</p>
+      <ul class="cfg-actions">
+        <li v-for="a in cfgState.actions" :key="a.name">
+          <div><b>{{ a.name }}</b>
+            <span class="muted"> · {{ enabledIn(a).length ? 'en ' + enabledIn(a).join(', ') : 'ningún robot la tiene habilitada' }}</span></div>
+          <dl class="kv">
+            <template v-for="(v, k) in a.definition" :key="k">
+              <dt>{{ k }}</dt>
+              <dd v-if="k === 'mission' && a.needs && a.needs.mission_name">{{ a.needs.mission_name }}<code class="guid">{{ v }}</code></dd>
+              <dd v-else>{{ fmtVal(v) }}
+                <span class="warnline" v-if="k === 'mission' && a.needs && !a.needs.mission_guid">no está en el catálogo de missions: no se puede comprobar ni sincronizar</span></dd>
+            </template>
+          </dl>
+        </li>
+      </ul>
+    </div>
   </main>
 
   <!-- ===== Sincronización (docs/plan-admin.md §3). Lleva a un robot una
@@ -898,17 +993,65 @@ createApp({
       }
     }
 
+    // ---------------- configurador (docs/plan-admin.md §2), solo lectura
+    const cfgState = reactive({ actions: [], robots: [], drivers: {}, error: '',
+                                auto_charge: {}, assigner: {} });
+    async function loadConfig() {
+      try {
+        Object.assign(cfgState, await (await fetch('/api/config')).json(), { error: '' });
+      } catch (e) { cfgState.error = 'no se pudo leer la configuración'; }
+    }
+    // Una casilla: ¿habilitada? y ¿tiene el robot lo que la action necesita?
+    // El estado sale del último informe de SyncMonitor (syncState.reports).
+    function cell(a, r) {
+      const enabled = r.actions.includes(a.name);
+      const out = (state, mark, detail) => ({ enabled, state, mark, detail, title: `${a.name} en ${r.serial}: ${detail}` });
+      if (!r.sync) return out('na', '', enabled ? 'habilitada (el driver no ofrece sincronización)' : 'no habilitada');
+      const n = a.needs;
+      if (!n || !n.mission_guid) return out('nd', '?', 'la mission no está en el catálogo: no se puede comprobar');
+      const rep = syncState.reports[r.serial];
+      if (!rep || !rep.state) return out('nd', '?', 'sin comprobar todavía');
+      const st = n.required.map(g => rep.state[g] || 'falta');
+      const missing = n.required.filter((g, i) => st[i] === 'falta' || st[i] === 'corregir');
+      if (missing.length) return out('falta', '✗', 'faltan ' + names(missing));
+      if (st.includes('distinta')) return out('distinta', '!', 'grabada, pero distinta del catálogo');
+      return out('ok', '✓', `grabada (comprobación ${rep.level}, ${ago(rep.checked_at)})`);
+    }
+    const missionLabel = a => (a.needs && a.needs.mission_name) || a.definition.mission || '';
+    const enabledIn = a => cfgState.robots.filter(r => r.actions.includes(a.name)).map(r => r.serial);
+    const catName = v => (typeof v === 'string' && catByGuid.value[v]) ? catByGuid.value[v].name : '';
+    function fmtVal(v) {
+      if (Array.isArray(v)) return v.join(', ');
+      if (v && typeof v === 'object')
+        return Object.entries(v).map(([k, x]) => x && typeof x === 'object'
+          ? `${k} (${Object.entries(x).map(([a, b]) => a + ' ' + b).join(', ')})` : `${k}: ${x}`).join('; ');
+      return String(v);
+    }
+    // Avisos que se ven de un vistazo: lo habilitado que el robot no tiene.
+    const cfgWarnings = computed(() => {
+      const w = [];
+      for (const r of cfgState.robots)
+        for (const a of cfgState.actions) {
+          const c = cell(a, r);
+          if (c.enabled && c.state === 'falta') w.push(`${r.serial} tiene habilitada «${a.name}», pero ${c.detail}.`);
+        }
+      return w;
+    });
+
     // ---------------- pestañas: la del #hash de la URL, o la primera si no es válida
     const tabFromHash = () => {
       const id = location.hash.slice(1);
       return TABS.some(t => t.id === id) ? id : TABS[0].id;
     };
     ui.tab = tabFromHash();
-    window.addEventListener('hashchange', () => {
-      ui.tab = tabFromHash();
-      if (ui.tab === 'sincronizacion') loadSync();     // el catálogo cambia al capturar
-    });
-    if (ui.tab === 'sincronizacion') loadSync();
+    // Al entrar en una pestaña de administración se relee lo que puede haber
+    // cambiado: el catálogo (al capturar) y los informes de sincronización.
+    function onTab() {
+      if (ui.tab === 'sincronizacion' || ui.tab === 'configurador') loadSync();
+      if (ui.tab === 'configurador') loadConfig();
+    }
+    window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); onTab(); });
+    onTab();
 
     loadFleet();
     connect();
@@ -917,6 +1060,7 @@ createApp({
              syncState, syncCatalog, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
              canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
              fleetRows, whereIs, syncCheck, prepare,
+             cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };
   },
 }).mount('#app');

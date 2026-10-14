@@ -427,23 +427,42 @@ class MirSync:
         # Se relee cada vez: el catálogo cambia al capturar (git, script).
         return Catalog.load(self.catalog_dir)
 
+    @staticmethod
+    def _resolve(cat: Catalog, ref: str) -> str | None:
+        """Mission de fleet.yaml (GUID del catálogo o nombre) → GUID del
+        catálogo, o None si no está. Un nombre se busca entre las missions
+        del catálogo; si hay varias con ese nombre, cuenta como fuera."""
+        if ref in cat.items:
+            return ref
+        hits = [g for g, d in cat.items.items() if cat.kind(g) == "mission" and d["name"] == ref]
+        return hits[0] if len(hits) == 1 else None
+
     def required(self, cat: Catalog) -> tuple[list[str], list[str]]:
         """(GUIDs del catálogo que el robot debe tener, missions de fleet.yaml
-        que no están en el catálogo). Un nombre se busca entre las missions
-        del catálogo; si hay varias con ese nombre, cuenta como fuera."""
-        by_name: dict[str, list[str]] = {}
-        for g, d in cat.items.items():
-            if cat.kind(g) == "mission":
-                by_name.setdefault(d["name"], []).append(g)
+        que no están en el catálogo)."""
         found, outside = [], []
         for w in self.wanted:
-            if w in cat.items:
-                found.append(w)
-            elif len(by_name.get(w, [])) == 1:
-                found.append(by_name[w][0])
-            else:
+            g = self._resolve(cat, w)
+            if g is None:
                 outside.append(w)
+            else:
+                found.append(g)
         return (cat.closure(found) if found else []), outside
+
+    def action_needs(self, definitions: dict[str, dict]) -> dict[str, dict]:
+        """Para la matriz del configurador: qué recursos del catálogo necesita
+        cada action del catálogo `actions:` de fleet.yaml (definición cruda).
+        No depende del robot (el catálogo es común); el estado de cada recurso
+        en cada robot lo da `check()`. Sin red."""
+        cat = self.catalog()
+        out = {}
+        for name, d in definitions.items():
+            ref = str(d.get("mission") or "")
+            g = self._resolve(cat, ref) if ref else None
+            out[name] = {"mission": ref, "mission_guid": g,
+                         "mission_name": cat.items[g]["name"] if g else None,
+                         "required": cat.closure([g]) if g else []}
+        return out
 
     def _preview(self, cat: Catalog, selected: Iterable[str]) -> list[Op]:
         guids = cat.closure(selected)

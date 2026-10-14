@@ -355,6 +355,7 @@ los dos robots y `mirur-tknikav2` renombrado a `mirur-tknika`.
 1. **Nuevo formato de `fleet.yaml`** (catálogo de actions), con tests y sin UI.
 2. **Pestañas en solo lectura:** matriz action × robot, umbrales, vista de
    flota de sincronización (comparando con los índices actuales por nombre).
+   **Hecha (2026-10-14, decisión 95).**
 3. **Edición en el configurador** + guardado con `ruamel.yaml` + recarga,
    en tres partes: v1 casillas y umbrales, v2 catálogo de actions, v3
    robots (§2.2).
