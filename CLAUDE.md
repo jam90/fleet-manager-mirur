@@ -211,7 +211,8 @@ fleet-manager-mirur/
     │   ├── __init__.py            ← registro DRIVERS + make_driver()
     │   ├── base.py                ← Telemetry, Job, JobStatus, RobotDriver (Protocol)
     │   ├── mir/                   ← client.py (REST), translate.py (puro), driver.py, config.py,
-    │   │                            sync.py (catálogo/despliegue), create.py (pestaña Crear)
+    │   │                            sync.py (catálogo/despliegue), create.py (pestaña Crear),
+    │   │                            remove.py (quitar de un robot, retirar de la flota)
     │   └── sim/                   ← driver simulado sin hardware
     └── vda5050/
         ├── header.py              ← topic ≡ header (§5.1), timestamp, headerId

@@ -1754,6 +1754,35 @@ avisos de color en modo oscuro.
      hueco intermedio no se rellena. Si el borrado falla a medias, el
      catálogo no se toca y se puede reintentar.
 
+## 2026-10-14 — Quitar de un robot y retirar de la flota
+
+`pytest`: 191 en verde (6 nuevos). Probado en el navegador solo con la
+parte web, sobre una copia del catálogo y el MiR falso de los tests. El
+usuario probó antes con robot el «Borrar» de la pestaña Crear: bloquea con
+el robot ocupado; parando las missions en marcha, borró sus pruebas.
+
+105. **Retirar de la flota guarda el número** (decisión del usuario).
+     Cualquier mission o position del catálogo (no la entrada de un
+     marcador: va con él) se borra de todos los robots y del catálogo, y
+     sus GUIDs se apuntan en `catalog/retirados.json`, que la numeración
+     de la pestaña Crear salta. Motivo: lo de la flota tiene historial en
+     git y puede seguir en backups del MiR; reutilizar su GUID para otra
+     cosa confundiría. El «Borrar» de la pestaña Crear sí libera el número
+     (son pruebas). Mismos bloqueos que el «Borrar» (decisión 104), más:
+     una position que esté en una `positions_allowlist` de `fleet.yaml`.
+     Lo que no lleva GUID `imperialfleet-…` no se toca nunca: se gestiona
+     en la web del MiR (capturarlo desde la UI sigue en el punto 19).
+106. **Quitar de un robot, solo missions, y los «sobrantes».** La
+     comprobación de la flota marca como sobrantes las missions del
+     catálogo que un robot tiene y su `fleet.yaml` no pide (ni lo que pide
+     las usa); cada una lleva un botón para quitarla de ese robot, y el
+     catálogo no cambia (se puede volver a desplegar). No se quita si la
+     necesita, si la usa otra mission que el robot tiene, o con el robot
+     ocupado. Las positions no son "sobrantes": una order puede pedir
+     cualquiera por nombre (`target_pos`), así que el FM no sabe si un
+     robot no la usa; una position se retira de la flota o nada. Código
+     común en `fm/adapters/mir/remove.py` (también lo usa la pestaña Crear).
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del

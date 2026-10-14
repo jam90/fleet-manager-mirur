@@ -253,6 +253,13 @@
   .fleet-sync .when { grid-area: w; font-size: 12px; } .fleet-sync .acts { grid-area: a; }
   .fleet-sync .detail { grid-area: d; display: grid; gap: 2px; font-size: 13px; }
   .fleet-sync .detail:empty { display: none; }
+  .d-sobra { color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .chip-btn { font: inherit; font-size: 12px; padding: 0 6px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong);
+              background: var(--surface); color: var(--ink); cursor: pointer; }
+  .chip-btn:hover { border-color: var(--bad); color: var(--bad); }
+  .link-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; color: var(--ink-3); cursor: pointer;
+              text-decoration: underline; justify-self: start; }
+  .link-btn:hover { color: var(--bad); }
   .d-falta { color: var(--warn); } .d-distinta, .d-error { color: var(--bad); } .d-fuera { color: var(--ink-2); }
   .where { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
   .where span { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: var(--radius-sm); border: 1px solid var(--line); }
@@ -751,6 +758,9 @@
           <span class="muted when">{{ row.when }}</span>
           <span class="detail">
             <span v-for="(d, i) in row.details" :key="i" :class="d.cls">{{ d.text }}</span>
+            <span class="d-sobra" v-if="row.surplus.length">Sobran (su fleet.yaml no las pide):
+              <button v-for="m in row.surplus" :key="m.guid" class="chip-btn" @click="removeFromRobot(row.serial, m)"
+                      :title="'Quitar ' + m.name + ' de ' + row.serial + ' (sigue en el catálogo)'">{{ m.name }} ✕</button></span>
           </span>
           <span class="acts" v-if="row.supported">
             <button class="btn" @click="syncCheck(row.serial, false)" :disabled="!row.canCheck">Comprobar</button>
@@ -760,6 +770,7 @@
         </li>
       </ul>
     </div>
+    <div class="resp" :class="syncState.rm.cls" v-if="syncState.rm.text">{{ syncState.rm.text }}</div>
     <div class="sync-grid">
       <div class="panel">
         <h3>Catálogo</h3>
@@ -783,6 +794,8 @@
                 <b>{{ it.name }}</b> <span class="muted">{{ it.extra }}</span>
                 <span class="muted" v-if="it.origin_group && it.kind === 'mission'"> · de {{ it.origin_group }}</span></label>
               <code class="guid">{{ it.guid }}</code>
+              <button class="link-btn" v-if="(it.kind === 'mission' || it.kind === 'position') && !it.auto" @click="retire(it)"
+                      :title="'Borrar ' + it.name + ' de todos los robots y del catálogo; su número no se reutiliza'">Retirar de la flota</button>
               <span class="where" v-if="whereIs(it).length">
                 <span v-for="w in whereIs(it)" :key="w.serial" :class="'w-' + w.state" :title="w.title">{{ w.text }}</span>
               </span>
@@ -1040,7 +1053,7 @@ createApp({
 
     // ---------------- sincronización (docs/plan-admin.md §3)
     const syncState = reactive({ catalog: [], robots: [], reports: {}, sel: {}, target: '', ops: [], opsKey: '',
-                                 msg: '', loading: false });
+                                 msg: '', loading: false, rm: { text: '', cls: '' } });
     // "hace 3 min": un reloj que avanza solo para que el texto no se quede viejo.
     const clock = reactive({ now: Date.now() });
     setInterval(() => { clock.now = Date.now(); }, 15000);
@@ -1144,7 +1157,7 @@ createApp({
     }
     const fleetRows = computed(() => syncState.robots.map(r => {
       const rep = syncState.reports[r.serial];
-      const row = { serial: r.serial, supported: r.supported, details: [], fixable: false,
+      const row = { serial: r.serial, supported: r.supported, details: [], fixable: false, surplus: [],
                     canCheck: r.supported && r.online && !r.deploying && !r.checking };
       if (!r.supported) return { ...row, key: '', label: 'no aplica', when: '' };
       if (r.checking) Object.assign(row, { key: 'ejecutando', label: 'comprobando…' });
@@ -1161,6 +1174,8 @@ createApp({
       if (rep.outside.length) row.details.push({ cls: 'd-fuera', text: 'En fleet.yaml pero no en el catálogo: ' + rep.outside.join(', ') });
       if (rep.error) row.details.push({ cls: 'd-error', text: 'La última comprobación falló: ' + rep.error });
       row.fixable = missing.length + fix.length > 0;
+      // (un informe anterior a un retiro puede nombrar algo que ya no está en el catálogo)
+      row.surplus = (rep.surplus || []).filter(g => catByGuid.value[g]).map(g => ({ guid: g, name: catByGuid.value[g].name }));
       if (!row.key) {
         if (diff.length) Object.assign(row, { key: 'error', label: `${diff.length} distintas` });
         else if (missing.length || fix.length) Object.assign(row, { key: 'encola', label: `faltan ${missing.length + fix.length}` });
@@ -1168,6 +1183,41 @@ createApp({
       }
       return row;
     }));
+    // ---- quitar de un robot / retirar de la flota (decisiones 105–106): plan → confirmar → hacer
+    async function removal(previewUrl, url, guid, what, ask) {
+      const say = (text, cls) => { syncState.rm.text = text; syncState.rm.cls = cls; };
+      const post = async (u) => {
+        const r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guid }) });
+        return [r.ok, await r.json()];
+      };
+      say(`mirando ${what}…`, 'pending');
+      const [ok, plan] = await post(previewUrl);
+      if (!ok) return say(plan.detail, 'REJECTED');
+      if (plan.blockers.length) return say(`No se puede: ${plan.blockers.join('; ')}.`, 'REJECTED');
+      if (!confirm(ask(plan))) return say('', '');
+      say('quitando…', 'pending');
+      const [done, out] = await post(url);
+      if (!done) return say(out.detail, 'REJECTED');
+      return out;
+    }
+    async function removeFromRobot(serial, m) {
+      const out = await removal(`/api/sync/${serial}/remove/preview`, `/api/sync/${serial}/remove`, m.guid,
+        `si se puede quitar «${m.name}» de ${serial}`,
+        () => `¿Quitar la mission «${m.name}» de ${serial}?\n\nSigue en el catálogo: se puede volver a desplegar.`);
+      if (out) { syncState.rm.text = `«${out.name}» quitada de ${serial}; sigue en el catálogo.`; syncState.rm.cls = 'ASSIGNED';
+                 addEvent(serial, `quitada la mission «${out.name}» (sigue en el catálogo)`); }
+      loadSync();
+    }
+    async function retire(it) {
+      const out = await removal('/api/retire/preview', '/api/retire', it.guid, `dónde está «${it.name}»`,
+        plan => `¿Retirar ${KIND_LABEL[it.kind]} «${it.name}» de la flota?\n` +
+                (plan.robots.length ? `Se borra de ${plan.robots.join(' y ')} ` : 'No está en ningún robot; ') +
+                `y del catálogo. Su número de GUID queda reservado (no se reutiliza).\n${it.guid}\n\nEn git queda el historial del fichero.`);
+      if (out) { syncState.rm.text = `«${out.name}» retirada de la flota` + (out.robots.length ? ` (borrada de ${out.robots.join(' y ')})` : '') + '.';
+                 syncState.rm.cls = 'ASSIGNED'; addEvent(out.robots.join(', ') || 'catálogo', `retirada ${out.kind} «${out.name}» (${out.guid})`); }
+      loadSync();
+    }
+
     // En qué robots está cada recurso del catálogo (con muchos robots, un contador).
     const W_TEXT = { ok: '✓', falta: '✗', distinta: '!', corregir: '~' };
     function whereIs(it) {
@@ -1510,7 +1560,7 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
              canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
-             fleetRows, whereIs, syncCheck, prepare,
+             fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              createState, canCreate, createRes, captureRes, deleteRes,

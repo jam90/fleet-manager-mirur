@@ -387,7 +387,12 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
   creado allí de los robots y del catálogo (con confirmación; no si lo usa
   `fleet.yaml` u otro recurso, ni con un robot sin conexión u ocupado).
   En **Sincronización**, con el robot ocupado solo se despliega lo que hay
-  que crear; corregir lo que ya tiene espera a que quede libre.
+  que crear; corregir lo que ya tiene espera a que quede libre. El estado
+  de la flota marca las missions **sobrantes** de cada robot (su
+  `fleet.yaml` no las pide) con un botón para **quitarlas de ese robot**
+  (siguen en el catálogo), y cada mission o position del catálogo tiene
+  **Retirar de la flota** (se borra de los robots y del catálogo; su número
+  de GUID queda reservado en `catalog/retirados.json`).
 
 - **Configurador** (`GET /api/config`): la matriz action × robot de
   `fleet.yaml`, con una marca por casilla que dice si el robot tiene grabada

@@ -14,8 +14,9 @@ El ciclo de un recurso nuevo:
   editor del mapa, `http://<ip>/maps/<guid del mapa>`.
 
 **Número del GUID** (§4): el máximo de los GUIDs estándar del mismo tipo (y
-del mismo mapa, en las positions) que hay en el catálogo — borradores
-incluidos — y en los robots que respondan, más uno. Al crear, el recurso se
+del mismo mapa, en las positions) que hay en el catálogo — borradores y
+retirados incluidos (`catalog/retirados.json`, `remove.py`) — y en los
+robots que respondan, más uno. Al crear, el recurso se
 apunta en `catalog/` como **borrador** (`"borrador": true`), así que su
 número queda reservado aunque el robot luego esté apagado; los borradores
 no se despliegan (`Catalog.drafts`). **Capturar** lo relee del robot y
@@ -31,6 +32,7 @@ from pathlib import Path
 from typing import Iterable
 
 from fm.adapters.mir.client import MirApiError
+from fm.adapters.mir.remove import retired, usage_blockers
 from fm.adapters.mir.sync import (AUTO_CHILD_TYPES, FACTORY, FOLDERS, GUIDISH, Catalog, is_std,
                                   normalized_actions, parse_std, std_guid)
 
@@ -75,6 +77,11 @@ def _origen(serial: str, guid: str, **extra) -> dict:
     return {"robot": serial, **extra, "guid": guid, "capturado": date.today().isoformat()}
 
 
+def _retired(sync) -> set[str]:
+    """Números retirados de la flota: no se reutilizan (decisión 105)."""
+    return {r["guid"] for r in retired(sync.catalog_dir)}
+
+
 def _get_or(client, path: str, msg: str):
     try:
         return client._req("GET", path)
@@ -110,7 +117,7 @@ def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = ())
         names |= {d["name"] for d in same_group}
         if name in names:
             raise CreateError(f"ya hay una mission {name!r} en el grupo {group['name']!r}")
-        taken = set(every) | robot_std_guids(c, "mission") | set(others)
+        taken = set(every) | _retired(sync) | robot_std_guids(c, "mission") | set(others)
         guid = next_guid("mission", inst, group_num, taken, per_parent=False)
         doc = {"guid": guid, "name": name, "description": "", "group_id": group_guid,
                "session_id": session, "hidden": False}
@@ -146,7 +153,7 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = ()) 
         names |= {d["name"] for d in same_map}
         if name in names:
             raise CreateError(f"ya hay una position {name!r} en el mapa {mp['name']!r}")
-        taken = set(every) | robot_std_guids(c, "position", map_guid) | set(others)
+        taken = set(every) | _retired(sync) | robot_std_guids(c, "position", map_guid) | set(others)
         guid = next_guid("position", inst, map_num, taken, per_parent=True)
         pos = st["position"]
         doc = {"guid": guid, "name": name, "type_id": POSITION_NORMAL,
@@ -239,7 +246,8 @@ def _capture_position(sync, cat: Catalog, old: dict) -> list[tuple[str, dict]]:
             e = c._req("GET", f"positions/{hijas[0]['guid']}")
             prev = next((g for g, d in cat.items.items() if d.get("parent_id") == guid), None)
             _, inst, _, map_num = parse_std(old["map_id"])
-            eg = prev or next_guid("position", inst, map_num, {**cat.items, **cat.drafts}, per_parent=True)
+            eg = prev or next_guid("position", inst, map_num, {*cat.items, *cat.drafts, *_retired(sync)},
+                                   per_parent=True)
             docs.append(("position", {
                 "guid": eg, "name": e["name"], "type_id": e["type_id"],
                 **{k: e[k] for k in ("pos_x", "pos_y", "orientation")},
@@ -260,56 +268,10 @@ def created_here(cat: Catalog, guid: str) -> dict | None:
     return d if d.get("_origen", {}).get("guid") == guid else None
 
 
-def _entries_of(cat: Catalog, guid: str) -> list[str]:
-    """Entradas (creadas por el MiR) de un marcador: se van con él."""
-    return [g for g, d in cat.items.items() if d.get("parent_id") == guid and d.get("creada_por_mir")]
-
-
 def delete_blockers(sync, guid: str, definitions: dict, wanted: Iterable[str]) -> list[str]:
-    """Por qué no se puede borrar `guid` del catálogo (vacío = se puede).
-    `definitions`: catálogo `actions:` de fleet.yaml; `wanted`: lo que los
-    robots necesitan según fleet.yaml (missions de sus actions y de carga)."""
+    """Por qué no se puede borrar `guid` (vacío = se puede): solo lo creado
+    aquí y que nadie use (`remove.usage_blockers`)."""
     cat = sync.catalog()
-    d = created_here(cat, guid)
-    if d is None:
+    if created_here(cat, guid) is None:
         return ["solo se borra desde aquí lo creado en la pestaña Crear"]
-    out = []
-    wanted = set(wanted)
-    refs = wanted | {sync._resolve(cat, w) for w in wanted}       # por GUID o por nombre
-    names = {n for n, a in (definitions or {}).items() if a and a.get("mission") in (guid, d["name"])}
-    if names:
-        out.append(f"está en fleet.yaml (actions: {', '.join(sorted(names))}): quítala antes en el Configurador")
-    elif guid in refs or d["name"] in wanted:
-        out.append("la necesita algún robot según fleet.yaml (¿mission de carga?)")
-    going = {guid, *_entries_of(cat, guid)}
-    users = sorted(cat.items[g]["name"] for g in cat.items
-                   if g not in going and going & cat.deps(g))
-    if users:
-        out.append(f"la usan otros recursos del catálogo: {', '.join(users)}")
-    return out
-
-
-def exists_on(client, guid: str) -> bool:
-    path = f"{FOLDERS[Catalog.kind(guid)]}/{guid}"
-    try:
-        client._req("GET", path)
-        return True
-    except MirApiError as e:
-        if e.status == 404:
-            return False
-        raise
-
-
-def delete_on(client, guid: str) -> None:
-    """Borra el recurso del robot (al borrar un marcador, el MiR borra su entrada)."""
-    client._req("DELETE", f"{FOLDERS[Catalog.kind(guid)]}/{guid}")
-
-
-def forget(sync, guid: str) -> list[str]:
-    """Quita del catálogo el recurso y, si es un marcador, su entrada."""
-    cat = sync.catalog()
-    gone = [guid, *_entries_of(cat, guid)]
-    for g in gone:
-        f = Path(sync.catalog_dir) / FOLDERS[cat.kind(g)] / f"{g}.json"
-        f.unlink(missing_ok=True)
-    return gone
+    return usage_blockers(sync, cat, guid, definitions, wanted)

@@ -351,7 +351,7 @@ def test_borrar_desde_la_web():
     sync.delete_blockers = lambda g, defs, wanted: []
     sync.exists = lambda g: store.get(g, False)
     sync.delete = lambda g: store.pop(g)
-    sync.forget = lambda g: [g]
+    sync.forget = lambda g, retire=False, robots=(): [g]
     c = TestClient(srv.app)
     assert c.post("/api/create/delete/preview", json={"guid": "X"}).status_code == 404
     plan = c.post("/api/create/delete/preview", json={"guid": "M1"}).json()
@@ -363,3 +363,27 @@ def test_borrar_desde_la_web():
     srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
     out = c.post("/api/create/delete", json={"guid": "M1"}).json()
     assert out["robots"] == ["sim-1"] and out["files"] == 1 and not store
+
+
+def test_retirar_y_quitar_desde_la_web():
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
+    store, forgot = {"M1": True}, []
+    sync.catalog_item = lambda g: {"guid": g, "kind": "mission", "name": "vieja"} if g == "M1" else None
+    sync.retire_blockers = lambda g, defs, wanted: []
+    sync.remove_blockers = lambda g: [] if store.get(g) else ["este robot no la tiene"]
+    sync.exists = lambda g: store.get(g, False)
+    sync.delete = lambda g: store.pop(g)
+    sync.forget = lambda g, retire=False, robots=(): forgot.append((g, retire, list(robots))) or [g]
+    c = TestClient(srv.app)
+    assert c.post("/api/sync/sim-1/remove/preview", json={"guid": "M1"}).json()["blockers"] == []
+    assert c.post("/api/sync/sim-1/remove", json={"guid": "M1"}).json()["name"] == "vieja"
+    assert not store and not forgot                                    # quitar no toca el catálogo
+    bad = c.post("/api/sync/sim-1/remove", json={"guid": "M1"})
+    assert bad.status_code == 409 and "no la tiene" in bad.json()["detail"]
+    store["M1"] = True
+    plan = c.post("/api/retire/preview", json={"guid": "M1"}).json()
+    assert plan["robots"] == ["sim-1"] and plan["blockers"] == []
+    assert c.post("/api/retire", json={"guid": "M1"}).status_code == 200
+    assert forgot == [("M1", True, ["sim-1"])] and not store            # retirar: catálogo + reserva

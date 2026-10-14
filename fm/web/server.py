@@ -233,16 +233,21 @@ class WebServer:
         """El catálogo es común: basta con el primer robot que ofrezca `capability`."""
         return next((y for y in self.syncs.values() if hasattr(y, capability)), None)
 
-    def delete_plan(self, guid: str) -> dict:
-        """Qué pasaría al borrar `guid`: en qué robots está y qué lo impide.
-        Se mira en TODOS los robots: uno sin conexión podría guardar una
-        copia, y su número de GUID se volvería a usar."""
-        first = self._first_creator("describe")
-        info = first.describe(guid) if first else None
+    def delete_plan(self, guid: str, retire: bool = False) -> dict:
+        """Qué pasaría al quitar `guid` de la flota (todos los robots y el
+        catálogo): en qué robots está y qué lo impide. `retire=False` es el
+        «Borrar» de la pestaña Crear (solo lo creado allí; libera el número);
+        `retire=True`, «Retirar de la flota» en Sincronización (cualquier
+        mission o position del catálogo; el número queda reservado). Se mira
+        en TODOS los robots: uno sin conexión podría guardar una copia."""
+        first = self._first_creator("catalog_item" if retire else "describe")
+        info = (first.catalog_item(guid) if retire else first.describe(guid)) if first else None
         if info is None:
-            raise HTTPException(404, f"{guid} no es algo creado desde la pestaña Crear")
+            raise HTTPException(404, f"{guid} no está en el catálogo" if retire
+                                else f"{guid} no es algo creado desde la pestaña Crear")
         wanted = [w for y in self.syncs.values() for w in getattr(y, "wanted", [])]
-        blockers = first.delete_blockers(guid, self.cfg.actions, wanted)
+        check = first.retire_blockers if retire else first.delete_blockers
+        blockers = check(guid, self.cfg.actions, wanted)
         where = []
         for s, y in self.syncs.items():
             if self.robots[s].last_telemetry is None:
@@ -259,22 +264,55 @@ class WebServer:
                 blockers.append(f"no se pudo mirar {s}: {e}")
         return {**info, "robots": where, "blockers": blockers}
 
-    def delete(self, guid: str) -> dict:
-        """Borra `guid` de los robots que lo tienen y del catálogo. Si falla a
+    def delete(self, guid: str, retire: bool = False) -> dict:
+        """Quita `guid` de los robots que lo tienen y del catálogo. Si falla a
         medias, el catálogo no se toca: se puede volver a intentar."""
         with self._create_lock:
-            plan = self.delete_plan(guid)
+            plan = self.delete_plan(guid, retire)
             if plan["blockers"]:
-                raise HTTPException(409, "no se borra: " + "; ".join(plan["blockers"]))
+                raise HTTPException(409, "no se quita: " + "; ".join(plan["blockers"]))
             for s in plan["robots"]:
                 try:
                     self.syncs[s].delete(guid)
                 except Exception as e:
                     raise HTTPException(502, f"no se pudo borrar en {s}: {e} (lo demás sigue igual; reinténtalo)")
-            gone = self._first_creator("forget").forget(guid)
-        log.info("[web] borrado %s %r de %s y del catálogo (%d ficheros)", plan["kind"], plan["name"],
-                 ", ".join(plan["robots"]) or "ningún robot", len(gone))
+            gone = self._first_creator("forget").forget(guid, retire, plan["robots"])
+        log.info("[web] %s %s %r de %s y del catálogo (%d ficheros)", "retirada" if retire else "borrada",
+                 plan["kind"], plan["name"], ", ".join(plan["robots"]) or "ningún robot", len(gone))
+        for s in plan["robots"]:
+            self.monitor.check_async(s)          # el estado de la flota, al día
         return {**plan, "files": len(gone)}
+
+    def remove_plan(self, serial: str, guid: str) -> dict:
+        """«Quitar de este robot»: una mission del catálogo que su fleet.yaml
+        no pide. El catálogo no cambia (se puede volver a desplegar)."""
+        y = self._sync_for(serial)
+        info = y.catalog_item(guid) if hasattr(y, "catalog_item") else None
+        if info is None:
+            raise HTTPException(404, f"{guid} no está en el catálogo")
+        st = self.sync_status(serial)
+        blockers = [] if st["online"] else [f"{serial} no responde"]
+        if st["busy"]:
+            blockers.append(f"{serial} está ocupado: espera a que quede libre")
+        if not blockers:
+            try:
+                blockers = y.remove_blockers(guid)
+            except Exception as e:
+                blockers = [f"no se pudo mirar {serial}: {e}"]
+        return {**info, "robots": [serial], "blockers": blockers}
+
+    def remove(self, serial: str, guid: str) -> dict:
+        with self._create_lock:
+            plan = self.remove_plan(serial, guid)
+            if plan["blockers"]:
+                raise HTTPException(409, "no se quita: " + "; ".join(plan["blockers"]))
+            try:
+                self.syncs[serial].delete(guid)
+            except Exception as e:
+                raise HTTPException(502, f"no se pudo borrar en {serial}: {e}")
+        log.info("[web] quitada de %s la mission %r (sigue en el catálogo)", serial, plan["name"])
+        self.monitor.check_async(serial)
+        return plan
 
     def _creator(self, serial: str):
         if serial not in self.robots:
@@ -442,6 +480,22 @@ class WebServer:
         @app.post("/api/create/{serial}/position")
         def create_position(serial: str, body: CreateIn):
             return self.create(serial, "position", body.name, body.parent)
+
+        @app.post("/api/retire/preview")
+        def retire_preview(body: CaptureIn):
+            return self.delete_plan(body.guid, retire=True)
+
+        @app.post("/api/retire")
+        def retire(body: CaptureIn):
+            return self.delete(body.guid, retire=True)
+
+        @app.post("/api/sync/{serial}/remove/preview")
+        def remove_preview(serial: str, body: CaptureIn):
+            return self.remove_plan(serial, body.guid)
+
+        @app.post("/api/sync/{serial}/remove")
+        def remove(serial: str, body: CaptureIn):
+            return self.remove(serial, body.guid)
 
         @app.post("/api/create/delete/preview")
         def delete_preview(body: CaptureIn):

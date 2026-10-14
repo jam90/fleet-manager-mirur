@@ -548,18 +548,33 @@ class MirSync:
         return delete_blockers(self, guid, definitions, wanted)
 
     def exists(self, guid: str) -> bool:
-        from fm.adapters.mir.create import exists_on
+        from fm.adapters.mir.remove import exists_on
         with self.lock:
             return exists_on(self.client, guid)
 
     def delete(self, guid: str) -> None:
-        from fm.adapters.mir.create import delete_on
+        from fm.adapters.mir.remove import delete_on
         with self.lock:
             delete_on(self.client, guid)
 
-    def forget(self, guid: str) -> list[str]:
-        from fm.adapters.mir.create import forget
-        return forget(self, guid)
+    def forget(self, guid: str, retire: bool = False, robots=()) -> list[str]:
+        from fm.adapters.mir.remove import forget
+        return forget(self, guid, retire, robots)
+
+    # ---- quitar de este robot / retirar de la flota (fm/adapters/mir/remove.py)
+    def remove_blockers(self, guid: str) -> list[str]:
+        from fm.adapters.mir.remove import remove_blockers
+        return remove_blockers(self, guid)
+
+    def retire_blockers(self, guid: str, definitions: dict, wanted) -> list[str]:
+        from fm.adapters.mir.remove import retire_blockers
+        return retire_blockers(self, guid, definitions, wanted)
+
+    def catalog_item(self, guid: str) -> dict | None:
+        """Nombre y tipo de un recurso del catálogo (o None)."""
+        cat = self.catalog()
+        d = cat.items.get(guid)
+        return None if d is None else {"guid": guid, "kind": cat.kind(guid), "name": d["name"]}
 
     def describe(self, guid: str) -> dict | None:
         """Nombre y tipo de un recurso creado desde la pestaña (o None)."""
@@ -620,6 +635,12 @@ class MirSync:
                 state = {op.guid: verb[op.verb] for op in self._preview(cat, list(cat.items))}
             else:
                 state = {g: "ok" if ok else "falta" for g, ok in presence(self.client, cat).items()}
+        # Sobrantes: missions del catálogo que el robot tiene y su fleet.yaml no
+        # pide (ni nada de lo que pide las usa). Las positions no: una order
+        # puede pedir cualquiera por nombre (decisión 106).
+        needed = set(required)
+        surplus = [g for g in cat.items if cat.kind(g) == "mission" and g not in needed
+                   and state.get(g) in ("ok", "distinta", "corregir")]
         return {"level": "completa" if deep else "rápida",
                 "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-                "state": state, "required": required, "outside": outside}
+                "state": state, "required": required, "outside": outside, "surplus": surplus}
