@@ -194,6 +194,9 @@
   .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
   .hint { font-size: 13px; color: var(--ink-3); margin: 0; }
   .resp { font-size: 13px; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); }
+  /* Enlaces dentro de un aviso de color: el color de acento no contrasta con
+     los fondos verde/rojo/ámbar (sobre todo en modo oscuro). */
+  .resp a:not(.btn), .err a:not(.btn) { color: inherit; font-weight: 700; text-decoration: underline; }
   .resp.ASSIGNED { background: var(--ok-bg); border-color: var(--ok); }
   .resp.REJECTED { background: var(--bad-bg); border-color: var(--bad); }
   .resp.pending { background: var(--warn-bg); border-color: var(--warn-line); }
@@ -278,6 +281,13 @@
   .num-in { font: inherit; width: 6em; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
             background: var(--surface); color: var(--ink); }
   .num-in:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+  .flow a { color: var(--accent); font-weight: 700; }
+  .sync-robots.row { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .drafts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .drafts li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;
+               border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 14px; }
+  a.btn { text-decoration: none; display: inline-block; }
   .act-form { border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 14px; display: grid; gap: 12px; }
   .act-form h4 { margin: 0; color: var(--navy); }
   .act-form .field input:not([type=checkbox]), .act-form .field select { max-width: 32em; }
@@ -430,6 +440,93 @@
         <p class="empty" v-else>Aquí aparecen los cambios de estado de las orders, las respuestas de la flota y los errores nuevos.</p>
       </div>
     </section>
+  </main>
+
+  <!-- ===== Crear (fm/adapters/mir/create.py). Alta en UN robot de una
+       mission vacía o de una position (donde está el robot) con GUID
+       estándar; se sigue en la web del MiR y se vuelve aquí a capturar. ===== -->
+  <main v-show="tab === 'crear'">
+    <h2 class="page-title">Crear</h2>
+    <p class="page-sub">Dar de alta en un MiR una mission vacía o una position con GUID de la flota, y seguir en su web.</p>
+    <ol class="flow">
+      <li><b>Crear</b> aquí</li><li>Terminarla en la <b>web del MiR</b></li><li><b>Capturar</b> aquí</li>
+      <li>Llevarla a otros robots en <a href="#sincronizacion">Sincronización</a></li>
+      <li>Habilitarla en el <a href="#configurador">Configurador</a></li>
+    </ol>
+    <div class="panel">
+      <h3>Robot</h3>
+      <div class="sync-robots row">
+        <label v-for="r in createState.robots" :key="r.serial" class="sync-robot" :class="{ off: !r.can_create || !r.online }">
+          <input type="radio" name="create-target" :value="r.serial" v-model="createState.robot" :disabled="!r.can_create || !r.online">
+          <b>{{ r.serial }}</b>
+          <span class="pill" :class="!r.can_create ? '' : r.online ? 'libre' : 'sinconexion'">
+            {{ !r.can_create ? 'no aplica' : r.online ? 'disponible' : 'sin conexión' }}</span>
+        </label>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Nueva mission</h3>
+        <p class="hint">Se crea vacía en el grupo elegido y se programa en el Blockly del MiR.</p>
+        <label class="field">Nombre<input id="new-mission-name" v-model="createState.mission.name" autocomplete="off"></label>
+        <label class="field">Grupo
+          <select id="new-mission-group" v-model="createState.mission.parent">
+            <option v-for="g in createState.groups" :key="g.guid" :value="g.guid">{{ g.name }}</option></select></label>
+        <div class="acts"><button class="btn primary" id="new-mission" :disabled="!canCreate('mission')" @click="createRes('mission')">Crear mission</button></div>
+      </div>
+      <div class="panel">
+        <h3>Nueva position</h3>
+        <p class="hint">Se crea <b>donde está ahora el robot</b> (posición normal); en el editor del mapa del MiR se ajusta o se convierte en marcador.
+          El robot tiene que estar trabajando en ese mapa.</p>
+        <label class="field">Nombre<input id="new-position-name" v-model="createState.position.name" autocomplete="off"></label>
+        <label class="field">Mapa
+          <select id="new-position-map" v-model="createState.position.parent">
+            <option v-for="m in createState.maps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
+        <div class="acts"><button class="btn primary" id="new-position" :disabled="!canCreate('position')" @click="createRes('position')">Crear position aquí</button></div>
+      </div>
+    </div>
+    <div class="resp" :class="createState.result ? 'ASSIGNED' : createState.error ? 'REJECTED' : 'pending'"
+         v-if="createState.result || createState.error || createState.busy">
+      <template v-if="createState.busy">{{ createState.busy }}</template>
+      <template v-else-if="createState.error">{{ createState.error }}</template>
+      <template v-else-if="createState.result.deleted">
+        <b>«{{ createState.result.name }}» borrada</b>
+        {{ createState.result.robots.length ? 'de ' + createState.result.robots.join(' y ') + ' y ' : '' }}del catálogo.
+      </template>
+      <template v-else-if="createState.result.captured">
+        <b>«{{ createState.result.name }}» capturada al catálogo</b> ({{ createState.result.detail }}).
+        Ahora se puede llevar a otros robots en <a href="#sincronizacion">Sincronización</a><template v-if="createState.result.kind === 'mission'">
+        y habilitar como action en el <a href="#configurador">Configurador</a></template>.
+      </template>
+      <template v-else>
+        <b>{{ createState.result.kind === 'mission' ? 'Mission' : 'Position' }} «{{ createState.result.name }}» creada en {{ createState.result.robot }}</b>
+        <code class="guid">{{ createState.result.guid }}</code>
+        <span v-if="createState.result.pose">en ({{ createState.result.pose[0] }}, {{ createState.result.pose[1] }}), {{ createState.result.pose[2] }}°.</span>
+        Sigue en la web del MiR y, cuando esté terminada, vuelve aquí a capturarla.
+        <div class="acts"><a class="btn primary" :href="createState.result.url" target="_blank" rel="noopener">Abrir en la web del MiR ↗</a></div>
+      </template>
+    </div>
+    <div class="panel">
+      <h3>Creado desde aquí</h3>
+      <p class="hint">Los <b>borradores</b> aún no se han capturado: su GUID está reservado en <code>catalog/</code>, pero no se
+        despliegan. <b>Capturar</b> lee del robot lo que se ha hecho en su web y lo guarda en el catálogo (se puede repetir).
+        <b>Borrar</b> lo quita de los robots que lo tengan y del catálogo; si era el número más alto, queda libre.</p>
+      <ul class="drafts" v-if="createState.created.length">
+        <li v-for="d in createState.created" :key="d.guid">
+          <span><span class="muted">{{ KIND_LABEL[d.kind] }}</span> <b>{{ d.name }}</b>
+            <span class="chip">{{ d.draft ? 'borrador' : 'capturada' }}</span>
+            <span class="muted">· de {{ d.robot }} · {{ d.date }}</span>
+            <code class="guid">{{ d.guid }}</code></span>
+          <span class="acts">
+            <a class="btn" v-if="d.url" :href="d.url" target="_blank" rel="noopener">Abrir en el MiR ↗</a>
+            <button class="btn" :class="{ primary: d.draft }" @click="captureRes(d)" :disabled="!!createState.busy">
+              {{ d.draft ? 'Capturar' : 'Volver a capturar' }}</button>
+            <button class="btn danger" @click="deleteRes(d)" :disabled="!!createState.busy">Borrar</button>
+          </span>
+        </li>
+      </ul>
+      <p class="empty" v-else>No hay nada creado desde aquí.</p>
+    </div>
   </main>
 
   <!-- ===== Configurador (docs/plan-admin.md §2). Muestra la config en uso
@@ -709,6 +806,15 @@
           <span class="feedback">{{ syncState.msg }}</span>
         </div>
         <p class="hint" v-if="syncState.ops.length && !previewFresh">La selección o el robot han cambiado: vuelve a pedir la vista previa.</p>
+        <template v-if="targetInfo && targetInfo.supported && targetInfo.busy">
+          <p class="warnline" v-if="previewFresh && opCounts.corregir">
+            {{ targetInfo.serial }} está ocupado (una order, la carga o una mission lanzada desde su web) y habría que corregir
+            recursos que ya tiene: no se despliega hasta que quede libre.</p>
+          <p class="hint" v-else>{{ targetInfo.serial }} está ocupado (una order, la carga o una mission lanzada desde su web):
+            solo se puede desplegar lo que hay que <b>crear</b>, que no toca lo que está ejecutando.</p>
+        </template>
+        <p class="warnline" v-else-if="targetInfo && targetInfo.supported && !targetInfo.online">
+          {{ targetInfo.serial }} no responde: no se puede desplegar.</p>
 
         <template v-if="syncState.ops.length">
           <div class="sync-sum">
@@ -748,6 +854,8 @@ const TABS = [
   { id: 'operacion', label: 'Operación', admin: false,
     icon: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/>' +
           '<rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>' },
+  { id: 'crear', label: 'Crear', admin: true,
+    icon: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>' },
   { id: 'configurador', label: 'Configurador', admin: true,
     icon: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/>' +
           '<circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>' },
@@ -984,7 +1092,8 @@ createApp({
                                       && !syncState.loading && !targetInfo.value.deploying);
     const canDeploy = computed(() => {
       const t = targetInfo.value;
-      return previewFresh.value && t && t.online && !t.busy && !t.deploying && !syncState.loading
+      // Con el robot ocupado solo se puede CREAR (no toca lo que ejecuta); corregir espera (decisión 103).
+      return previewFresh.value && t && t.online && !(t.busy && opCounts.value.corregir) && !t.deploying && !syncState.loading
              && ((opCounts.value.crear || 0) + (opCounts.value.corregir || 0)) > 0
              && syncState.ops.every(o => o.status === 'pendiente');
     });
@@ -1106,6 +1215,64 @@ createApp({
         addEvent(serial, 'sincronización ' + syncState.msg);
         loadSync();
       }
+    }
+
+    // ---------------- crear (fm/adapters/mir/create.py)
+    const createState = reactive({ robots: [], groups: [], maps: [], created: [], robot: '',
+                                   mission: { name: '', parent: '' }, position: { name: '', parent: '' },
+                                   busy: '', error: '', result: null });
+    async function loadCreate() {
+      try {
+        const info = await (await fetch('/api/create')).json();
+        Object.assign(createState, { robots: info.robots, groups: info.groups, maps: info.maps, created: info.created });
+        const ok = info.robots.filter(r => r.can_create && r.online);
+        if (!ok.some(r => r.serial === createState.robot)) createState.robot = ok.length ? ok[0].serial : '';
+        // Por defecto, el grupo mirur-tknika (o el primero) y el primer mapa.
+        if (!createState.mission.parent && info.groups.length)
+          createState.mission.parent = (info.groups.find(g => g.name === 'mirur-tknika') || info.groups[0]).guid;
+        if (!createState.position.parent && info.maps.length) createState.position.parent = info.maps[0].guid;
+      } catch (e) { createState.error = 'no se pudo leer el catálogo'; }
+    }
+    const canCreate = kind => !!createState.robot && !createState.busy
+      && !!createState[kind].name.trim() && !!createState[kind].parent;
+    async function postCreate(url, body, busy) {
+      Object.assign(createState, { busy, error: '', result: null });
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const out = await r.json();
+        if (!r.ok) { createState.error = out.detail; return null; }
+        return out;
+      } catch (e) { createState.error = 'no se pudo contactar con el FM'; return null; }
+      finally { createState.busy = ''; }
+    }
+    async function createRes(kind) {
+      const f = createState[kind], robot = createState.robot;
+      const out = await postCreate(`/api/create/${robot}/${kind}`, { name: f.name.trim(), parent: f.parent },
+                                   `creando en ${robot}…`);
+      if (out) { createState.result = { ...out, robot }; f.name = ''; addEvent(robot, `creada ${kind} «${out.name}» (${out.guid})`); }
+      loadCreate();
+    }
+    // Borrar: primero el plan (en qué robots está y qué lo impide), luego confirmar.
+    async function deleteRes(d) {
+      const plan = await postCreate('/api/create/delete/preview', { guid: d.guid }, `mirando dónde está «${d.name}»…`);
+      if (!plan) return;
+      if (plan.blockers.length) { createState.error = `No se puede borrar «${d.name}»: ` + plan.blockers.join('; ') + '.'; return; }
+      const where = plan.robots.length ? `de ${plan.robots.join(' y ')} y ` : '';
+      if (!confirm(`¿Borrar ${KIND_LABEL[d.kind]} «${d.name}» ${where}del catálogo?\n${d.guid}\n\nNo se puede deshacer.`)) return;
+      const out = await postCreate('/api/create/delete', { guid: d.guid }, `borrando «${d.name}»…`);
+      if (out) {
+        createState.result = { ...out, deleted: true };
+        addEvent(out.robots.join(', ') || 'catálogo', `borrada ${out.kind} «${out.name}» (${out.guid})`);
+      }
+      loadCreate();
+    }
+    async function captureRes(d) {
+      const out = await postCreate(`/api/create/${d.robot}/capture`, { guid: d.guid }, `capturando «${d.name}» de ${d.robot}…`);
+      if (out) {
+        createState.result = { ...out, robot: d.robot, captured: true };
+        addEvent(d.robot, `capturada ${out.kind} «${out.name}» (${out.detail}) al catálogo`);
+      }
+      loadCreate();
     }
 
     // ---------------- configurador (docs/plan-admin.md §2)
@@ -1330,6 +1497,7 @@ createApp({
     // Al entrar en una pestaña de administración se relee lo que puede haber
     // cambiado: el catálogo (al capturar) y los informes de sincronización.
     function onTab() {
+      if (ui.tab === 'crear') loadCreate();
       if (ui.tab === 'sincronizacion' || ui.tab === 'configurador') loadSync();
       if (ui.tab === 'configurador') loadConfig();
     }
@@ -1340,11 +1508,12 @@ createApp({
     connect();
     return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
-             syncState, syncCatalog, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
+             syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
              canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
              fleetRows, whereIs, syncCheck, prepare,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             createState, canCreate, createRes, captureRes, deleteRes,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,
              wsOk: computed(() => ui.wsOk), sending: computed(() => ui.sending) };

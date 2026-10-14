@@ -49,8 +49,11 @@
   fases (a) (`fleet.yaml` con catálogo de actions), (b) (pestaña en solo
   lectura), (c) v1 (editar casillas, `battery_min` y umbrales, en
   caliente) y v2 (crear, editar y borrar actions del catálogo) hechas.
-  **Siguiente: v3, altas y bajas de robots** (punto 16 de "Pendiente" en
-  `docs/avance.md`).
+  Pestaña **Crear** (`fm/adapters/mir/create.py`, decisiones 100–102):
+  mission vacía o position (en la pose del robot) con GUID estándar,
+  borrador en `catalog/` y Capturar; falta probarla con un MiR real
+  (punto 22). Siguiente del configurador: v3, altas y bajas de robots
+  (punto 16 de "Pendiente" en `docs/avance.md`).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con
@@ -207,7 +210,8 @@ fleet-manager-mirur/
     ├── adapters/
     │   ├── __init__.py            ← registro DRIVERS + make_driver()
     │   ├── base.py                ← Telemetry, Job, JobStatus, RobotDriver (Protocol)
-    │   ├── mir/                   ← client.py (REST), translate.py (puro), driver.py, config.py
+    │   ├── mir/                   ← client.py (REST), translate.py (puro), driver.py, config.py,
+    │   │                            sync.py (catálogo/despliegue), create.py (pestaña Crear)
     │   └── sim/                   ← driver simulado sin hardware
     └── vda5050/
         ├── header.py              ← topic ≡ header (§5.1), timestamp, headerId

@@ -78,7 +78,7 @@ class FakeSync:
 
     class Op:
         def __init__(self, guid, verb):
-            self.guid, self.verb, self.status = guid, verb, "pendiente"
+            self.guid, self.verb, self.status, self.name = guid, verb, "pendiente", guid
 
         def to_dict(self):
             return {"guid": self.guid, "verb": self.verb, "status": self.status}
@@ -103,9 +103,10 @@ class FakeSync:
     def preview(self, guids):
         if "nada" in guids:
             raise ValueError("nada no está en el catálogo")
-        return None, [self.Op(g, "crear") for g in guids]
+        return None, [self.Op(g, "corregir" if g.startswith("fix") else "crear") for g in guids]
 
-    def deploy(self, guids, progress):
+    def deploy(self, guids, progress, only_create=False):
+        self.only_create = only_create
         ops = self.preview(guids)[1]
         for op in ops:
             op.status = "hecho"
@@ -284,3 +285,81 @@ def test_config_crear_action_y_habilitarla_a_la_vez(tmp_path):
     # quitarla del robot y borrarla, en la misma edición
     ok = c.post("/api/config", json={"actions": {"traer": None}, "robots": {"sim-1": {"actions": ["coger"]}}})
     assert ok.status_code == 200 and "traer" not in p.read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------------------- crear
+def test_crear_y_capturar(tmp_path):
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    calls = []
+    sync.create_choices = lambda: {"groups": [{"guid": "G", "name": "g"}], "maps": [],
+                                   "created": [{"guid": "M1", "kind": "mission", "name": "x", "robot": "sim-1"}]}
+    sync.web_url = lambda g, m=None: f"http://robot/setup/missions/{g}"
+    sync.std_guids = lambda kind, parent=None: set()
+
+    def create_mission(name, parent, others):
+        calls.append((name, parent, others))
+        if name == "repetida":
+            raise ValueError("ya hay una mission 'repetida'")
+        return {"kind": "mission", "guid": "M2", "name": name, "url": "http://robot/setup/missions/M2"}
+    sync.create_mission = create_mission
+    sync.create_position = lambda n, p, o: {"kind": "position", "guid": "P1", "name": n, "url": "u"}
+    sync.capture = lambda g: {"kind": "mission", "guid": g, "name": "x", "detail": "3 actions"}
+    c = TestClient(srv.app)
+    info = c.get("/api/create").json()
+    assert info["robots"][0]["can_create"] and info["created"][0]["url"] == "http://robot/setup/missions/M1"
+    body = {"name": "nueva", "parent": "G"}
+    assert c.post("/api/create/sim-1/mission", json=body).status_code == 409      # sin telemetría
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
+    r = c.post("/api/create/sim-1/mission", json=body)
+    assert r.status_code == 200 and r.json()["guid"] == "M2" and calls[-1] == ("nueva", "G", set())
+    bad = c.post("/api/create/sim-1/mission", json={"name": "repetida", "parent": "G"})
+    assert bad.status_code == 400 and "repetida" in bad.json()["detail"]
+    assert c.post("/api/create/sim-1/position", json={"name": "Mesa", "parent": "MAP"}).json()["guid"] == "P1"
+    assert c.post("/api/create/sim-1/capture", json={"guid": "M1"}).json()["detail"] == "3 actions"
+
+
+def test_crear_no_aplica_sin_la_capacidad():
+    srv, _ = _server()
+    c = TestClient(srv.app)
+    assert c.get("/api/create").json()["robots"][0]["can_create"] is False
+    assert c.post("/api/create/sim-1/mission", json={"name": "x", "parent": "G"}).status_code == 400
+
+
+
+def test_desplegar_con_el_robot_ocupado_solo_si_es_crear():
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0, foreign_busy=True)   # mission de su web
+    c = TestClient(srv.app)
+    bad = c.post("/api/sync/sim-1/deploy", json={"guids": ["g1", "fix-pos"]})
+    assert bad.status_code == 409 and "corregir" in bad.json()["detail"] and "fix-pos" in bad.json()["detail"]
+    ok = c.post("/api/sync/sim-1/deploy", json={"guids": ["g1"]})
+    assert ok.status_code == 200
+    for _ in range(50):
+        if sync.deployed:
+            break
+        time.sleep(0.02)
+    assert sync.deployed == [["g1"]] and sync.only_create is True
+
+
+def test_borrar_desde_la_web():
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    store = {"M1": True}
+    sync.describe = lambda g: {"guid": g, "kind": "mission", "name": "prueba"} if g == "M1" else None
+    sync.delete_blockers = lambda g, defs, wanted: []
+    sync.exists = lambda g: store.get(g, False)
+    sync.delete = lambda g: store.pop(g)
+    sync.forget = lambda g: [g]
+    c = TestClient(srv.app)
+    assert c.post("/api/create/delete/preview", json={"guid": "X"}).status_code == 404
+    plan = c.post("/api/create/delete/preview", json={"guid": "M1"}).json()
+    assert plan["blockers"] == ["sim-1 no responde: podría tener una copia"]
+    assert c.post("/api/create/delete", json={"guid": "M1"}).status_code == 409 and store
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0, foreign_busy=True)
+    assert c.post("/api/create/delete/preview", json={"guid": "M1"}).json()["blockers"] == \
+        ["sim-1 está ocupado: espera a que quede libre"]
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
+    out = c.post("/api/create/delete", json={"guid": "M1"}).json()
+    assert out["robots"] == ["sim-1"] and out["files"] == 1 and not store

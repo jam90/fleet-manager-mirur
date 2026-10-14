@@ -374,8 +374,20 @@ Nada de lo que hace la UI es un camino aparte: se ve en `mosquitto_sub`.
 `/api/docs` es el OpenAPI. Un robot de otra marca aparece solo: la página no
 sabe nada de MiR.
 
-Dos pestañas más, para el profesor y no para el operario (en la barra lateral,
-debajo; enlazables con `#configurador` y `#sincronizacion`):
+Tres pestañas más, para el profesor y no para el operario (en la barra lateral,
+debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
+
+- **Crear** (`/api/create`): da de alta en el MiR elegido una mission vacía
+  (en un grupo del catálogo) o una position (normal, donde está el robot, en
+  su mapa activo si es del catálogo) con GUID de la flota, y enlaza a su
+  página en la web del MiR para terminarla (`/missions/<guid>` o el
+  editor del mapa, `/maps/<guid>`). Queda como borrador en `catalog/`, que reserva su número
+  de GUID; **Capturar** lo relee del robot al terminar y lo guarda en el
+  catálogo, listo para Sincronización y Configurador. **Borrar** quita lo
+  creado allí de los robots y del catálogo (con confirmación; no si lo usa
+  `fleet.yaml` u otro recurso, ni con un robot sin conexión u ocupado).
+  En **Sincronización**, con el robot ocupado solo se despliega lo que hay
+  que crear; corregir lo que ya tiene espera a que quede libre.
 
 - **Configurador** (`GET /api/config`): la matriz action × robot de
   `fleet.yaml`, con una marca por casilla que dice si el robot tiene grabada

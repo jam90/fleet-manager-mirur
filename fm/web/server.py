@@ -26,6 +26,12 @@ resto del fichero (`fm/config_edit.py`) y pide al `Reloader` que la config
 nueva se aplique en caliente entre ticks (`fm/reload.py`); el resultado llega
 por el WebSocket con el topic `fm/config`.
 
+Crear (docs/plan-admin.md §3, `fm/adapters/mir/create.py`): si el objeto de
+sincronización lo ofrece, la pestaña Crear da de alta en un robot una
+mission vacía o una position (en la posición actual del robot) con GUID
+estándar, la apunta en `catalog/` como borrador y luego la captura cuando el
+usuario la ha terminado en la web del MiR.
+
 Concurrencia: uvicorn corre en un hilo propio con su event loop. Con el hilo
 principal comparte solo `MqttBus` (paho es thread-safe para `publish`;
 `HeaderCounter` lleva Lock) y datos de configuración de solo lectura. El
@@ -79,6 +85,15 @@ class CheckIn(BaseModel):
     deep: bool = False
 
 
+class CreateIn(BaseModel):
+    name: str
+    parent: str          # GUID del catálogo: grupo (mission) o mapa (position)
+
+
+class CaptureIn(BaseModel):
+    guid: str
+
+
 class ConfigEditIn(BaseModel):
     """Ediciones del configurador; ver `fm.config_edit.plan`."""
     actions: dict[str, dict[str, Any] | None] = {}
@@ -97,6 +112,7 @@ class WebServer:
         self.env_path = env_path
         self.reloader = None
         self._save_lock = threading.Lock()
+        self._create_lock = threading.Lock()   # dos altas a la vez sacarían el mismo número
         # Sincronización: solo los robots cuyo driver la ofrece (capacidad opcional).
         self.syncs = {s: r.driver.make_sync(catalog_dir) for s, r in robots.items()
                       if hasattr(r.driver, "make_sync")}
@@ -200,6 +216,115 @@ class WebServer:
         from fm.reload import restart_reasons
         return {"same": False, "restart": restart_reasons(self.cfg, disk, self.robots)}
 
+    # ------------------------------------------------------------- crear
+    def create_info(self) -> dict:
+        """Robots donde se puede crear y lo que ofrece el catálogo (grupos,
+        mapas, borradores pendientes de capturar, con su enlace al MiR)."""
+        robots = [{**self.sync_status(s), "can_create": s in self.syncs and hasattr(self.syncs[s], "create_mission")}
+                  for s in self.robots]
+        first = self._first_creator()
+        choices = first.create_choices() if first else {"groups": [], "maps": [], "created": []}
+        for d in choices["created"]:
+            y = self.syncs.get(d["robot"])
+            d["url"] = y.web_url(d["guid"]) if y is not None else None
+        return {"robots": robots, **choices}
+
+    def _first_creator(self, capability: str = "create_choices"):
+        """El catálogo es común: basta con el primer robot que ofrezca `capability`."""
+        return next((y for y in self.syncs.values() if hasattr(y, capability)), None)
+
+    def delete_plan(self, guid: str) -> dict:
+        """Qué pasaría al borrar `guid`: en qué robots está y qué lo impide.
+        Se mira en TODOS los robots: uno sin conexión podría guardar una
+        copia, y su número de GUID se volvería a usar."""
+        first = self._first_creator("describe")
+        info = first.describe(guid) if first else None
+        if info is None:
+            raise HTTPException(404, f"{guid} no es algo creado desde la pestaña Crear")
+        wanted = [w for y in self.syncs.values() for w in getattr(y, "wanted", [])]
+        blockers = first.delete_blockers(guid, self.cfg.actions, wanted)
+        where = []
+        for s, y in self.syncs.items():
+            if self.robots[s].last_telemetry is None:
+                blockers.append(f"{s} no responde: podría tener una copia")
+                continue
+            try:
+                if y.exists(guid):
+                    where.append(s)
+                    if self.robots[s].busy:
+                        blockers.append(f"{s} está ocupado: espera a que quede libre")
+                    if s in self._deploying:
+                        blockers.append(f"{s} está desplegando")
+            except Exception as e:
+                blockers.append(f"no se pudo mirar {s}: {e}")
+        return {**info, "robots": where, "blockers": blockers}
+
+    def delete(self, guid: str) -> dict:
+        """Borra `guid` de los robots que lo tienen y del catálogo. Si falla a
+        medias, el catálogo no se toca: se puede volver a intentar."""
+        with self._create_lock:
+            plan = self.delete_plan(guid)
+            if plan["blockers"]:
+                raise HTTPException(409, "no se borra: " + "; ".join(plan["blockers"]))
+            for s in plan["robots"]:
+                try:
+                    self.syncs[s].delete(guid)
+                except Exception as e:
+                    raise HTTPException(502, f"no se pudo borrar en {s}: {e} (lo demás sigue igual; reinténtalo)")
+            gone = self._first_creator("forget").forget(guid)
+        log.info("[web] borrado %s %r de %s y del catálogo (%d ficheros)", plan["kind"], plan["name"],
+                 ", ".join(plan["robots"]) or "ningún robot", len(gone))
+        return {**plan, "files": len(gone)}
+
+    def _creator(self, serial: str):
+        if serial not in self.robots:
+            raise HTTPException(404, f"robot '{serial}' desconocido")
+        y = self.syncs.get(serial)
+        if y is None or not hasattr(y, "create_mission"):
+            raise HTTPException(400, f"el driver de '{serial}' no permite crear recursos")
+        if self.robots[serial].last_telemetry is None:
+            raise HTTPException(409, f"'{serial}' no responde")
+        if serial in self._deploying:
+            raise HTTPException(409, f"'{serial}' está desplegando: espera a que termine")
+        return y
+
+    def _others_guids(self, serial: str, kind: str, parent: str) -> set[str]:
+        """GUIDs estándar de los demás robots que respondan: el número nuevo
+        no debe chocar con nada que ya tengan, aunque no esté en el catálogo."""
+        out: set[str] = set()
+        for s, y in self.syncs.items():
+            if s == serial or self.robots[s].last_telemetry is None or not hasattr(y, "std_guids"):
+                continue
+            try:
+                out |= y.std_guids(kind, parent if kind == "position" else None)
+            except Exception as e:          # p.ej. ese robot no tiene el mapa: nada que chocar
+                log.info("[web] %s: no se pudieron leer sus GUIDs (%s)", s, e)
+        return out
+
+    def create(self, serial: str, kind: str, name: str, parent: str) -> dict:
+        y = self._creator(serial)
+        with self._create_lock:
+            try:
+                others = self._others_guids(serial, kind, parent)
+                out = (y.create_mission if kind == "mission" else y.create_position)(name, parent, others)
+            except ValueError as e:         # nombre repetido, falta el grupo/mapa en el robot…
+                raise HTTPException(400, str(e))
+            except Exception as e:          # red, 4xx/5xx del robot
+                raise HTTPException(502, f"{serial}: {e}")
+        log.info("[web] creada en %s: %s %r (%s)", serial, kind, out["name"], out["guid"])
+        return out
+
+    def capture(self, serial: str, guid: str) -> dict:
+        y = self._creator(serial)
+        try:
+            out = y.capture(guid)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"{serial}: {e}")
+        log.info("[web] capturada de %s: %s %r", serial, out["kind"], out["name"])
+        return out
+
     def _check_editable(self) -> Path:
         if self.config_path is None or self.reloader is None:
             raise HTTPException(501, "este FM no tiene la edición de la config activada")
@@ -249,10 +374,12 @@ class WebServer:
             raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
         return self.syncs[serial]
 
-    def _run_deploy(self, serial: str, sync, guids: list[str]) -> None:
+    def _run_deploy(self, serial: str, sync, guids: list[str], only_create: bool = False) -> None:
         topic = f"fm/sync/{serial}"
         try:
-            ops = sync.deploy(guids, progress=lambda op: self.mirror(topic, {"op": op.to_dict()}))
+            progress = lambda op: self.mirror(topic, {"op": op.to_dict()})   # noqa: E731
+            ops = (sync.deploy(guids, progress=progress, only_create=True) if only_create
+                   else sync.deploy(guids, progress=progress))
             summary = dict(Counter(o.status for o in ops))
             log.info("[web] despliegue en %s terminado: %s", serial, summary)
             self.mirror(topic, {"done": True, "summary": summary})
@@ -303,6 +430,30 @@ class WebServer:
         @app.post("/api/config")
         def config_save(body: ConfigEditIn):
             return self.save_config(body.model_dump())
+
+        @app.get("/api/create")
+        def create_info():                  # `def`: lee catalog/ del disco
+            return self.create_info()
+
+        @app.post("/api/create/{serial}/mission")
+        def create_mission(serial: str, body: CreateIn):
+            return self.create(serial, "mission", body.name, body.parent)
+
+        @app.post("/api/create/{serial}/position")
+        def create_position(serial: str, body: CreateIn):
+            return self.create(serial, "position", body.name, body.parent)
+
+        @app.post("/api/create/delete/preview")
+        def delete_preview(body: CaptureIn):
+            return self.delete_plan(body.guid)
+
+        @app.post("/api/create/delete")
+        def delete(body: CaptureIn):
+            return self.delete(body.guid)
+
+        @app.post("/api/create/{serial}/capture")
+        def capture(serial: str, body: CaptureIn):
+            return self.capture(serial, body.guid)
 
         @app.post("/api/config/reload")
         def config_reload():
@@ -358,14 +509,24 @@ class WebServer:
             st = self.sync_status(serial)
             if not st["online"]:
                 raise HTTPException(409, f"'{serial}' no responde: no se despliega")
-            if st["busy"]:
-                raise HTTPException(409, f"'{serial}' está ocupado (order, carga o mission ajena): "
-                                         "se despliega cuando quede libre")
+            # Ocupado (order, carga o mission lanzada desde su web): solo se
+            # admite CREAR lo que no tiene, que no toca lo que está ejecutando;
+            # corregir un recurso que ya tiene espera a que quede libre (decisión 103).
+            only_create = st["busy"]
+            if only_create:
+                try:
+                    _, ops = sync.preview(body.guids)
+                except Exception as e:
+                    raise HTTPException(502, f"no se pudo leer '{serial}': {e}")
+                touch = [o.name for o in ops if o.verb == "corregir"]
+                if touch:
+                    raise HTTPException(409, f"'{serial}' está ocupado y habría que corregir recursos que ya "
+                                             f"tiene ({', '.join(touch)}): se despliega cuando quede libre")
             with self._deploy_lock:
                 if serial in self._deploying:
                     raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
                 self._deploying.add(serial)
-            threading.Thread(target=self._run_deploy, args=(serial, sync, body.guids),
+            threading.Thread(target=self._run_deploy, args=(serial, sync, body.guids, only_create),
                              name=f"sync-{serial}", daemon=True).start()
             log.info("[web] despliegue en %s: %d recursos seleccionados", serial, len(body.guids))
             return {"started": True}

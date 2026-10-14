@@ -74,6 +74,7 @@ class FakeMir:
         self.db = {"sessions": {}, "maps": {}, "positions": {}, "sounds": {}, "mission_groups": {},
                    "missions": {}, "actions": {}}
         self.writes: list[tuple[str, str]] = []
+        self.status = {"map_id": MAP, "position": {"x": 1.23456, "y": 4.5, "orientation": 89.987}}
 
     def _req(self, method, path, json=None):
         parts = path.split("/")
@@ -100,10 +101,24 @@ class FakeMir:
                  "parameters": [{**p, "guid": str(uuid.uuid4())} for p in json["parameters"]]}
             self.db["actions"][a["guid"]] = a
             return a
+        if method == "DELETE" and len(parts) == 2:
+            if parts[1] not in self.db[parts[0]]:
+                raise MirApiError(method, path, 404, {})
+            del self.db[parts[0]][parts[1]]
+            if parts[0] == "positions":                    # el MiR borra la entrada con su marcador
+                for g in [g for g, p in self.db["positions"].items() if p.get("parent_id") == parts[1]]:
+                    del self.db["positions"][g]
+            return None
         if method == "PUT" and parts[0] == "positions":
             self.db["positions"][parts[1]].update(json)
             return self.db["positions"][parts[1]]
         if method == "GET":
+            if path == "status":
+                return self.status
+            if parts[0] == "mission_groups" and len(parts) == 3:
+                return [m for m in self.db["missions"].values() if m["group_id"] == parts[1]]
+            if parts[0] == "positions" and len(parts) == 3 and parts[2] == "docking_offsets":
+                return []
             if len(parts) == 1:
                 return list(self.db[parts[0]].values())
             if parts[0] == "maps" and len(parts) == 3:
@@ -240,3 +255,20 @@ def test_form_choices_inputs_y_su_tipo(cat):
     assert {m["guid"] for m in ch["missions"]} == {M_MAIN, M_SUB}
     assert all(isinstance(m["inputs"], list) for m in ch["missions"])
     assert isinstance(ch["positions"], list)
+
+
+def test_deploy_solo_crear_no_corrige_nada(cat):
+    # Robot ocupado (decisión 103): crear sí; corregir lo que ya tiene, no.
+    from fm.adapters.mir.sync import MirSync
+    from tests.adapters.test_mir_sync import P_MARKER
+    s = MirSync("mir-2", "0.0.0.0", "Basic x", cat.root)
+    s.client = FakeMir()
+    ops = s.deploy([P_MARKER], only_create=True)                  # robot vacío: todo es crear
+    assert {o.status for o in ops} == {"hecho"}
+    entry = next(p for p in s.client.db["positions"].values() if p["parent_id"] == P_MARKER)
+    entry["pos_x"] += 3.0                                           # alguien la mueve en la web
+    before = list(s.client.writes)
+    with pytest.raises(RuntimeError, match="ocupado"):
+        s.deploy([P_MARKER], only_create=True)
+    assert s.client.writes == before                                # no se ha tocado nada
+    assert any(o.status == "hecho" for o in s.deploy([P_MARKER]))   # libre: se corrige

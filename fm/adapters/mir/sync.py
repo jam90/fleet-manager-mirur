@@ -100,6 +100,10 @@ def guess_input_kind(param: dict) -> str:
 class Catalog:
     root: Path
     items: dict[str, dict] = field(default_factory=dict)   # GUID → documento
+    # Borradores: creados vacíos desde la pestaña Crear (fm/adapters/mir/create.py)
+    # y aún sin capturar. Reservan su número de GUID, pero no se despliegan ni
+    # cuentan como "lo que el robot debe tener" hasta capturarlos.
+    drafts: dict[str, dict] = field(default_factory=dict)
 
     @classmethod
     def load(cls, root: Path) -> "Catalog":
@@ -107,7 +111,7 @@ class Catalog:
         for folder in FOLDERS.values():
             for f in sorted((cat.root / folder).glob("*.json")):
                 d = json.loads(f.read_text(encoding="utf-8"))
-                cat.items[d["guid"]] = d
+                (cat.drafts if d.get("borrador") else cat.items)[d["guid"]] = d
         return cat
 
     @staticmethod
@@ -487,6 +491,83 @@ class MirSync:
         guids = cat.closure(selected)
         return plan(cat, fetch_view(self.client, cat, guids), guids, self.serial)
 
+    # ---- pestaña Crear (fm/adapters/mir/create.py)
+    def web_url(self, guid: str, map_guid: str | None = None) -> str:
+        """Dónde seguir en la web del MiR: el editor de la mission o, para una
+        position, el del mapa en el que está. Rutas comprobadas por el usuario
+        en mir-1 el 2026-10-14 (`/missions/<guid>`; el prefijo `/setup` del
+        router de su web da 404)."""
+        host = self.client.host
+        if is_std(guid) and self.catalog_kind(guid) == "position":
+            if map_guid is None:
+                cat = self.catalog()
+                map_guid = (cat.items.get(guid) or cat.drafts.get(guid) or {}).get("map_id", "")
+            return f"http://{host}/maps/{map_guid}"
+        return f"http://{host}/missions/{guid}"
+
+    @staticmethod
+    def catalog_kind(guid: str) -> str:
+        return Catalog.kind(guid)
+
+    def std_guids(self, kind: str, map_guid: str | None = None) -> set[str]:
+        from fm.adapters.mir.create import robot_std_guids
+        with self.lock:
+            return robot_std_guids(self.client, kind, map_guid)
+
+    def create_mission(self, name: str, group_guid: str, others=()) -> dict:
+        from fm.adapters.mir.create import create_mission
+        return create_mission(self, name, group_guid, others)
+
+    def create_position(self, name: str, map_guid: str, others=()) -> dict:
+        from fm.adapters.mir.create import create_position
+        return create_position(self, name, map_guid, others)
+
+    def capture(self, guid: str) -> dict:
+        from fm.adapters.mir.create import capture
+        return capture(self, guid)
+
+    def create_choices(self) -> dict:
+        """Para la pestaña Crear (sin red): grupos y mapas del catálogo, y lo
+        creado desde la pestaña (borradores primero, luego lo ya capturado)."""
+        from fm.adapters.mir.create import created_here
+        cat = self.catalog()
+        pick = lambda kind: [{"guid": g, "name": d["name"]} for g, d in sorted(cat.items.items())  # noqa: E731
+                             if cat.kind(g) == kind]
+        created = []
+        for g in sorted({*cat.drafts, *cat.items}):
+            d = created_here(cat, g)
+            if d is not None:
+                created.append({"guid": g, "kind": cat.kind(g), "name": d["name"], "draft": g in cat.drafts,
+                                "robot": d.get("_origen", {}).get("robot"),
+                                "date": d.get("_origen", {}).get("capturado")})
+        created.sort(key=lambda x: (not x["draft"], x["guid"]))
+        return {"groups": pick("missiongrp"), "maps": pick("map"), "created": created}
+
+    def delete_blockers(self, guid: str, definitions: dict, wanted) -> list[str]:
+        from fm.adapters.mir.create import delete_blockers
+        return delete_blockers(self, guid, definitions, wanted)
+
+    def exists(self, guid: str) -> bool:
+        from fm.adapters.mir.create import exists_on
+        with self.lock:
+            return exists_on(self.client, guid)
+
+    def delete(self, guid: str) -> None:
+        from fm.adapters.mir.create import delete_on
+        with self.lock:
+            delete_on(self.client, guid)
+
+    def forget(self, guid: str) -> list[str]:
+        from fm.adapters.mir.create import forget
+        return forget(self, guid)
+
+    def describe(self, guid: str) -> dict | None:
+        """Nombre y tipo de un recurso creado desde la pestaña (o None)."""
+        from fm.adapters.mir.create import created_here
+        cat = self.catalog()
+        d = created_here(cat, guid)
+        return None if d is None else {"guid": guid, "kind": cat.kind(guid), "name": d["name"]}
+
     def form_choices(self) -> dict:
         """Para el formulario de actions del configurador (sin red): missions
         del catálogo con sus inputs de Blockly y el tipo que parece tener cada
@@ -512,10 +593,20 @@ class MirSync:
         with self.lock:
             return cat, self._preview(cat, selected)
 
-    def deploy(self, selected: Iterable[str], progress: Progress = lambda op: None) -> list[Op]:
+    def deploy(self, selected: Iterable[str], progress: Progress = lambda op: None,
+               only_create: bool = False) -> list[Op]:
+        """Aplica la selección. `only_create`: el robot está ocupado (decisión
+        103), así que solo se admite CREAR lo que no tiene; si al replanificar
+        sale algo que corregir en un recurso que ya tiene (y que podría estar
+        usando), no se toca nada."""
         cat = self.catalog()
         with self.lock:
             ops = self._preview(cat, selected)   # se replanifica: el robot puede haber cambiado
+            if only_create:
+                touch = [o.name for o in ops if o.verb == "corregir"]
+                if touch:
+                    raise RuntimeError("el robot está ocupado y habría que corregir recursos que ya tiene "
+                                       f"({', '.join(touch)}): se despliega cuando quede libre")
             return apply(self.client, cat, ops, progress)
 
     def check(self, deep: bool = False) -> dict:

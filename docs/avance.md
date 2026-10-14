@@ -1673,6 +1673,87 @@ del catálogo y la línea de mir-1.
     pone al día. Una action nueva se añade al final del catálogo con el
     mismo formato que el resto (bloque, y el rango en flujo).
 
+## 2026-10-14 — Pestaña Crear: missions y positions nuevas con GUID de la flota
+
+`pytest`: 179 en verde (11 nuevos). Probada en el navegador solo la parte
+web, con `MirSync` real sobre una **copia** de `catalog/` y el MiR falso de
+los tests (nada se creó en los robots): mission «coge 5 contactores» en
+mir-1 → `imperialfleet-mission000-01-0001-012` (el siguiente al 011 del
+catálogo), borrador en pendientes, capturar → al catálogo; position «Balda
+3» → `…-position00-01-0001-026` en la pose del robot; repetir el nombre →
+rechazo. Sin probar contra un MiR real: el `POST` con GUID elegido ya se
+usa al desplegar, pero falta crear de verdad desde la pestaña y comprobar
+que el enlace abre la página de edición.
+
+Comprobado con los robots (solo GET): **el mapa activo de los dos ya es
+`suberri_mirur`** (`imperialfleet-map0000000-01-0001-001`), y tiene el mismo
+origen (-13.825, -3.275) y resolución (0.05) que `suberri`. El punto 20 de
+"Pendiente" estaba desfasado.
+
+100. **Pestaña Crear, la primera del grupo de administración** (decisión
+     del usuario): da de alta en UN robot (mir-1 o mir-2, a elegir) una
+     mission vacía o una position, con GUID estándar, y manda a la web del
+     MiR a terminarla. El camino de un recurso nuevo queda en las
+     pestañas: Crear → web del MiR → Capturar → Sincronización →
+     Configurador. Rutas de la web del MiR: `/missions/<guid>` (Blockly) y
+     `/maps/<guid>` (editor del mapa, donde están sus positions). Primero
+     se sacaron del código de su interfaz con el prefijo `/setup`, que da
+     404; el usuario comprobó en mir-1 la buena (`/missions/<guid>`), y
+     después la de mapas (`/maps/<guid>`): las positions se crean bien y
+     el enlace lleva al editor correcto.
+101. **Positions donde está el robot** (decisión del usuario): normales
+     (tipo 0), en la pose actual, y solo en un mapa del catálogo que sea
+     el activo del robot (hoy `suberri_mirur`). Quien no sabe dónde está
+     el (0, 0) del mapa la encuentra junto al robot. Los marcadores se
+     hacen en la web del MiR convirtiendo la position (el MiR crea su
+     entrada y su docking offset); al capturar se recoge también la
+     entrada (decisión 77).
+102. **El número del GUID se reserva con un borrador en `catalog/`**
+     (decisión del usuario): siguiente = máximo de los GUIDs estándar del
+     catálogo (borradores incluidos) y de los robots que respondan, + 1;
+     al crear se escribe el documento con `"borrador": true`. `Catalog`
+     separa los borradores (`drafts`): no se despliegan ni cuentan para la
+     Sincronización hasta capturarlos. **Capturar** (en la misma pestaña)
+     relee el recurso del robot donde se creó y escribe el documento
+     completo; si la mission usa algo que no está en el catálogo (o aún es
+     borrador), no se captura y dice qué falta. Nombres repetidos en el
+     mismo grupo o mapa se rechazan (romperían la resolución por nombre).
+     Código: `fm/adapters/mir/create.py`; la web solo usa la capacidad si
+     el objeto de sincronización la ofrece.
+
+**Primera prueba con robot (usuario, 2026-10-14):** creada en mir-1 la
+mission `prueba-creacion` (`…-mission000-01-0001-012`), programada en su
+web y capturada (2 actions). Desplegarla en mir-2 no se pudo: mir-2 estaba
+ejecutando una mission lanzada desde su web (esperando el registro PLC 7),
+y la Sincronización no despliega en un robot ocupado. La pestaña no decía
+por qué; ahora lo avisa junto al botón. Corregidos también el enlace a la
+web del MiR (sin `/setup`) y el contraste de los enlaces dentro de los
+avisos de color en modo oscuro.
+
+103. **Desplegar en un robot ocupado: crear sí, corregir no** (decisión
+     del usuario). Antes no se desplegaba nada en un robot `busy` (order,
+     carga o mission lanzada desde su web). Ahora, si la vista previa solo
+     tiene recursos que **crear** (el robot no los tiene: no pueden estar
+     en uso), se despliega igual; si hay algo que **corregir** en un
+     recurso que ya tiene (y que la mission en curso podría estar usando),
+     se bloquea hasta que quede libre. Se comprueba dos veces: el servidor
+     con la vista previa antes de empezar y `MirSync.deploy(only_create=
+     True)` al replanificar (si entretanto ha aparecido algo que corregir,
+     no toca nada). La pestaña dice cuál de los dos casos es.
+104. **Borrar lo creado desde la pestaña Crear** (petición del usuario:
+     no ir gastando números de GUID con pruebas). Solo lo creado allí,
+     borrador o capturado: se reconoce porque su GUID en el robot es el
+     nuestro (lo capturado con el script trae el GUID propio del robot).
+     Primero un plan (en qué robots está y qué lo impide), confirmación, y
+     se borra de esos robots y del catálogo, con la entrada si es un
+     marcador. **No se borra** si lo usa `fleet.yaml` (una action, aunque
+     no esté habilitada, o la mission de carga), si lo usa otro recurso del
+     catálogo, si algún robot no responde (podría guardar una copia, y su
+     número se volvería a usar) o si un robot que lo tiene está ocupado.
+     Si era el número más alto, la siguiente creación lo reutiliza; un
+     hueco intermedio no se rellena. Si el borrado falla a medias, el
+     catálogo no se toca y se puede reintentar.
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto; sustituye a las listas "Pendiente de probar" del
@@ -1815,14 +1896,18 @@ robot después).
     `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
     mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día
     se lleva a mir-2.
-19. **Sincronización, siguientes versiones:** capturar desde la UI (hoy,
-    `scripts/catalog_capture.py`); sustituir lo que es "distinto" (borrar
+19. **Sincronización, siguientes versiones:** capturar desde la UI lo que
+    no se creó en la pestaña Crear (lo creado allí ya se captura desde la
+    UI, decisión 102; lo demás, con `scripts/catalog_capture.py`); sustituir lo que es "distinto" (borrar
     y crear, con vista previa y aviso si otra mission lo usa); desplegar
     mapas a un robot cuyo site activo es otro (no probado).
-20. **Mapa activo:** los robots siguen trabajando con el mapa `suberri`
-    (GUIDs propios). Pasar a `suberri_mirur` (mismos GUIDs en toda la
-    flota) es decisión del usuario: cambia el `mapId` del `state` y las
-    positions que resuelve el driver por nombre en el mapa activo.
+20. ~~**Mapa activo:** pasar de `suberri` a `suberri_mirur`.~~ Visto el
+    2026-10-14: los dos robots ya trabajan en `suberri_mirur`.
+22. **Pestaña Crear con un MiR real:** ~~crear, abrir en la web del MiR y
+    capturar~~ hecho por el usuario el 2026-10-14 (mission
+    `prueba-creacion` y una position en mir-1). Falta: desplegar con el
+    robot ocupado (decisión 103) y borrar esas pruebas con el botón
+    «Borrar» (decisión 104), que el usuario va a usar para probarlo.
 21. **Client id MQTT fijo (`fleet-manager`):** dos FM contra el mismo
     broker se echan mutuamente (visto el 2026-10-14 con un FM de prueba).
     Opciones: añadir el PID o un sufijo aleatorio al client id, o un

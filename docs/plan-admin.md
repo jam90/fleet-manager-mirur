@@ -162,6 +162,9 @@ Por qué:
    robots con ese mapa.
 3. **MiR nuevo:** alta en el configurador (serial, host, actions) →
    desplegar: recibe mapa, positions y missions según sus actions.
+   *(2026-10-14)* La pestaña **Crear** (decisiones 100–102) cubre el
+   principio de los casos 1 y 2: da de alta la mission o la position con
+   GUID estándar en un robot, manda a su web y la captura al terminar.
 4. **Adoptar lo existente** (una vez): las missions y positions actuales
    tienen GUIDs aleatorios distintos por robot. Capturarlas les da GUID
    estándar; al desplegar se crean con él en todos los robots (el de
