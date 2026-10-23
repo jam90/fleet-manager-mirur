@@ -1829,6 +1829,26 @@ en `robots`, y el aviso «requiere reiniciar» se borraba nada más salir.
      Antes de reiniciar, la pestaña avisa de los robots que están
      trabajando: el robot termina, pero el FM pierde de vista esa order.
 
+## 2026-10-23 — Pestaña Guía
+
+Pestaña nueva al final del grupo de administración (`#guia`, solo HTML en
+`fm/web/static/index.html`, sin backend). Petición del usuario: que quien
+coge el FM por primera vez tenga el paso a paso de cada proceso, que hoy
+reparte sus pasos entre Crear, la web del MiR, Sincronización y
+Configurador.
+
+109. **Guía con un desplegable por proceso** (`<details>`, cerrados por
+     defecto): las piezas (mission, position, action, catálogo, borrador),
+     añadir y quitar una mission, añadir y quitar una position. Cada paso
+     nombra su pestaña con un enlace (`#crear`, `#sincronizacion`…), que es
+     lo que aporta frente a un documento en `docs/`. Solo se describen
+     procesos que el FM ya hace: uno futuro (p. ej. áreas, #23) entra
+     cuando exista, como un `<details class="guide-sec">` más.
+     **Regla (decisión del usuario):** todo cambio en el flujo de otra
+     pestaña (un botón que cambia de nombre o de sitio, un bloqueo nuevo,
+     un paso que sobra o falta) actualiza la Guía en el mismo cambio.
+     Está también en el comentario de cabecera de la pestaña.
+
 ## Pendiente (a 2026-10-14)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -1905,6 +1925,9 @@ y #16 (configurador completo: v3, decisión 108).
    - **Primer paso con robot:** leer `GET /mission_queue/<id>/actions` de
      una entrada ya terminada (solo lectura) para ver si da fases y tiempos.
      De eso depende si el paso 3 es viable o hay que usar `mission_text`.
+- **#23** **Áreas del mapa desde el FM** (idea del usuario, 2026-10-23, sin
+   diseñar): crear y quitar zonas del mapa del MiR desde la web del FM.
+   Cuando se haga, su paso a paso va a la pestaña Guía (decisión 109).
 - **#6** **Validación con schemas en runtime (`--validate`)**, pedida en el brief
    (§10.1, H6) y sin implementar (revisión del 2026-10-12): validar cada
    `order`/`instantActions` entrante contra `schemas/` y rechazar con

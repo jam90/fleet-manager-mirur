@@ -55,7 +55,9 @@
   borrador en `catalog/`, Capturar y Borrar, probada por el usuario con
   mir-1. En Sincronización, sobrantes y «Retirar de la flota» con el número
   reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Un solo FM
-  por broker (decisión 107). Lo abierto, ordenado, al final de
+  por broker (decisión 107). Pestaña **Guía** (decisión 109): paso a paso
+  de cada proceso de administración; **todo cambio en el flujo de otra
+  pestaña actualiza la Guía en el mismo cambio**. Lo abierto, ordenado, al final de
   `docs/avance.md` ("Pendiente"; los `#N` son identificadores fijos).
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable

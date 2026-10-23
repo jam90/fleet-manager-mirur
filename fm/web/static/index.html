@@ -298,6 +298,22 @@
   .act-form { border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 14px; display: grid; gap: 12px; }
   .act-form h4 { margin: 0; color: var(--navy); }
   .act-form .field input:not([type=checkbox]), .act-form .field select { max-width: 32em; }
+  /* ---- Guía: un desplegable por proceso, con los pasos numerados y la
+     pestaña de cada paso como enlace, para ir siguiéndola con un clic. ---- */
+  .guide { max-width: 860px; }
+  .guide-sec { border-top: 1px solid var(--line); padding-top: 10px; }
+  .guide-sec:first-of-type { border-top: 0; padding-top: 0; }
+  .guide-sec summary { cursor: pointer; font-weight: 700; color: var(--navy); font-size: 16px; }
+  .guide-sec summary .hint { display: block; font-weight: 400; margin: 2px 0 0 18px; }
+  .guide-sec > :not(summary) { margin-left: 18px; }
+  .steps { margin: 10px 0 4px; padding-left: 22px; display: grid; gap: 10px; font-size: 14px; }
+  .steps li::marker { color: var(--navy); font-weight: 700; }
+  .steps .where { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; margin-left: 6px;
+    border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
+  .steps a.where { color: var(--accent); text-decoration: none; }
+  .steps a.where:hover { border-color: var(--accent); }
+  .steps p { margin: 2px 0 0; color: var(--ink-2); }
+  .guide dl.kv { font-size: 14px; }
   .inputs { border-collapse: collapse; font-size: 13px; font-weight: 400; }
   .inputs th, .inputs td { text-align: left; padding: 4px 8px 4px 0; vertical-align: middle; }
   .inputs th { color: var(--ink-3); font-weight: 600; }
@@ -693,7 +709,7 @@
     <div class="panel">
       <h3>Catálogo de actions</h3>
       <p class="hint">Cada action se define una vez para toda la flota (<code>actions:</code> en <code>fleet.yaml</code>).
-        El nombre es el <code>actionType</code> que manda Node-RED: no se renombra (crea la nueva y borra la vieja).</p>
+        El nombre es el <code>actionType</code> que llega en las orders: no se renombra (crea la nueva y borra la vieja).</p>
       <div class="acts" v-if="cfgEdit.on && !actForm.open">
         <button class="btn" id="act-new" @click="openActForm(null)">Nueva action</button>
       </div>
@@ -885,6 +901,126 @@
       </div>
     </div>
   </main>
+
+  <!-- ===== Guía (decisión 109). Contenido fijo: el paso a paso de cada
+       proceso de administración para quien coge el FM por primera vez.
+       REGLA: un cambio en el flujo de Crear, Configurador o Sincronización
+       (un botón que cambia de nombre o de sitio, un bloqueo nuevo, un paso
+       que sobra) se refleja aquí en el mismo cambio. Un proceso nuevo (p. ej.
+       áreas del mapa, punto #23) es un <details class="guide-sec"> más. ===== -->
+  <main v-show="tab === 'guia'">
+    <h2 class="page-title">Guía</h2>
+    <p class="page-sub">Paso a paso de las tareas de administración. Abre la que necesites; cada paso lleva a su pestaña.</p>
+    <div class="panel guide">
+
+      <details class="guide-sec">
+        <summary>Antes de empezar: las piezas
+          <span class="hint">Qué es cada cosa y dónde vive. Léelo una vez.</span></summary>
+        <dl class="kv">
+          <dt>Mission</dt><dd>Programa del MiR (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.</dd>
+          <dt>Position</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
+          <dt>Action</dt><dd>Lo que pide una order (<code>actionType</code>): una mission + qué parámetros lleva. Se define en
+            <code>config/fleet.yaml</code> y se habilita robot a robot.</dd>
+          <dt>Catálogo</dt><dd>La carpeta <code>catalog/</code>: copia de cada mission y position de la flota, con el mismo GUID
+            (<code>imperialfleet-…</code>) en todos los robots. Va en git.</dd>
+          <dt>Borrador</dt><dd>Algo creado desde «Crear» y aún no capturado: tiene su número reservado, pero no se despliega.</dd>
+        </dl>
+        <p class="warnline">El mapa <code>suberri</code> y su session no se tocan nunca: son los de trabajo. Las pruebas, en <code>suberri_mirur</code>.</p>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Añadir una mission nueva
+          <span class="hint">Desde cero hasta que una order la puede pedir a la flota.</span></summary>
+        <ol class="steps">
+          <li><b>Crearla vacía</b><a class="where" href="#crear">→ Crear</a>
+            <p>Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
+              «Crear mission». El nombre no puede repetirse en el grupo.</p></li>
+          <li><b>Programarla en la web del MiR</b><span class="where">web del MiR</span>
+            <p>«Abrir en la web del MiR ↗» lleva directo a su editor Blockly. Lo que la order vaya a mandar (una position,
+              un número de piezas…) se declara como <b>variable</b> de la mission: el nombre de esa variable es el
+              <code>input</code> que verás luego en el Configurador.</p></li>
+          <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
+            <p>En «Creado desde aquí», «Capturar» lee la mission del robot y la guarda en <code>catalog/</code>. Si usa algo
+              que no está en el catálogo (una position o una sub-mission sin capturar), te dice qué falta: captúralo antes.
+              Si la vuelves a editar en el MiR, «Volver a capturar».</p></li>
+          <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Márcala en el catálogo (sus dependencias se añaden solas), elige el robot, «Vista previa» y «Desplegar».
+              Un robot por vez. Si el robot está ocupado solo se despliega lo que hay que crear.</p></li>
+          <li><b>Darla de alta como action</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>«Editar» → «Nueva action»: nombre (el <code>actionType</code>, no se puede renombrar después), la mission y qué
+              es cada input (position, número con rango, texto). Marca la casilla de los robots que la harán y «Guardar»:
+              se aplica en caliente, sin reiniciar.</p></li>
+          <li><b>Probarla</b><a class="where" href="#operacion">→ Operación</a>
+            <p>En «Enviar a la flota» elige la action y sus parámetros. <b>El robot se va a mover:</b> mira antes que el
+              camino esté libre.</p></li>
+          <li><b>Guardarla en git</b><span class="where">terminal</span>
+            <p>Lo nuevo está en <code>catalog/</code> y en <code>config/fleet.yaml</code>: haz commit de los dos.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Quitar una mission
+          <span class="hint">De un robot, o de toda la flota.</span></summary>
+        <ol class="steps">
+          <li><b>Que ninguna action la use</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>«Editar», desmarca la action en todos los robots y «Borrar» la action; «Guardar». Mientras
+              <code>fleet.yaml</code> la nombre (aunque esté sin marcar, o si es la mission de carga) no se puede quitar.
+              Avisa a quien envíe las orders: ese <code>actionType</code> dejará de existir.</p></li>
+          <li><b>Elige cómo quitarla</b>
+            <p><b>Solo de un robot</b><a class="where" href="#sincronizacion">→ Sincronización</a> En «Estado de la flota» sale
+              como <i>sobrante</i> del robot: pulsa su ✕. Sigue en el catálogo y se puede volver a desplegar.</p>
+            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear">→ Crear</a> «Borrar» en «Creado desde aquí»: la
+              quita de los robots y del catálogo, y su número queda libre.</p>
+            <p><b>De toda la flota</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota» junto a
+              ella en el catálogo: se borra de todos los robots y del catálogo, y su número queda reservado
+              (<code>catalog/retirados.json</code>) para no confundirla con otra.</p></li>
+          <li><b>Si no te deja</b>
+            <p>Se bloquea si otra mission la usa como sub-mission, si un robot que la tiene está ocupado o si algún robot no
+              responde (podría guardar una copia). El aviso dice cuál es el caso.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Añadir una position nueva
+          <span class="hint">Un punto nuevo del mapa, igual en todos los robots.</span></summary>
+        <ol class="steps">
+          <li><b>Llevar el robot al sitio</b><span class="where">web del MiR o joystick</span>
+            <p>La position se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
+              (hoy <code>suberri_mirur</code>).</p></li>
+          <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
+            <p>Elige ese robot, escribe el nombre (no puede repetirse en el mapa) y «Crear position aquí».</p></li>
+          <li><b>Ajustarla en la web del MiR</b> (si hace falta)<span class="where">web del MiR</span>
+            <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Ahí se corrige la pose o se convierte en marcador
+              para atracar; el MiR le crea su entrada y su docking offset.</p></li>
+          <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
+            <p>«Capturar» en «Creado desde aquí». Si la has convertido en marcador, se captura también su entrada.</p></li>
+          <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Igual que una mission. Un marcador calibrado con un robot puede necesitar ajustar el offset en otro:
+              compruébalo antes de usarlo en producción.</p></li>
+          <li><b>Usarla</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>Si una action tiene lista de «Positions admitidas», márcala ahí; si no, cualquier order ya la puede pedir
+              por su nombre.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Quitar una position
+          <span class="hint">Siempre de toda la flota.</span></summary>
+        <ol class="steps">
+          <li><b>Quitarla de las listas de positions admitidas</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>Edita las actions que la tengan marcada en «Positions admitidas», desmárcala y «Guardar».</p></li>
+          <li><b>Borrarla</b>
+            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear">→ Crear</a> «Borrar»: su número queda libre.</p>
+            <p><b>Si no</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota»: su número queda
+              reservado. Un marcador se lleva su entrada.</p></li>
+          <li><b>Avisar aguas arriba</b>
+            <p>Una position no se quita de un solo robot: el FM no sabe qué orders la piden por nombre. Las que la sigan
+              pidiendo recibirán <code>noRouteError</code>; avisa a quien envíe las orders.</p></li>
+        </ol>
+      </details>
+
+    </div>
+  </main>
 </div>
 </div>
 
@@ -911,6 +1047,8 @@ const TABS = [
   { id: 'sincronizacion', label: 'Sincronización', admin: true,
     icon: '<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/>' +
           '<path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/>' },
+  { id: 'guia', label: 'Guía', admin: true,
+    icon: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/>' },
 ];
 
 // Sincronización: rótulos de las operaciones que devuelve el servidor (sync.py).
