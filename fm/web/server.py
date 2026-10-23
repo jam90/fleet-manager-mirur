@@ -80,6 +80,7 @@ class InstantIn(BaseModel):
 
 class SyncIn(BaseModel):
     guids: list[str]
+    replace: list[str] = []      # missions distintas que se sustituyen (decisión 117)
 
 
 class CheckIn(BaseModel):
@@ -93,6 +94,11 @@ class CreateIn(BaseModel):
 
 class CaptureIn(BaseModel):
     guid: str
+
+
+class AdoptIn(BaseModel):
+    source: str               # GUID de la mission en el robot (sin GUID de la flota)
+    target: str = ""          # GUID del catálogo al que pasa; vacío = uno nuevo de su grupo
 
 
 class ConfigEditIn(BaseModel):
@@ -119,6 +125,9 @@ class WebServer:
         self.syncs = {s: r.driver.make_sync(catalog_dir) for s, r in robots.items()
                       if hasattr(r.driver, "make_sync")}
         self._deploying: set[str] = set()
+        # Pestaña Robot: fuente de misiones por robot, creada al pedirla la
+        # primera vez (`make_missions`, capacidad opcional) y guardada por su caché.
+        self.missions: dict[str, Any] = {}
         self._deploy_lock = threading.Lock()
         self.monitor = SyncMonitor(self.syncs, robots,
                                    publish=lambda s, p: self.mirror(f"fm/sync/{s}", p))
@@ -229,7 +238,7 @@ class WebServer:
         robots = [{**self.sync_status(s), "can_create": s in self.syncs and hasattr(self.syncs[s], "create_mission")}
                   for s in self.robots]
         first = self._first_creator()
-        choices = first.create_choices() if first else {"groups": [], "maps": [], "created": []}
+        choices = first.create_choices() if first else {"groups": [], "maps": [], "missions": [], "created": []}
         for d in choices["created"]:
             y = self.syncs.get(d["robot"])
             d["url"] = y.web_url(d["guid"]) if y is not None else None
@@ -369,6 +378,30 @@ class WebServer:
         log.info("[web] capturada de %s: %s %r", serial, out["kind"], out["name"])
         return out
 
+    def adoptable(self, serial: str) -> list[dict]:
+        y = self._creator(serial)
+        if not hasattr(y, "adoptable"):
+            return []
+        try:
+            return y.adoptable()
+        except Exception as e:
+            raise HTTPException(502, f"{serial}: {e}")
+
+    def adopt(self, serial: str, source: str, target: str) -> dict:
+        """Adoptar (decisión 116): solo escribe en el catálogo; al robot no
+        se le toca nada (eso es desplegar, en Sincronización)."""
+        y = self._creator(serial)
+        with self._create_lock:          # un número nuevo no se puede dar dos veces
+            try:
+                others = self._others_guids(serial, "mission", "") if not target else set()
+                out = y.adopt(source, target or None, others)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            except Exception as e:
+                raise HTTPException(502, f"{serial}: {e}")
+        log.info("[web] adoptada de %s: %r %s → %s", serial, out["name"], source, out["guid"])
+        return out
+
     def _check_editable(self) -> Path:
         if self.config_path is None or self.reloader is None:
             raise HTTPException(501, "este FM no tiene la edición de la config activada")
@@ -418,12 +451,13 @@ class WebServer:
             raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
         return self.syncs[serial]
 
-    def _run_deploy(self, serial: str, sync, guids: list[str], only_create: bool = False) -> None:
+    def _run_deploy(self, serial: str, sync, guids: list[str], only_create: bool = False,
+                    replace: list[str] = ()) -> None:
         topic = f"fm/sync/{serial}"
         try:
             progress = lambda op: self.mirror(topic, {"op": op.to_dict()})   # noqa: E731
-            ops = (sync.deploy(guids, progress=progress, only_create=True) if only_create
-                   else sync.deploy(guids, progress=progress))
+            ops = (sync.deploy(guids, progress=progress, only_create=True, replace=replace) if only_create
+                   else sync.deploy(guids, progress=progress, replace=replace))
             summary = dict(Counter(o.status for o in ops))
             log.info("[web] despliegue en %s terminado: %s", serial, summary)
             self.mirror(topic, {"done": True, "summary": summary})
@@ -436,6 +470,25 @@ class WebServer:
         self.monitor.check(serial, wait_lock=True)    # el estado de la flota, al día
 
     # ------------------------------------------------------------- entradas
+    def robot_missions(self, serial: str) -> dict:
+        """Pestaña Robot (decisión 113): misión en curso con sus pasos, cola e
+        historial. No es VDA (la norma no tiene historial) ni pasa por el bus:
+        se pregunta al robot solo mientras alguien mira la pestaña."""
+        r = self.robots.get(serial)
+        if r is None:
+            raise HTTPException(404, f"robot '{serial}' desconocido")
+        src = self.missions.get(serial)
+        if src is None:
+            make = getattr(r.driver, "make_missions", None)
+            if make is None:
+                return {"supported": False}
+            src = self.missions[serial] = make()
+        try:
+            return {"supported": True, **asdict(src.view())}
+        except Exception as e:      # robot apagado o fuera de la red: aviso, no 500
+            log.warning("[%s] misiones: %s: %s", serial, type(e).__name__, e)
+            return {"supported": True, "error": f"{type(e).__name__}: {str(e)[:160]}"}
+
     def send_fleet_order(self, action_type: str, params: dict) -> str:
         order_id = f"ui-{uuid.uuid4().hex[:8]}"
         self.bus.publish(FLEET, "order", {
@@ -511,6 +564,14 @@ class WebServer:
         def delete(body: CaptureIn):
             return self.delete(body.guid)
 
+        @app.get("/api/create/{serial}/adoptable")
+        def adoptable(serial: str):
+            return {"missions": self.adoptable(serial)}
+
+        @app.post("/api/create/{serial}/adopt")
+        def adopt(serial: str, body: AdoptIn):
+            return self.adopt(serial, body.source, body.target)
+
         @app.post("/api/create/{serial}/capture")
         def capture(serial: str, body: CaptureIn):
             return self.capture(serial, body.guid)
@@ -542,6 +603,10 @@ class WebServer:
                 raise HTTPException(400, f"instantAction '{body.actionType}' no admitida; hay {INSTANT_ALLOWED}")
             return {"actionId": self.send_instant(serial, body.actionType)}
 
+        @app.get("/api/robots/{serial}/missions")
+        def robot_missions(serial: str):     # `def`: REST bloqueante, en el pool de hilos
+            return self.robot_missions(serial)
+
         # Las rutas de sincronización son `def` (no `async`): FastAPI las corre en
         # su pool de hilos, porque leen ficheros y hacen REST bloqueante.
         @app.get("/api/sync")
@@ -564,7 +629,7 @@ class WebServer:
         def sync_preview(serial: str, body: SyncIn):
             sync = self._sync_for(serial)
             try:
-                _, ops = sync.preview(body.guids)
+                _, ops = sync.preview(body.guids, body.replace)
             except ValueError as e:             # GUID que no está en el catálogo
                 raise HTTPException(400, str(e))
             except Exception as e:              # robot inalcanzable, 4xx/5xx del robot…
@@ -579,22 +644,23 @@ class WebServer:
                 raise HTTPException(409, f"'{serial}' no responde: no se despliega")
             # Ocupado (order, carga o mission lanzada desde su web): solo se
             # admite CREAR lo que no tiene, que no toca lo que está ejecutando;
-            # corregir un recurso que ya tiene espera a que quede libre (decisión 103).
+            # corregir o sustituir un recurso que ya tiene espera a que quede
+            # libre (decisiones 103 y 117).
             only_create = st["busy"]
             if only_create:
                 try:
-                    _, ops = sync.preview(body.guids)
+                    _, ops = sync.preview(body.guids, body.replace)
                 except Exception as e:
                     raise HTTPException(502, f"no se pudo leer '{serial}': {e}")
-                touch = [o.name for o in ops if o.verb == "corregir"]
+                touch = [o.name for o in ops if o.verb in ("corregir", "sustituir")]
                 if touch:
-                    raise HTTPException(409, f"'{serial}' está ocupado y habría que corregir recursos que ya "
+                    raise HTTPException(409, f"'{serial}' está ocupado y habría que corregir o sustituir recursos que ya "
                                              f"tiene ({', '.join(touch)}): se despliega cuando quede libre")
             with self._deploy_lock:
                 if serial in self._deploying:
                     raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
                 self._deploying.add(serial)
-            threading.Thread(target=self._run_deploy, args=(serial, sync, body.guids, only_create),
+            threading.Thread(target=self._run_deploy, args=(serial, sync, body.guids, only_create, body.replace),
                              name=f"sync-{serial}", daemon=True).start()
             log.info("[web] despliegue en %s: %d recursos seleccionados", serial, len(body.guids))
             return {"started": True}

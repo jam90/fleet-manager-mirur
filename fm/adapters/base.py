@@ -32,6 +32,7 @@ class Telemetry:
     battery: float                                   # %
     pose: tuple[float, float, float] | None = None   # x, y, theta (rad) en el mapa
     map_id: str | None = None
+    velocity: tuple[float, float] | None = None      # vx (m/s), omega (rad/s); robot diferencial: vy = 0
     driving: bool = False
     paused: bool = False
     charging: bool | None = None       # None = el driver no lo sabe (el overlay decide)
@@ -93,6 +94,45 @@ class RobotSpec:
     description: str = ""
 
 
+# --- Misiones de un robot, para la pestaña Robot (decisión 113) --------------
+# Lo que el robot ejecuta, lo haya lanzado el FM o no. `status` usa las
+# palabras de `actionStatus` VDA (WAITING, RUNNING, PAUSED, FINISHED, FAILED)
+# o, si la marca dice algo que no encaja, su texto tal cual. Horas en ISO 8601 UTC.
+
+
+@dataclass
+class MissionStep:
+    kind: str                       # tipo de paso en la marca ("move", "charging"…)
+    status: str
+    message: str = ""               # ya legible: "Position 'Punto espera 2' reached"
+    started: str | None = None
+    finished: str | None = None
+
+
+@dataclass
+class MissionRun:
+    job_id: str                     # el mismo `job_id` opaco que devuelve `execute()`
+    name: str
+    status: str
+    own: bool = False               # la lanzó este FM (desde que arrancó)
+    message: str = ""               # cómo terminó, en palabras del robot
+    ordered: str | None = None
+    started: str | None = None
+    finished: str | None = None
+    parameters: list[tuple[str, str]] = field(default_factory=list)   # (nombre, valor legible)
+    steps: list[MissionStep] = field(default_factory=list)            # solo en la que está en curso
+
+
+@dataclass
+class MissionsView:
+    current: MissionRun | None = None
+    pending: list[MissionRun] = field(default_factory=list)    # en cola, la próxima primero
+    history: list[MissionRun] = field(default_factory=list)    # terminadas, la última primero
+    # Reloj del robot menos reloj del FM, en s (None = no se sabe). Las horas
+    # de arriba son las del robot tal cual; la UI las corrige con esto.
+    clock_offset_s: float | None = None
+
+
 class RobotDriver(Protocol):
     """Contrato que cumple cada marca. Todos los métodos de red son
     tolerantes: no lanzan, devuelven None/False y guardan `last_error`."""
@@ -152,6 +192,18 @@ class RobotDriver(Protocol):
         en caliente, fm/reload.py). Sin red: después el core vuelve a llamar
         a `connect()` desde el hilo de poll. Sin el gancho, cambiar las
         actions del robot pide reiniciar el FM."""
+
+    def make_missions(self) -> "MissionsSource":
+        """Gancho opcional: objeto para consultar las misiones del robot desde
+        la web (pestaña Robot). Se llama desde el hilo de la web, nunca desde el
+        bucle de 1 Hz: debe usar su propia conexión. Sin él, la pestaña no
+        enseña misiones."""
+
+
+class MissionsSource(Protocol):
+    def view(self, history: int = 10) -> MissionsView:
+        """Misión en curso con sus pasos, cola e historial. Puede lanzar: quien
+        llama (la web) convierte la excepción en un aviso."""
 
 
 # --- Ganchos opcionales ------------------------------------------------------

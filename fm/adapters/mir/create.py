@@ -6,6 +6,14 @@ El ciclo de un recurso nuevo:
     Crear (aquí)  →  web del MiR  →  Capturar (aquí)  →  Sincronización  →  Configurador
     GUID nuestro     Blockly / mapa   al catálogo         a otros robots     habilitar action
 
+**Adoptar** (decisión 116): una mission hecha en la web del MiR, que no
+tiene GUID de la flota (p. ej. un "Guardar como" de otra), se lleva al
+catálogo con un GUID estándar: el de una mission que ya está en el catálogo
+(la sustituye: sus actions pasan a ser las de la adoptada) o uno nuevo de su
+grupo. El MiR no deja cambiar el GUID de una mission, así que en ese robot
+la adoptada sigue con el suyo: se despliega la del catálogo (Sincronización)
+y la copia se borra en la web del MiR.
+
 - **Mission:** vacía, en un grupo del catálogo. Se sigue en
   `http://<ip>/missions/<guid>` (Blockly).
 - **Position:** normal (tipo 0) en la posición ACTUAL del robot, sobre un
@@ -193,9 +201,11 @@ def capture(sync, guid: str) -> dict:
                       (f"tipo {main['type_id']}" + (" + entrada" if len(docs) > 1 else ""))}
 
 
-def _capture_mission(sync, cat: Catalog, old: dict) -> tuple[str, dict]:
-    c, guid = sync.client, old["guid"]
-    m = _get_or(c, f"missions/{guid}", f"{old['name']!r} ya no está en {sync.serial}")
+def _capture_mission(sync, cat: Catalog, old: dict, source: str | None = None) -> tuple[str, dict]:
+    """Documento del catálogo para `old` con lo que hay en el robot. Se lee
+    la mission `source` (adoptar) o, por defecto, la del mismo GUID."""
+    c, guid = sync.client, source or old["guid"]
+    m = _get_or(c, f"missions/{guid}", f"{old['name'] if not source else guid!r} ya no está en {sync.serial}")
     # GUID del robot → del catálogo, para lo capturado antes de este mismo robot
     # (positions del mapa antiguo, sub-missions...).
     known = {d["_origen"]["guid"]: g for g, d in cat.items.items()
@@ -255,6 +265,74 @@ def _capture_position(sync, cat: Catalog, old: dict) -> list[tuple[str, dict]]:
                 "creada_por_mir": e["type_id"] in AUTO_CHILD_TYPES,
                 "_origen": _origen(sync.serial, e["guid"], mapa=doc["_origen"]["mapa"])}))
     return docs
+
+
+# ------------------------------------------------------------------ adoptar
+def adoptable(sync) -> list[dict]:
+    """Missions del robot de `sync` sin GUID de la flota que están en un grupo
+    del catálogo: hechas (o guardadas como) en la web del MiR. Cada una con
+    la mission del catálogo del mismo nombre y grupo como sugerencia, y
+    `adopted_as` si ya se adoptó (falta borrar la copia en la web del MiR)."""
+    cat = sync.catalog()
+    groups = {g: d for g, d in cat.items.items() if cat.kind(g) == "missiongrp"}
+    adopted = {d["_origen"]["guid"]: g for g, d in cat.items.items()
+               if cat.kind(g) == "mission" and d.get("_origen", {}).get("robot") == sync.serial
+               and d["_origen"].get("guid") and not is_std(d["_origen"]["guid"])}
+    out = []
+    with sync.lock:
+        for gg, gd in sorted(groups.items()):
+            try:
+                rows = sync.client._req("GET", f"mission_groups/{gg}/missions")
+            except MirApiError as e:
+                if e.status == 404:          # el robot no tiene ese grupo
+                    continue
+                raise
+            for m in rows:
+                if is_std(m["guid"]):
+                    continue
+                same = [g for g, d in cat.items.items()
+                        if cat.kind(g) == "mission" and d["name"] == m["name"] and d.get("group_id") == gg]
+                out.append({"guid": m["guid"], "name": m["name"], "group": gd["name"], "group_guid": gg,
+                            "suggest": same[0] if len(same) == 1 else None,
+                            "adopted_as": adopted.get(m["guid"]),
+                            "url": sync.web_url(m["guid"])})
+    return out
+
+
+def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = ()) -> dict:
+    """Lleva al catálogo la mission `source` del robot (sin GUID de la flota)
+    con el GUID `target` de una mission que ya está en el catálogo o, si no
+    se da, con uno nuevo de su grupo. `others`: GUIDs estándar de los demás
+    robots (para no repetir número). No escribe nada en el robot."""
+    if is_std(source):
+        raise CreateError("ya tiene GUID de la flota: se captura con «Capturar»")
+    cat = sync.catalog()
+    with sync.lock:
+        c = sync.client
+        m = _get_or(c, f"missions/{source}", f"la mission {source} no está en {sync.serial}")
+        if target:
+            old = cat.items.get(target)
+            if old is None or cat.kind(target) != "mission":
+                raise CreateError(f"{target} no es una mission del catálogo")
+        else:
+            group = cat.items.get(m["group_id"])
+            if group is None or cat.kind(m["group_id"]) != "missiongrp":
+                raise CreateError(f"{m['name']!r} está en un grupo que no es del catálogo: "
+                                  "muévela en la web del MiR a uno que sí lo sea")
+            every = {**cat.items, **cat.drafts}
+            sessions = [d["session_id"] for g, d in every.items()
+                        if cat.kind(g) == "mission" and d.get("group_id") == m["group_id"] and d.get("session_id")]
+            if not sessions:
+                raise CreateError(f"no se sabe la session del grupo {group['name']!r}")
+            _, inst, _, group_num = parse_std(m["group_id"])
+            taken = set(every) | _retired(sync) | robot_std_guids(c, "mission") | set(others)
+            guid = next_guid("mission", inst, group_num, taken, per_parent=False)
+            old = {"guid": guid, "name": m["name"], "description": "", "group_id": m["group_id"],
+                   "session_id": max(set(sessions), key=sessions.count), "hidden": False}
+        kind, doc = _capture_mission(sync, cat, old, source=source)
+    write_doc(sync.catalog_dir, kind, doc)
+    return {"kind": kind, "guid": doc["guid"], "name": doc["name"], "source": source,
+            "replaced": bool(target), "detail": f"{len(doc['actions'])} actions"}
 
 
 # ------------------------------------------------------------------- borrar

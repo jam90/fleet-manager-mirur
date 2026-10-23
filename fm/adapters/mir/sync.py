@@ -9,7 +9,9 @@ una **selección** de ese catálogo:
    sus sonidos; una position, su mapa) y lo ordena por dependencias.
 2. `fetch_view(client, ...)` lee del robot solo lo que hace falta comparar.
 3. `plan(...)` — **puro, sin red** — compara y decide una operación por
-   recurso: crear, corregir, igual (no se toca) o distinta (no se toca).
+   recurso: crear, corregir, igual (no se toca), distinta (no se toca) o,
+   solo para las missions distintas que se piden en `replace`, sustituir
+   (borrar y volver a crear con el mismo GUID, decisión 117).
 4. `apply(...)` ejecuta las operaciones por REST e informa de cada una.
 
 Además, `MirSync.check()` dice qué recursos del catálogo tiene el robot
@@ -261,7 +263,7 @@ class Op:
     guid: str
     kind: str
     name: str
-    verb: str                   # crear | corregir | igual | distinta
+    verb: str                   # crear | corregir | igual | distinta | sustituir
     detail: str = ""
     warning: str = ""
     status: str = "pendiente"   # pendiente | hecho | error | saltada | sin cambios
@@ -280,11 +282,13 @@ def _fmt_pose(p: dict) -> str:
 
 
 def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
-         map_png_b64: Callable[[str], str] | None = None) -> list[Op]:
+         map_png_b64: Callable[[str], str] | None = None, replace: Iterable[str] = ()) -> list[Op]:
     """Una operación por recurso de `guids` (ya en orden). Puro: no hay red.
 
     `map_png_b64(guid)` da la imagen del catálogo en base64 para comparar el
-    `base_map`; por defecto la lee del catálogo."""
+    `base_map`; por defecto la lee del catálogo. `replace`: missions que, si
+    salen distintas, se sustituyen (decisión 117)."""
+    replace = set(replace)
     png = map_png_b64 or (lambda g: base64.b64encode(cat.map_png(g)).decode())
     ops: list[Op] = []
     for g in guids:
@@ -336,8 +340,18 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                     diff.append("actions")
                 op.verb = "distinta" if diff else "igual"
                 op.detail = ("difiere: " + ", ".join(diff)) if diff else ""
+                if diff and g in replace:
+                    op.verb = "sustituir"
+                    op.detail = f"borrar y volver a crear con {len(d['actions'])} actions ({op.detail})"
+                    # El MiR deja borrarla aunque otra la cargue (`load_mission`
+                    # guarda el GUID y vuelve a valer al recrearla, probado en
+                    # mir-2 el 2026-10-23): se avisa, no se bloquea.
+                    users = sorted(cat.items[u]["name"] for u in view.missions
+                                   if u != g and u in cat.items and g in cat.deps(u))
+                    if users:
+                        op.warning = f"la cargan {', '.join(users)}: unos segundos sin ella"
         if op.verb == "distinta":
-            op.detail += " — no se toca (sustituir aún no está implementado)"
+            op.detail += " — no se toca (márcala para sustituirla)" if k == "mission" else " — no se toca"
         ops.append(op)
     return ops
 
@@ -406,6 +420,11 @@ def _apply_one(client: MirClient, cat: Catalog, op: Op) -> None:
         client._req("POST", "mission_groups", json={"guid": g, "name": d["name"], "priority": 0,
                                                     "feature": "default", "icon": ""})
     elif op.kind == "mission":
+        if op.verb == "sustituir":
+            # El MiR no deja cambiar el GUID ni reemplazar las actions de golpe:
+            # se borra y se crea igual que una nueva. Si la creación falla, el
+            # robot se queda sin ella (status "error"): se vuelve a desplegar.
+            client._req("DELETE", f"missions/{g}")
         client._req("POST", "missions", json={k: d[k] for k in
                                               ("guid", "name", "description", "group_id", "session_id", "hidden")})
         # El anidamiento apunta al GUID de un parámetro de la action contenedora,
@@ -487,9 +506,9 @@ class MirSync:
                          "required": cat.closure([g]) if g else []}
         return out
 
-    def _preview(self, cat: Catalog, selected: Iterable[str]) -> list[Op]:
+    def _preview(self, cat: Catalog, selected: Iterable[str], replace: Iterable[str] = ()) -> list[Op]:
         guids = cat.closure(selected)
-        return plan(cat, fetch_view(self.client, cat, guids), guids, self.serial)
+        return plan(cat, fetch_view(self.client, cat, guids), guids, self.serial, replace=replace)
 
     # ---- pestaña Crear (fm/adapters/mir/create.py)
     def web_url(self, guid: str, map_guid: str | None = None) -> str:
@@ -526,6 +545,14 @@ class MirSync:
         from fm.adapters.mir.create import capture
         return capture(self, guid)
 
+    def adoptable(self) -> list[dict]:
+        from fm.adapters.mir.create import adoptable
+        return adoptable(self)
+
+    def adopt(self, source: str, target: str | None = None, others=()) -> dict:
+        from fm.adapters.mir.create import adopt
+        return adopt(self, source, target, others)
+
     def create_choices(self) -> dict:
         """Para la pestaña Crear (sin red): grupos y mapas del catálogo, y lo
         creado desde la pestaña (borradores primero, luego lo ya capturado)."""
@@ -541,7 +568,7 @@ class MirSync:
                                 "robot": d.get("_origen", {}).get("robot"),
                                 "date": d.get("_origen", {}).get("capturado")})
         created.sort(key=lambda x: (not x["draft"], x["guid"]))
-        return {"groups": pick("missiongrp"), "maps": pick("map"), "created": created}
+        return {"groups": pick("missiongrp"), "maps": pick("map"), "missions": pick("mission"), "created": created}
 
     def delete_blockers(self, guid: str, definitions: dict, wanted) -> list[str]:
         from fm.adapters.mir.create import delete_blockers
@@ -603,22 +630,22 @@ class MirSync:
                             if cat.kind(g) == "position" and not d.get("creada_por_mir")})
         return {"missions": missions, "positions": positions}
 
-    def preview(self, selected: Iterable[str]) -> tuple[Catalog, list[Op]]:
+    def preview(self, selected: Iterable[str], replace: Iterable[str] = ()) -> tuple[Catalog, list[Op]]:
         cat = self.catalog()
         with self.lock:
-            return cat, self._preview(cat, selected)
+            return cat, self._preview(cat, selected, replace)
 
     def deploy(self, selected: Iterable[str], progress: Progress = lambda op: None,
-               only_create: bool = False) -> list[Op]:
+               only_create: bool = False, replace: Iterable[str] = ()) -> list[Op]:
         """Aplica la selección. `only_create`: el robot está ocupado (decisión
         103), así que solo se admite CREAR lo que no tiene; si al replanificar
-        sale algo que corregir en un recurso que ya tiene (y que podría estar
-        usando), no se toca nada."""
+        sale algo que corregir o sustituir en un recurso que ya tiene (y que
+        podría estar usando), no se toca nada."""
         cat = self.catalog()
         with self.lock:
-            ops = self._preview(cat, selected)   # se replanifica: el robot puede haber cambiado
+            ops = self._preview(cat, selected, replace)   # se replanifica: el robot puede haber cambiado
             if only_create:
-                touch = [o.name for o in ops if o.verb == "corregir"]
+                touch = [o.name for o in ops if o.verb in ("corregir", "sustituir")]
                 if touch:
                     raise RuntimeError("el robot está ocupado y habría que corregir recursos que ya tiene "
                                        f"({', '.join(touch)}): se despliega cuando quede libre")

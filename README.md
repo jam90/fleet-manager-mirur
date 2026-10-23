@@ -29,6 +29,10 @@ en [`CLAUDE.md`](CLAUDE.md).
    y missions lanzadas desde fuera del FM (el robot cuenta como ocupado).
 7. Interfaz web en `http://<pc>:8050/`: batería y misión de cada robot en
    vivo, pausa / reanudar / cancelar, y envío de `fleet/order` con parámetros.
+   Arriba, la sección **Robot** (`#robot/<serial>`): todo lo que se sabe de un
+   robot (estado, velocidad, aviso si una mission espera al operario,
+   identidad, odómetro, errores, la misión en curso paso a paso, la cola, las
+   últimas misiones y el `state` VDA tal cual).
 
 ## Instalación
 

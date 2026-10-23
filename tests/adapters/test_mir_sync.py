@@ -105,6 +105,9 @@ class FakeMir:
             if parts[1] not in self.db[parts[0]]:
                 raise MirApiError(method, path, 404, {})
             del self.db[parts[0]][parts[1]]
+            if parts[0] == "missions":                     # y las actions con su mission (visto en mir-2)
+                for g in [g for g, a in self.db["actions"].items() if a["mission_id"] == parts[1]]:
+                    del self.db["actions"][g]
             if parts[0] == "positions":                    # el MiR borra la entrada con su marcador
                 for g in [g for g, p in self.db["positions"].items() if p.get("parent_id") == parts[1]]:
                     del self.db["positions"][g]
@@ -272,3 +275,35 @@ def test_deploy_solo_crear_no_corrige_nada(cat):
         s.deploy([P_MARKER], only_create=True)
     assert s.client.writes == before                                # no se ha tocado nada
     assert any(o.status == "hecho" for o in s.deploy([P_MARKER]))   # libre: se corrige
+
+
+def test_sustituir_mission_distinta_solo_si_se_pide(cat):
+    # Decisión 117: una mission distinta no se toca salvo que se marque.
+    from fm.adapters.mir.sync import MirSync, normalized_actions
+    mir = FakeMir()
+    guids = cat.closure([M_MAIN])
+    apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-1"))
+    # En la web del MiR alguien le añade una action a «sub» (que «principal» carga)
+    mir._req("POST", f"missions/{M_SUB}/actions", json={"action_type": "wait", "priority": 3,
+                                                       "parameters": [{"id": "time", "value": "00:00:01", "input_name": None}]})
+    ops = {o.guid: o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-1")}
+    assert ops[M_SUB].verb == "distinta" and "márcala" in ops[M_SUB].detail
+    n = len(mir.writes)
+    apply(mir, cat, list(ops.values()))
+    assert len(mir.writes) == n                                     # sin marcar: nada
+    ops = {o.guid: o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-1", replace=[M_SUB])}
+    assert ops[M_SUB].verb == "sustituir" and "principal" in ops[M_SUB].warning   # la carga otra: aviso
+    assert ops[M_MAIN].verb == "igual"
+    apply(mir, cat, list(ops.values()))
+    assert ops[M_SUB].status == "hecho"
+    assert ("DELETE", f"missions/{M_SUB}") in mir.writes
+    assert normalized_actions(mir, M_SUB) == cat.items[M_SUB]["actions"]   # ya como el catálogo
+    # Con el robot ocupado no se sustituye nada (como corregir, decisión 103)
+    s = MirSync("mir-1", "0.0.0.0", "Basic x", cat.root)
+    s.client = mir
+    mir._req("POST", f"missions/{M_SUB}/actions", json={"action_type": "wait", "priority": 3,
+                                                       "parameters": [{"id": "time", "value": "00:00:01", "input_name": None}]})
+    before = list(mir.writes)
+    with pytest.raises(RuntimeError, match="ocupado"):
+        s.deploy([M_MAIN], only_create=True, replace=[M_SUB])
+    assert mir.writes == before

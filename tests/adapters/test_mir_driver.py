@@ -181,3 +181,23 @@ def test_job_result_es_el_message_de_la_cola():
     assert d.job_status(qid) == "FAILED"
     assert d.job_result(qid) == "Aborted - User Request"
     assert d.job_result(qid) is None          # se entrega una vez
+
+
+def test_guid_de_la_flota_no_lo_tapa_una_copia_con_el_mismo_nombre():
+    # Visto en mir-1 el 2026-10-23 (decisión 118): un «Guardar como» dejó dos
+    # «coger»; la copia salía primero y el FM no encontraba la de la flota.
+    flota = "imperialfleet-mission000-01-0001-001"
+    c = _FakeClient()
+    orig = c._req
+
+    def req(method, path, json=None):
+        if path == "mission_groups/g-guid/missions":
+            return [{"name": "coger", "guid": "181aad0a-copia"}, {"name": "coger", "guid": flota}]
+        return orig(method, path, json)
+    c._req = req
+    cfg = MirRobotConfig("mir-1", "h", "a", {"coger": ActionConfig("coger", flota)}, mission_group="g")
+    d = MirDriver(cfg, client=c)
+    assert d.connect()
+    assert d.missions[flota] == flota                 # por GUID, siempre
+    assert d.missions["coger"] == "181aad0a-copia"    # por nombre, el primero (con aviso)
+    assert d.mission_names[flota] == "coger"

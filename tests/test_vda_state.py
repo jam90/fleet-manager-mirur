@@ -97,3 +97,21 @@ def test_state_con_action_result_valida():
     d = to_vda_state(_header(), _tel(), ov).to_dict()
     assert_valid("state", d)
     assert d["actionStates"][0]["actionResult"] == "Aborted - User Request"
+
+
+def test_state_con_velocidad_e_info_robot_valida():
+    # velocity es campo VDA v3 (vx, vy, omega); los infoType propios también validan
+    s = to_vda_state(_header(), _tel(velocity={"linear": 0.5, "angular": 0.0}, robot_name="Toretto",
+                                     user_prompt={"question": "¿Seguir?"}))
+    d = s.to_dict()
+    assert_valid("state", d)
+    assert d["velocity"] == {"vx": 0.5, "vy": 0.0, "omega": 0.0}
+    types = [i["infoType"] for i in d["information"]]
+    assert "ROBOT_NAME" in types and "USER_PROMPT" in types
+
+
+def test_state_sin_velocidad_no_lleva_el_campo():
+    # Un driver que no sabe la velocidad (p. ej. el sim) no publica `velocity`
+    d = to_vda_state(_header(), Telemetry(battery=50.0)).to_dict()
+    assert "velocity" not in d
+    assert_valid("state", d)

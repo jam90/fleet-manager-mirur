@@ -7,7 +7,7 @@ import pytest
 
 from fm.adapters.mir.create import CreateError, next_guid
 from fm.adapters.mir.sync import Catalog, MirSync, std_guid
-from tests.adapters.test_mir_sync import GRP, M_MAIN, M_SUB, MAP, P_NORMAL, SES, FakeMir, write_catalog
+from tests.adapters.test_mir_sync import GRP, M_MAIN, M_SUB, MAP, P_NORMAL, SES, FakeMir, write_catalog, move
 
 
 @pytest.fixture
@@ -156,3 +156,44 @@ def test_borrar_marcador_se_lleva_su_entrada(sync, tmp_path):
     assert sync.delete_blockers(p, {}, []) == []
     sync.delete(p)
     assert sorted(sync.forget(p)) == sorted([p, entry])
+
+
+def _web_mission(sync, name, *actions, group=GRP):
+    """Una mission hecha en la web del MiR: GUID del robot, no de la flota."""
+    g = "181aad0a-ab8f-7cfc-bd76-96cc29f883dc"
+    sync.client.db["missions"][g] = {"guid": g, "name": name, "group_id": group, "session_id": "s-robot",
+                                     "description": "", "hidden": False}
+    for a in actions:
+        sync.client._req("POST", f"missions/{g}/actions", json={k: v for k, v in a.items() if k != "scope"})
+    return g
+
+
+def test_adoptar_en_lugar_de_una_del_catalogo(sync, tmp_path):
+    # Decisión 116: «sub» se borró en la web y se rehízo con «Guardar como»
+    src = _web_mission(sync, "sub", move(1, P_NORMAL), move(2, P_NORMAL))
+    sync.client.writes.clear()                                            # lo de arriba es «la web»
+    rows = sync.adoptable()
+    assert [(r["guid"], r["suggest"], r["adopted_as"]) for r in rows] == [(src, M_SUB, None)]
+    out = sync.adopt(src, M_SUB)
+    assert out["guid"] == M_SUB and out["replaced"] and out["detail"] == "2 actions"
+    doc = Catalog.load(tmp_path).items[M_SUB]
+    assert len(doc["actions"]) == 2 and doc["session_id"] == SES          # la session, la del catálogo
+    assert doc["_origen"]["robot"] == "mir-2" and doc["_origen"]["guid"] == src
+    assert sync.client.writes == []                                       # el robot no se toca
+    # Hasta que se borre la copia en la web, sale como ya adoptada
+    assert sync.adoptable()[0]["adopted_as"] == M_SUB
+
+
+def test_adoptar_como_nueva_y_errores(sync, tmp_path):
+    src = _web_mission(sync, "otra", move(1, P_NORMAL))
+    out = sync.adopt(src)
+    assert out["guid"] not in (M_SUB, M_MAIN) and not out["replaced"]
+    assert Catalog.load(tmp_path).items[out["guid"]]["name"] == "otra"
+    with pytest.raises(CreateError, match="Capturar"):
+        sync.adopt(M_SUB)                                                 # ya tiene GUID de la flota
+    with pytest.raises(CreateError, match="no es una mission"):
+        sync.adopt(src, GRP)
+    bad = _web_mission(sync, "rota", {"priority": 1, "action_type": "move", "scope": None, "parameters": [
+        {"id": "position", "value": "c7a22ec6-371d-11f1-99c4-000e8eb69199", "input_name": None}]})
+    with pytest.raises(CreateError, match="no está en el catálogo"):
+        sync.adopt(bad, M_SUB)

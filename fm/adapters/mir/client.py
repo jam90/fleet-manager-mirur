@@ -84,11 +84,27 @@ class MirStatus:
     mission_text: str
     mission_queue_id: int | None             # entrada de la cola en ejecución, si la hay
     errors: list[dict] = field(default_factory=list)
+    # Para la pestaña Robot (van a `state.information[]`, no deciden nada):
+    robot_name: str = ""                     # el de la web del MiR ("Dejavu")
+    robot_model: str = ""
+    serial_number: str = ""                  # número de serie de fábrica, no el serial VDA
+    velocity_linear: float = 0.0             # m/s
+    # rad/s. El MiR la da en grados/s, como `orientation` (medido con mir-1
+    # girando el 2026-10-23, docs/avance.md tras la decisión 115).
+    velocity_angular: float = 0.0
+    distance_to_next_target: float = 0.0     # m
+    moved: float = 0.0                       # odómetro total, m
+    uptime: int = 0                          # s
+    user_prompt: Any = None                  # pregunta de una mission al operario, o None
+    joystick_active: bool = False            # alguien lo conduce desde la web
+    safety_system_muted: bool = False
+    unloaded_map_changes: bool = False
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_json(cls, d: dict) -> "MirStatus":
         pos = d.get("position") or {}
+        vel = d.get("velocity") or {}
         deg = float(pos.get("orientation", 0.0))
         # VDA quiere radianes en [-π, π]; atan2 normaliza el rango de golpe.
         theta = math.atan2(math.sin(math.radians(deg)), math.cos(math.radians(deg)))
@@ -107,6 +123,18 @@ class MirStatus:
             mission_text=str(d.get("mission_text", "")),
             mission_queue_id=d.get("mission_queue_id"),
             errors=list(d.get("errors") or []),
+            robot_name=str(d.get("robot_name") or ""),
+            robot_model=str(d.get("robot_model") or ""),
+            serial_number=str(d.get("serial_number") or ""),
+            velocity_linear=float(vel.get("linear") or 0.0),
+            velocity_angular=math.radians(float(vel.get("angular") or 0.0)),
+            distance_to_next_target=float(d.get("distance_to_next_target") or 0.0),
+            moved=float(d.get("moved") or 0.0),
+            uptime=int(d.get("uptime") or 0),
+            user_prompt=d.get("user_prompt"),
+            joystick_active=bool(d.get("joystick_web_session_id")),
+            safety_system_muted=bool(d.get("safety_system_muted")),
+            unloaded_map_changes=bool(d.get("unloaded_map_changes")),
             raw=d,
         )
 
@@ -125,11 +153,15 @@ class MirClient:
         }
         # Una Session reutiliza la conexión TCP entre ticks (1 Hz por robot).
         self._s = requests.Session()
+        # Cabecera `Date` de la última respuesta: la hora del robot, que no
+        # tiene por qué ser la del PC (mir-2 iba 5 min atrasado el 2026-10-23).
+        self.last_date: str | None = None
 
     # ------------------------------------------------------------------ HTTP
     def _req(self, method: str, path: str, json: Any = None) -> Any:
         r = self._s.request(method, self.prefix + path, headers=self.headers,
                             json=json, timeout=self.timeout)
+        self.last_date = r.headers.get("Date")
         if r.status_code >= 400:
             try:
                 body = r.json()
@@ -187,22 +219,44 @@ class MirClient:
     def mission_queue_id_delete(self, queue_id: int) -> None:
         self._req("DELETE", f"mission_queue/{queue_id}")
 
+    # Para la pestaña Robot (fm/adapters/mir/missions.py). Solo lectura.
+    def mission_queue_get(self) -> list[dict]:
+        """TODA la cola desde que se instaló el robot (miles de entradas), pero
+        cada una solo con `id`, `state` y `url`: ~0,1 s."""
+        return self._req("GET", "mission_queue")
+
+    def mission_queue_id_actions_get(self, queue_id: int) -> list[dict]:
+        """Pasos ya empezados de esa entrada (`id`, `url`), en orden."""
+        return self._req("GET", f"mission_queue/{queue_id}/actions")
+
+    def mission_queue_id_actions_id_get(self, queue_id: int, action_id: int) -> dict:
+        return self._req("GET", f"mission_queue/{queue_id}/actions/{action_id}")
+
+    def missions_mission_id_get(self, mission_guid: str) -> dict:
+        return self._req("GET", f"missions/{mission_guid}")
+
     # ---------------------------------------------------------------- índices
     def index_mission_groups_by_name(self) -> dict[str, str]:
         return {g["name"]: g["guid"] for g in self.mission_groups_get()}
 
-    def index_missions_by_name(self, group_name: str | None = None) -> dict[str, str]:
-        """nombre → GUID. Con `group_name` solo se indexan las missions de ese
-        grupo (menos ruido y menos peticiones); si el grupo no existe en el
-        robot se lanza KeyError con un mensaje claro. Nombres duplicados: el primero."""
+    def group_missions(self, group_name: str | None = None) -> list[dict]:
+        """Missions (`guid`, `name`) del grupo `group_name`, o todas. Si el
+        grupo no existe en el robot se lanza KeyError con un mensaje claro."""
         if group_name is None:
-            missions = self.missions_get()
-        else:
-            groups = self.index_mission_groups_by_name()
-            if group_name not in groups:
-                raise KeyError(f"[{self.host}] no existe el mission_group '{group_name}'; "
-                               f"hay: {sorted(groups)}")
-            missions = self.mission_groups_group_id_missions_get(groups[group_name])
+            return self.missions_get()
+        groups = self.index_mission_groups_by_name()
+        if group_name not in groups:
+            raise KeyError(f"[{self.host}] no existe el mission_group '{group_name}'; "
+                           f"hay: {sorted(groups)}")
+        return self.mission_groups_group_id_missions_get(groups[group_name])
+
+    def index_missions_by_name(self, group_name: str | None = None,
+                               missions: list[dict] | None = None) -> dict[str, str]:
+        """nombre → GUID. Con `group_name` solo se indexan las missions de ese
+        grupo (menos ruido y menos peticiones); `missions` evita volver a
+        pedirlas si ya se tienen. Nombres duplicados: el primero."""
+        if missions is None:
+            missions = self.group_missions(group_name)
         idx: dict[str, str] = {}
         for m in missions:
             name = m.get("name", "")

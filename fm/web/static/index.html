@@ -15,7 +15,8 @@
 -->
 <style>
   /*
-    Estilo inspirado en la interfaz web del MiR250 (capturas en img_referencia/):
+    Estilo inspirado en la interfaz web del MiR250 (capturas de referencia
+    en img_referencia/, material local que no va al repo):
     fondo gris claro, tarjetas blancas casi sin sombra y con esquinas
     redondeadas (10 px; 6 px en botones y campos), títulos en azul marino,
     botón principal azul marino, verde MiR para "todo bien" y etiquetas de estado en mayúsculas con borde y fondo
@@ -234,6 +235,7 @@
   .verb.v-crear { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
   .verb.v-corregir { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
   .verb.v-distinta { color: var(--bad); background: var(--bad-bg); border-color: var(--bad); }
+  .verb.v-sustituir { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
   .ops { list-style: none; margin: 0; padding: 0; display: grid; font-size: 13px; max-height: 560px; overflow: auto; }
   .ops li { display: grid; grid-template-columns: 2ch minmax(0, 1.1fr) minmax(0, 1.3fr) 9ch; gap: 10px;
     padding: 7px 6px; border-bottom: 1px solid var(--line); align-items: start; }
@@ -242,6 +244,8 @@
   .ops .mark { font-weight: 800; text-align: center; }
   .ops .v-crear .mark { color: var(--ok); } .ops .v-corregir .mark { color: var(--warn); }
   .ops .v-distinta .mark { color: var(--bad); } .ops li.v-igual { color: var(--ink-3); }
+  .ops .v-sustituir .mark { color: var(--warn); }
+  .ops .replace { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-weight: 700; font-size: 13px; }
   .ops .warnline { display: block; color: var(--warn); font-weight: 700; }
   .ops .st { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
   .st-hecho { color: var(--ok); } .st-error { color: var(--bad); } .st-saltada { color: var(--warn); }
@@ -326,15 +330,56 @@
                  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
   .cfg-actions li { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 6px;
                     align-content: start; }
+
+  /* ---- secciones generales arriba (decisión 112): Robot | Fleet Manager.
+     Fuera de Fleet Manager no hay barra lateral: la columna desaparece. */
+  .layout.no-rail { grid-template-columns: minmax(0, 1fr); }
+  .topnav { display: flex; gap: 4px; }
+  .topnav a { padding: 6px 12px; border-radius: var(--radius-sm); color: var(--ink-2); font-weight: 700;
+    font-size: 14px; text-decoration: none; }
+  .topnav a:hover { background: var(--surface-2); color: var(--navy); }
+  .topnav a.active { background: var(--line); color: var(--navy); }
+  .topnav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- pestaña Robot ---- */
+  .robot-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .robot-bar .pill { margin-left: 0; }
+  .field.inline { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .field.inline select { min-width: 14em; }
+  .robot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: start; }
+  .card h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--navy); }
+  /* La pregunta de una mission al operario: es lo que explica un robot "parado sin motivo". */
+  .prompt { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--radius);
+    padding: 12px 16px; display: grid; gap: 2px; font-size: 15px; }
+  .prompt small { color: var(--ink-2); }
+  .missions h4 { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
+  .mrun { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 8px;
+    background: var(--surface-2); }
+  .mhead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .mhead small, .mlist small { color: var(--ink-3); }
+  .mparams { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; color: var(--ink-2); }
+  .steps-run { margin: 0; padding-left: 22px; display: grid; gap: 3px; font-size: 13px; }
+  .steps-run li.st-RUNNING { font-weight: 700; }
+  .s { font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+  .mlist { margin: 0; padding-left: 18px; font-size: 14px; display: grid; gap: 2px; }
+  .mhist { border-collapse: collapse; font-size: 13px; width: 100%; }
+  .mhist th { text-align: left; color: var(--ink-3); font-weight: 600; padding: 4px 8px 4px 0; }
+  .mhist td { padding: 6px 8px 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  .mhist td small { color: var(--ink-2); }
+  .raw summary { cursor: pointer; font-weight: 700; color: var(--navy); }
+  .raw pre { margin: 0; max-height: 28em; overflow: auto; font-size: 12px; background: var(--surface-2);
+    border-radius: var(--radius-sm); padding: 10px 12px; }
 </style>
 </head>
 <body>
 <div id="app" v-cloak>
-<div class="layout">
+<div class="layout" :class="{ 'no-rail': section !== 'fm' }">
   <!-- Pestañas: la URL lleva #operacion, #configurador o #sincronizacion para
        poder enlazar una pestaña (p. ej. del configurador a la sincronización)
-       y para que al recargar no se vuelva a la primera. -->
-  <nav class="rail" aria-label="Pestañas">
+       y para que al recargar no se vuelva a la primera. Esta barra es la de
+       la sección Fleet Manager; las secciones generales (Robot…) van arriba,
+       en la cabecera (decisión 112). -->
+  <nav class="rail" aria-label="Pestañas" v-if="section === 'fm'">
     <a v-for="t in tabs.filter(t => !t.admin)" :key="t.id" class="tab" :class="{ active: tab === t.id }"
        :href="'#' + t.id" :aria-label="t.label" :aria-current="tab === t.id ? 'page' : null">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="t.icon"></svg>
@@ -354,15 +399,188 @@
   <header>
     <h1>Fleet Manager</h1>
     <span class="sub">VDA 5050 v3 · flota <code>{{ fleet.fleet_manufacturer || '…' }}</code></span>
+    <nav class="topnav" aria-label="Secciones">
+      <a :href="robotHash(robotSel)" :class="{ active: section === 'robot' }"
+         :aria-current="section === 'robot' ? 'page' : null">Robot</a>
+      <a :href="'#' + lastFmTab" :class="{ active: section === 'fm' }"
+         :aria-current="section === 'fm' ? 'page' : null">Fleet Manager</a>
+    </nav>
     <span class="conn"><i class="dot" :class="wsOk ? 'ok' : 'bad'"></i>{{ wsOk ? 'conectado al FM' : 'sin conexión con el FM' }}</span>
   </header>
   <div class="banner" v-if="!wsOk">No hay conexión con el Fleet Manager. Reintentando… (¿está arrancado <code>run_fm.py</code>?)</div>
+
+  <!-- ===== Robot (decisión 112): todo lo que se sabe de UN robot, para
+       entenderlo; mandar sigue en Operación. Solo lee el `state` VDA que ya
+       llega por el WebSocket: lo propio de cada marca viene en
+       `information[]` con los infoType de fm/vda5050/state.py (I_*). ===== -->
+  <main v-show="tab === 'robot'">
+    <div class="robot-bar">
+      <label class="field inline">Robot
+        <select id="robot-select" :value="robotSel" @change="pickRobot($event.target.value)">
+          <option v-for="r in robotsView" :key="r.serial" :value="r.serial">
+            {{ r.name ? r.name + ' (' + r.serial + ')' : r.serial }}
+          </option>
+        </select>
+      </label>
+      <template v-if="rd">
+        <i class="dot" :class="rd.connection === 'ONLINE' ? 'ok' : (rd.connection ? 'bad' : '')" :title="'connection: ' + (rd.connection || '?')"></i>
+        <span class="pill" :class="rd.status.key">{{ rd.status.label }}</span>
+      </template>
+    </div>
+    <p class="empty" v-if="!rd">Ningún robot configurado.</p>
+    <p class="empty" v-else-if="!rd.state">Sin telemetría todavía.</p>
+    <template v-else>
+      <div class="prompt" v-if="rd.info.USER_PROMPT">
+        <b>El robot espera una respuesta:</b> {{ rd.info.USER_PROMPT }}
+        <small>Se contesta en la web o la tablet del robot.</small>
+      </div>
+      <div class="errs" v-if="rd.alerts.length">
+        <div class="err warn" v-for="a in rd.alerts" :key="a">{{ a }}</div>
+      </div>
+
+      <section class="robot-grid">
+        <article class="card">
+          <h3>Ahora</h3>
+          <dl class="kv">
+            <dt>Estado</dt><dd>{{ rd.info.ROBOT_STATE || '—' }}<span v-if="rd.state.paused"> · en pausa</span></dd>
+            <dt>Modo VDA</dt><dd><code>{{ rd.state.operatingMode }}</code></dd>
+            <dt>Misión</dt><dd>{{ rd.info.MISSION || '—' }}</dd>
+            <dt>Al destino</dt><dd class="num">{{ rd.info.DISTANCE_TO_TARGET != null ? Number(rd.info.DISTANCE_TO_TARGET).toFixed(1) + ' m' : '—' }}</dd>
+            <dt>Velocidad</dt>
+            <dd class="num" v-if="rd.state.velocity">{{ fixed(rd.state.velocity.vx, 2) }} m/s · {{ fixed(deg(rd.state.velocity.omega), 0) }} °/s</dd>
+            <dd v-else class="empty">—</dd>
+            <dt>Posición</dt>
+            <dd class="num" v-if="rd.pose">({{ rd.pose.x.toFixed(2) }}, {{ rd.pose.y.toFixed(2) }}) · {{ deg(rd.pose.theta).toFixed(0) }}°</dd>
+            <dd v-else class="empty">—</dd>
+          </dl>
+        </article>
+
+        <article class="card">
+          <h3>Batería</h3>
+          <div class="battery">
+            <div>
+              <div class="bar"><i :style="{ width: rd.battery + '%' }" :class="rd.battery < rd.battery_min ? (rd.battery < fleet.auto_charge.battery_floor ? 'crit' : 'low') : ''"></i></div>
+              <small>mínimo para trabajar {{ rd.battery_min }} % · a cargar bajo {{ fleet.auto_charge.battery_floor }} %</small>
+            </div>
+            <div class="pct num">{{ rd.battery.toFixed(0) }}&thinsp;%<span v-if="rd.charging" title="cargando">⚡</span></div>
+          </div>
+          <h3>En el FM</h3>
+          <dl class="kv">
+            <dt>Actions</dt>
+            <dd><div class="acts" v-if="rd.actions.length"><span class="act" v-for="a in rd.actions" :key="a"><b>{{ a }}</b></span></div>
+                <span v-else class="empty">ninguna habilitada</span></dd>
+            <dt>Order</dt>
+            <dd>
+              <template v-if="rd.state.orderId"><code>{{ rd.state.orderId }}</code>/{{ rd.state.orderUpdateId }}</template>
+              <span v-else class="empty">—</span>
+            </dd>
+            <dt>Estado</dt>
+            <dd>
+              <div class="acts" v-if="rd.state.actionStates.length">
+                <span class="act" v-for="a in rd.state.actionStates" :key="a.actionId"><b>{{ a.actionType }}</b><span class="s" :class="'s-' + a.actionStatus">{{ a.actionStatus }}</span></span>
+              </div>
+              <span v-else class="empty">—</span>
+            </dd>
+          </dl>
+        </article>
+
+        <article class="card">
+          <h3>Identidad</h3>
+          <dl class="kv">
+            <dt>Nombre</dt><dd>{{ rd.info.ROBOT_NAME || '—' }}</dd>
+            <dt>Modelo</dt><dd>{{ rd.info.ROBOT_MODEL || '—' }}</dd>
+            <dt>Nº de serie</dt><dd class="num">{{ rd.info.ROBOT_SERIAL || '—' }}</dd>
+            <dt>En el FM</dt><dd><code>{{ rd.serial }}</code> · <code>{{ rd.manufacturer }}</code></dd>
+            <dt>Recorrido</dt><dd class="num">{{ rd.info.ODOMETER != null ? (Number(rd.info.ODOMETER) / 1000).toFixed(1) + ' km en total' : '—' }}</dd>
+            <dt>Encendido</dt><dd class="num">{{ rd.info.UPTIME != null ? 'hace ' + duration(Number(rd.info.UPTIME)) : '—' }}</dd>
+          </dl>
+        </article>
+      </section>
+
+      <div class="card" v-if="rd.errors.length">
+        <h3>Errores</h3>
+        <div class="errs">
+          <div class="err" :class="e.errorLevel === 'WARNING' ? 'warn' : ''" v-for="(e, i) in rd.errors" :key="i">
+            <code>{{ e.errorType }}</code> <code>{{ e.errorLevel }}</code> {{ e.errorDescription }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Misiones (decisión 113): no es VDA ni llega por el WebSocket; se
+           pregunta al robot (GET /api/robots/<serial>/missions) cada pocos
+           segundos solo mientras esta pestaña está abierta. -->
+      <section class="card missions" v-if="mis.data && mis.data.supported">
+        <h3>Misiones <small class="hint" v-if="mis.at">· actualizado {{ mis.at }}</small></h3>
+        <p class="hint" v-if="Math.abs(mis.data.clock_offset_s || 0) >= 60">
+          El reloj del robot va {{ duration(Math.abs(mis.data.clock_offset_s), true) }}
+          {{ mis.data.clock_offset_s < 0 ? 'atrasado' : 'adelantado' }} respecto a este PC: las horas
+          de aquí ya están corregidas, las de la web del robot no.</p>
+        <p class="err warn" v-if="mis.data.error">No se pudo preguntar al robot: {{ mis.data.error }}</p>
+        <template v-else>
+          <div class="mrun current" v-if="mis.data.current">
+            <div class="mhead">
+              <b>{{ mis.data.current.name }}</b>
+              <span class="s" :class="'s-' + mis.data.current.status">{{ mis.data.current.status }}</span>
+              <span class="chip" v-if="mis.data.current.own">FM</span>
+              <small class="num">desde {{ hhmmss(fixT(mis.data.current.started)) }} · {{ since(fixT(mis.data.current.started)) }}</small>
+            </div>
+            <div class="mparams" v-if="mis.data.current.parameters.length">
+              <span v-for="p in mis.data.current.parameters" :key="p[0]"><code>{{ p[0] }}</code> {{ p[1] }}</span>
+            </div>
+            <ol class="steps-run" v-if="mis.data.current.steps.length">
+              <li v-for="(s, i) in mis.data.current.steps" :key="i" :class="'st-' + s.status">
+                <span class="s" :class="'s-' + s.status">{{ s.status }}</span>&ensp;<code>{{ s.kind }}</code>&ensp;{{ s.message }}
+              </li>
+            </ol>
+            <p class="empty" v-else>Aún no ha empezado ningún paso.</p>
+          </div>
+          <p class="empty" v-else>No está ejecutando ninguna misión.</p>
+
+          <template v-if="mis.data.pending.length">
+            <h4>En cola</h4>
+            <ul class="mlist">
+              <li v-for="r in mis.data.pending" :key="r.job_id">
+                <b>{{ r.name }}</b> <span class="chip" v-if="r.own">FM</span>
+                <small class="num">pedida {{ hhmmss(fixT(r.ordered)) }}</small>
+              </li>
+            </ul>
+          </template>
+
+          <h4>Últimas</h4>
+          <table class="mhist" v-if="mis.data.history.length">
+            <thead><tr><th>inicio</th><th>misión</th><th>dura</th><th>resultado</th></tr></thead>
+            <tbody>
+              <tr v-for="r in mis.data.history" :key="r.job_id">
+                <td class="num">{{ dayTime(fixT(r.started || r.ordered)) }}</td>
+                <td><b>{{ r.name }}</b> <span class="chip" v-if="r.own">FM</span>
+                  <div class="mparams" v-if="r.parameters.length">
+                    <span v-for="p in r.parameters" :key="p[0]"><code>{{ p[0] }}</code> {{ p[1] }}</span>
+                  </div></td>
+                <td class="num">{{ r.started && r.finished ? duration((new Date(r.finished) - new Date(r.started)) / 1000, true) : '—' }}</td>
+                <td><span class="s" :class="'s-' + r.status">{{ r.status }}</span> <small>{{ r.message }}</small></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="empty" v-else>Sin misiones terminadas.</p>
+        </template>
+      </section>
+
+      <details class="card raw">
+        <summary>Mensaje <code>state</code> VDA 5050 tal cual</summary>
+        <p class="hint">Lo que el FM publica cada segundo en
+          <code>vda5050/v3/{{ rd.manufacturer }}/{{ rd.serial }}/state</code> (headerId {{ rd.state.headerId }},
+          {{ hhmmss(rd.state.timestamp) }}). La pestaña no usa nada más.</p>
+        <pre>{{ JSON.stringify(rd.state, null, 2) }}</pre>
+      </details>
+    </template>
+  </main>
 
   <main v-show="tab === 'operacion'">
     <section class="robots">
       <article v-for="r in robotsView" :key="r.serial" class="card" :class="'st-' + r.status.key">
         <div class="card-head">
-          <h2>{{ r.serial }}</h2>
+          <h2>{{ r.name || r.serial }}</h2>
+          <span class="chip" v-if="r.name" title="identificador en el FM y en los topics VDA">{{ r.serial }}</span>
           <span class="chip">{{ r.manufacturer }}</span>
           <i class="dot" :class="r.connection === 'ONLINE' ? 'ok' : (r.connection ? 'bad' : '')" :title="'connection: ' + (r.connection || '?')"></i>
           <span class="pill" :class="r.status.key">{{ r.status.label }}</span>
@@ -516,6 +734,12 @@
         <b>«{{ createState.result.name }}» borrada</b>
         {{ createState.result.robots.length ? 'de ' + createState.result.robots.join(' y ') + ' y ' : '' }}del catálogo.
       </template>
+      <template v-else-if="createState.result.adopted">
+        <b>«{{ createState.result.name }}» adoptada en el catálogo</b> como <code class="guid">{{ createState.result.guid }}</code>
+        ({{ createState.result.detail }}). En el robot sigue siendo <code class="guid">{{ createState.result.source }}</code>:
+        lleva la del catálogo a los robots en <a href="#sincronizacion">Sincronización</a><template v-if="createState.result.replaced">
+        (marca <b>Sustituir</b> donde tengan la antigua)</template> y después borra la copia en la web del MiR.
+      </template>
       <template v-else-if="createState.result.captured">
         <b>«{{ createState.result.name }}» capturada al catálogo</b> ({{ createState.result.detail }}).
         Ahora se puede llevar a otros robots en <a href="#sincronizacion">Sincronización</a><template v-if="createState.result.kind === 'mission'">
@@ -549,6 +773,33 @@
         </li>
       </ul>
       <p class="empty" v-else>No hay nada creado desde aquí.</p>
+    </div>
+    <!-- Adoptar (decisión 116): missions hechas o "guardadas como" en la web
+         del MiR, sin GUID de la flota. Solo escribe en el catálogo. -->
+    <div class="panel">
+      <h3>Hechas en la web del MiR <small class="muted" v-if="createState.robot">· en {{ createState.robot }}</small></h3>
+      <p class="hint">Missions de un grupo del catálogo que <b>no tienen GUID de la flota</b> (p. ej. un «Guardar como»):
+        el FM no las ve. <b>Adoptar</b> las guarda en el catálogo con el GUID de la mission que sustituyen, o con uno nuevo.
+        Después: llevarla a los robots en <a href="#sincronizacion">Sincronización</a> (marcando <b>Sustituir</b> donde
+        tengan la antigua) y borrar esta copia en la web del MiR.</p>
+      <p class="empty" v-if="adoptState.loading">Mirando el robot…</p>
+      <p class="err warn" v-else-if="adoptState.error">{{ adoptState.error }}</p>
+      <ul class="drafts" v-else-if="adoptState.list.length">
+        <li v-for="m in adoptState.list" :key="m.guid">
+          <span><span class="muted">mission</span> <b>{{ m.name }}</b> <span class="muted">· grupo {{ m.group }}</span>
+            <code class="guid">{{ m.guid }}</code>
+            <span class="chip" v-if="m.adopted_as">adoptada como «{{ missionName(m.adopted_as) }}»: bórrala en la web del MiR</span></span>
+          <span class="acts">
+            <a class="btn" :href="m.url" target="_blank" rel="noopener">Abrir en el MiR ↗</a>
+            <select v-model="adoptState.target[m.guid]" :aria-label="'adoptar ' + m.name + ' como'">
+              <option value="">como mission nueva</option>
+              <option v-for="c in createState.missions" :key="c.guid" :value="c.guid">en lugar de «{{ c.name }}» ({{ c.guid.slice(-3) }})</option>
+            </select>
+            <button class="btn primary" @click="adoptRes(m)" :disabled="!!createState.busy">Adoptar</button>
+          </span>
+        </li>
+      </ul>
+      <p class="empty" v-else-if="createState.robot">Todas las missions de sus grupos del catálogo tienen GUID de la flota.</p>
     </div>
   </main>
 
@@ -872,9 +1123,9 @@
         </div>
         <p class="hint" v-if="syncState.ops.length && !previewFresh">La selección o el robot han cambiado: vuelve a pedir la vista previa.</p>
         <template v-if="targetInfo && targetInfo.supported && targetInfo.busy">
-          <p class="warnline" v-if="previewFresh && opCounts.corregir">
+          <p class="warnline" v-if="previewFresh && (opCounts.corregir || opCounts.sustituir)">
             {{ targetInfo.serial }} está ocupado (una order, la carga o una mission lanzada desde su web) y habría que corregir
-            recursos que ya tiene: no se despliega hasta que quede libre.</p>
+            o sustituir recursos que ya tiene: no se despliega hasta que quede libre.</p>
           <p class="hint" v-else>{{ targetInfo.serial }} está ocupado (una order, la carga o una mission lanzada desde su web):
             solo se puede desplegar lo que hay que <b>crear</b>, que no toca lo que está ejecutando.</p>
         </template>
@@ -883,7 +1134,7 @@
 
         <template v-if="syncState.ops.length">
           <div class="sync-sum">
-            <span v-for="v in ['crear', 'corregir', 'igual', 'distinta']" :key="v" v-show="opCounts[v]" class="verb" :class="'v-' + v">
+            <span v-for="v in ['crear', 'corregir', 'sustituir', 'igual', 'distinta']" :key="v" v-show="opCounts[v]" class="verb" :class="'v-' + v">
               {{ opCounts[v] }} {{ VERB_LABEL[v] }}</span>
           </div>
           <ul class="ops">
@@ -892,6 +1143,10 @@
               <span class="mark">{{ VERB_MARK[o.verb] }}</span>
               <span><span class="muted">{{ KIND_LABEL[o.kind] || o.kind }}</span> <b>{{ o.name }}</b><code class="guid">{{ o.guid }}</code></span>
               <span>{{ VERB_LABEL[o.verb] }}<template v-if="o.detail"> · {{ o.detail }}</template>
+                <!-- Sustituir (decisión 117): solo missions distintas; se borra y se crea con el mismo GUID. -->
+                <label class="replace" v-if="o.kind === 'mission' && (o.verb === 'distinta' || o.verb === 'sustituir') && o.status === 'pendiente'">
+                  <input type="checkbox" :checked="!!syncState.replace[o.guid]" @change="toggleReplace(o.guid, $event.target.checked)"
+                         :disabled="syncState.loading"> Sustituir</label>
                 <span class="warnline" v-if="o.warning">⚠ {{ o.warning }}</span></span>
               <span class="st" :class="'st-' + o.status.replace(' ', '-')">{{ o.status === 'pendiente' ? '' : o.status }}</span>
             </li>
@@ -955,6 +1210,30 @@
               camino esté libre.</p></li>
           <li><b>Guardarla en git</b><span class="where">terminal</span>
             <p>Lo nuevo está en <code>catalog/</code> y en <code>config/fleet.yaml</code>: haz commit de los dos.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Cambiar una mission que ya está en la flota
+          <span class="hint">Editarla en un robot y llevar el cambio a los demás. Y qué hacer si se usó «Guardar como».</span></summary>
+        <ol class="steps">
+          <li><b>Editarla en la web del MiR, sin «Guardar como»</b><span class="where">web del MiR</span>
+            <p>Ábrela y cámbiala <b>en el sitio</b>. No la borres para rehacerla ni la guardes con «Guardar como»: la copia
+              nace con otro GUID, el FM no la reconoce y la action que la usaba deja de encontrarla en ese robot.</p></li>
+          <li><b>Llevar el cambio al catálogo</b><a class="where" href="#crear">→ Crear</a>
+            <p>Si se creó desde aquí, «Volver a capturar» en «Creado desde aquí», desde el robot donde la has editado.</p>
+            <p><b>Si ya se hizo un «Guardar como»:</b> la copia sale en «Hechas en la web del MiR». Elige «en lugar de
+              «su nombre»» (viene propuesta la del catálogo con el mismo nombre) y «Adoptar»: su contenido pasa al
+              catálogo con el GUID de siempre, y el Configurador no cambia. En el robot no se toca nada todavía.</p></li>
+          <li><b>Llevarla a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Márcala, elige el robot y «Vista previa». Donde tengan la versión antigua sale <i>distinta</i>: marca
+              <b>Sustituir</b> (se borra y se vuelve a crear con el mismo GUID; si otra mission la carga, sigue
+              funcionando) y «Desplegar». Donde no la tengan, se crea. Un robot por vez y con el robot libre.</p></li>
+          <li><b>Borrar la copia</b><span class="where">web del MiR</span>
+            <p>Si hubo «Guardar como», borra en la web del MiR la copia del robot donde se hizo: desde aquí no se toca nada
+              que no tenga GUID de la flota. Mientras exista, «Hechas en la web del MiR» la marca como ya adoptada.</p></li>
+          <li><b>Guardarla en git</b><span class="where">terminal</span>
+            <p>El cambio está en <code>catalog/</code>: haz commit.</p></li>
         </ol>
       </details>
 
@@ -1052,8 +1331,8 @@ const TABS = [
 ];
 
 // Sincronización: rótulos de las operaciones que devuelve el servidor (sync.py).
-const VERB_LABEL = { crear: 'crear', corregir: 'corregir', igual: 'ya está igual', distinta: 'distinta' };
-const VERB_MARK = { crear: '+', corregir: '~', igual: '=', distinta: '!' };
+const VERB_LABEL = { crear: 'crear', corregir: 'corregir', igual: 'ya está igual', distinta: 'distinta', sustituir: 'sustituir' };
+const VERB_MARK = { crear: '+', corregir: '~', igual: '=', distinta: '!', sustituir: '↻' };
 const KIND_LABEL = { session: 'session', map: 'mapa', position: 'position', sound: 'sonido',
                      missiongrp: 'grupo', mission: 'mission' };
 
@@ -1218,8 +1497,10 @@ createApp({
       const alive = s && (s.actionStates || []).some(a => a.actionStatus === 'WAITING' || a.actionStatus === 'RUNNING');
       const reachable = s && !(s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE');
       const mission = s && (s.information || []).find(i => i.infoType === 'MISSION');
+      const name = s && (s.information || []).find(i => i.infoType === 'ROBOT_NAME');
       return {
         serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
+        name: name ? name.infoDescriptor : '',   // el de la web del robot ("Dejavu"), si el driver lo da
         state: s, connection: r.connection, feedback: r.feedback,
         status: statusOf(r, s),
         battery: s ? s.powerSupply.stateOfCharge : 0,
@@ -1233,7 +1514,7 @@ createApp({
 
     // ---------------- sincronización (docs/plan-admin.md §3)
     const syncState = reactive({ catalog: [], robots: [], reports: {}, sel: {}, target: '', ops: [], opsKey: '',
-                                 msg: '', loading: false, rm: { text: '', cls: '' } });
+                                 replace: {}, msg: '', loading: false, rm: { text: '', cls: '' } });
     // "hace 3 min": un reloj que avanza solo para que el texto no se quede viejo.
     const clock = reactive({ now: Date.now() });
     setInterval(() => { clock.now = Date.now(); }, 15000);
@@ -1273,7 +1554,11 @@ createApp({
     const nSelected = computed(() => selected.value.length);
     const selectSection = (sec, on) => { for (const i of sec.items) syncState.sel[i.guid] = on; };
     const selectAll = on => { for (const sec of catSections.value) selectSection(sec, on); };
-    const currentKey = computed(() => syncState.target + '|' + selected.value.join(','));
+    // Missions distintas marcadas para sustituir (decisión 117): forman parte
+    // de la vista previa, así que cambiar una la vuelve a pedir.
+    const replaceList = computed(() => Object.keys(syncState.replace).filter(g => syncState.replace[g]).sort());
+    function toggleReplace(guid, on) { syncState.replace[guid] = on; syncPreview(); }
+    const currentKey = computed(() => syncState.target + '|' + selected.value.join(',') + '|' + replaceList.value.join(','));
     const previewFresh = computed(() => syncState.opsKey === currentKey.value);
     const targetInfo = computed(() => syncState.robots.find(r => r.serial === syncState.target));
     const opCounts = computed(() => {
@@ -1286,8 +1571,9 @@ createApp({
     const canDeploy = computed(() => {
       const t = targetInfo.value;
       // Con el robot ocupado solo se puede CREAR (no toca lo que ejecuta); corregir espera (decisión 103).
-      return previewFresh.value && t && t.online && !(t.busy && opCounts.value.corregir) && !t.deploying && !syncState.loading
-             && ((opCounts.value.crear || 0) + (opCounts.value.corregir || 0)) > 0
+      return previewFresh.value && t && t.online && !(t.busy && (opCounts.value.corregir || opCounts.value.sustituir))
+             && !t.deploying && !syncState.loading
+             && ((opCounts.value.crear || 0) + (opCounts.value.corregir || 0) + (opCounts.value.sustituir || 0)) > 0
              && syncState.ops.every(o => o.status === 'pendiente');
     });
     function syncRobotState(r) {
@@ -1302,17 +1588,19 @@ createApp({
       const key = currentKey.value;
       try {
         const r = await fetch(`/api/sync/${syncState.target}/preview`, { method: 'POST',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value }) });
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value, replace: replaceList.value }) });
         const body = await r.json();
         if (!r.ok) { syncState.msg = 'error: ' + body.detail; return; }
         syncState.ops = body.ops; syncState.opsKey = key; syncState.msg = '';
       } finally { syncState.loading = false; }
     }
     async function syncDeploy() {
-      const n = (opCounts.value.crear || 0) + (opCounts.value.corregir || 0);
-      if (!confirm(`Desplegar en ${syncState.target}: ${n} cambios. Lo que ya está o es distinto no se toca. ¿Seguir?`)) return;
+      const n = (opCounts.value.crear || 0) + (opCounts.value.corregir || 0) + (opCounts.value.sustituir || 0);
+      const subs = syncState.ops.filter(o => o.verb === 'sustituir').map(o => `«${o.name}»`);
+      const extra = subs.length ? `\n\nSe BORRAN y se vuelven a crear en el robot: ${subs.join(', ')}.` : '';
+      if (!confirm(`Desplegar en ${syncState.target}: ${n} cambios. Lo que ya está igual, o es distinto y no se ha marcado, no se toca.${extra}\n\n¿Seguir?`)) return;
       const r = await fetch(`/api/sync/${syncState.target}/deploy`, { method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value, replace: replaceList.value }) });
       if (!r.ok) { syncState.msg = 'no se despliega: ' + (await r.json()).detail; await loadSync(); return; }
       syncState.msg = 'desplegando…';
       const t = targetInfo.value; if (t) t.deploying = true;
@@ -1448,13 +1736,44 @@ createApp({
     }
 
     // ---------------- crear (fm/adapters/mir/create.py)
-    const createState = reactive({ robots: [], groups: [], maps: [], created: [], robot: '',
+    const missionName = g => (createState.missions.find(m => m.guid === g) || {}).name || g;
+    const adoptState = reactive({ list: [], loading: false, error: '', target: {}, serial: '' });
+    async function loadAdoptable() {
+      const serial = createState.robot;
+      if (!serial) { Object.assign(adoptState, { list: [], error: '' }); return; }
+      Object.assign(adoptState, { loading: true, error: '', serial });
+      try {
+        const r = await fetch(`/api/create/${serial}/adoptable`);
+        const out = await r.json();
+        if (serial !== createState.robot) return;
+        if (!r.ok) { adoptState.error = out.detail; adoptState.list = []; return; }
+        adoptState.list = out.missions;
+        // Por defecto, la del catálogo con el mismo nombre y grupo (si la hay).
+        for (const m of out.missions) if (!(m.guid in adoptState.target)) adoptState.target[m.guid] = m.suggest || '';
+      } catch (e) { adoptState.error = 'no se pudo contactar con el FM'; }
+      finally { adoptState.loading = false; }
+    }
+    async function adoptRes(m) {
+      const target = adoptState.target[m.guid] || '', robot = createState.robot;
+      const what = target ? `la mission del catálogo «${missionName(target)}» (${target}) pasará a ser esta`
+                          : 'entrará en el catálogo como mission nueva de su grupo';
+      if (!confirm(`¿Adoptar «${m.name}» de ${robot}?\n${m.guid}\n\nNo se toca el robot: ${what}.`)) return;
+      const out = await postCreate(`/api/create/${robot}/adopt`, { source: m.guid, target },
+                                   `adoptando «${m.name}» de ${robot}…`);
+      if (out) {
+        createState.result = { ...out, robot, adopted: true };
+        addEvent(robot, `adoptada «${out.name}» (${m.guid}) como ${out.guid} en el catálogo`);
+      }
+      loadCreate();
+    }
+    const createState = reactive({ robots: [], groups: [], maps: [], missions: [], created: [], robot: '',
                                    mission: { name: '', parent: '' }, position: { name: '', parent: '' },
                                    busy: '', error: '', result: null });
     async function loadCreate() {
       try {
         const info = await (await fetch('/api/create')).json();
-        Object.assign(createState, { robots: info.robots, groups: info.groups, maps: info.maps, created: info.created });
+        Object.assign(createState, { robots: info.robots, groups: info.groups, maps: info.maps,
+                                     missions: info.missions || [], created: info.created });
         const ok = info.robots.filter(r => r.can_create && r.online);
         if (!ok.some(r => r.serial === createState.robot)) createState.robot = ok.length ? ok[0].serial : '';
         // Por defecto, el grupo mirur-tknika (o el primero) y el primer mapa.
@@ -1462,7 +1781,9 @@ createApp({
           createState.mission.parent = (info.groups.find(g => g.name === 'mirur-tknika') || info.groups[0]).guid;
         if (!createState.position.parent && info.maps.length) createState.position.parent = info.maps[0].guid;
       } catch (e) { createState.error = 'no se pudo leer el catálogo'; }
+      loadAdoptable();
     }
+    watch(() => createState.robot, (now, before) => { if (before !== undefined && now !== before) loadAdoptable(); });
     const canCreate = kind => !!createState.robot && !createState.busy
       && !!createState[kind].name.trim() && !!createState[kind].parent;
     async function postCreate(url, body, busy) {
@@ -1754,12 +2075,91 @@ createApp({
       return w;
     });
 
-    // ---------------- pestañas: la del #hash de la URL, o la primera si no es válida
+    // ---------------- pestaña Robot (decisión 112)
+    // Robot elegido: va en la URL (#robot/mir-1) para poder enlazarlo y para
+    // que al recargar no se pierda. Sin robot en la URL, el primero de la flota.
+    const robotSel = computed(() => ui.robot || (fleet.robots[0] && fleet.robots[0].serial) || '');
+    const robotHash = serial => '#robot' + (serial ? '/' + serial : '');
+    const pickRobot = serial => { location.hash = robotHash(serial); };
+    const deg = rad => rad * 180 / Math.PI;
+    // `secs`: con segundos cuando dura menos de una hora (misiones cortas).
+    const duration = (s, secs = false) => {
+      s = Math.max(0, Math.round(s));
+      const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+      if (d) return `${d} d ${h} h`;
+      if (h) return `${h} h ${m} min`;
+      if (!secs) return `${m} min`;
+      return m ? `${m} min ${s % 60} s` : `${s} s`;
+    };
+    // Hora del robot → hora del PC (la de los logs del FM), con el desfase
+    // que mide el servidor en cada consulta (`clock_offset_s`).
+    const fixT = iso => {
+      const off = mis.data && mis.data.clock_offset_s;
+      return iso && off != null ? new Date(new Date(iso).getTime() - off * 1000).toISOString() : iso;
+    };
+    // Date.now() y no `clock`: la tarjeta se repinta con cada respuesta (cada 3 s).
+    // toFixed sin "-0.00": un robot parado da -0.0001 de vez en cuando.
+    const fixed = (v, n) => { const s = v.toFixed(n); return Number(s) === 0 ? (0).toFixed(n) : s; };
+    const since = iso => iso ? duration((Date.now() - new Date(iso)) / 1000, true) : '';
+    // "10:07" si es de hoy; "21/10 10:40" si no.
+    const dayTime = iso => {
+      if (!iso) return '—';
+      const d = new Date(iso), t = d.toTimeString().slice(0, 5);
+      return d.toDateString() === new Date().toDateString() ? t
+        : `${d.getDate()}/${d.getMonth() + 1} ${t}`;
+    };
+
+    // Misiones del robot elegido (decisión 113): se piden cada MIS_EVERY_MS
+    // solo mientras la pestaña Robot está abierta; al cambiar de robot se
+    // borra lo anterior para no enseñar las de otro mientras llega la respuesta.
+    const MIS_EVERY_MS = 3000;
+    const mis = reactive({ data: null, at: '', serial: '' });
+    let misTimer = null;
+    async function loadMissions() {
+      const serial = robotSel.value;
+      if (!serial) return;
+      try {
+        const data = await (await fetch(`/api/robots/${encodeURIComponent(serial)}/missions`)).json();
+        if (serial !== robotSel.value) return;         // llegó tarde: ya se mira otro robot
+        Object.assign(mis, { data, serial, at: hhmmss() });
+      } catch (e) { /* sin conexión con el FM: ya lo dice el aviso rojo de arriba */ }
+    }
+    watch(() => [ui.tab, robotSel.value], ([tab, serial]) => {
+      clearInterval(misTimer);
+      misTimer = null;
+      if (serial !== mis.serial) Object.assign(mis, { data: null, at: '', serial: '' });
+      if (tab !== 'robot') return;
+      loadMissions();
+      misTimer = setInterval(loadMissions, MIS_EVERY_MS);
+    }, { immediate: true });
+    // infoType propios que no se pintan en su sitio sino como aviso.
+    const ALERTS = ['MANUAL_DRIVE', 'SAFETY_MUTED', 'MAP_UNSAVED'];
+    const rd = computed(() => {
+      const r = robotsView.value.find(x => x.serial === robotSel.value);
+      if (!r) return null;
+      const s = r.state;
+      const infoList = s ? (s.information || []) : [];
+      const info = Object.fromEntries(infoList.map(i => [i.infoType, i.infoDescriptor]));
+      const cfg = fleet.robots.find(x => x.serial === r.serial) || { actions: [] };
+      return { ...r, info,
+               alerts: infoList.filter(i => ALERTS.includes(i.infoType)).map(i => i.infoDescriptor),
+               errors: s ? (s.errors || []) : [],       // todos; Operación enseña solo los 3 últimos
+               actions: cfg.actions.map(a => a.action_type) };
+    });
+
+    // ---------------- pestañas: la del #hash de la URL, o la primera si no es válida.
+    // `section`: la de arriba ('robot') o 'fm' para las de la barra lateral.
     const tabFromHash = () => {
-      const id = location.hash.slice(1);
+      const [id, serial] = location.hash.slice(1).split('/');
+      if (id === 'robot') { ui.robot = serial || ''; return 'robot'; }
       return TABS.some(t => t.id === id) ? id : TABS[0].id;
     };
+    const section = computed(() => ui.tab === 'robot' ? 'robot' : 'fm');
+    // "Fleet Manager" arriba vuelve a la última pestaña lateral que se usó.
+    const lastFmTab = computed(() => ui.lastFm || TABS[0].id);
+    watch(() => ui.tab, t => { if (t !== 'robot') ui.lastFm = t; });
     ui.tab = tabFromHash();
+    if (ui.tab !== 'robot') ui.lastFm = ui.tab;
     // Al entrar en una pestaña de administración se relee lo que puede haber
     // cambiado: el catálogo (al capturar) y los informes de sincronización.
     function onTab() {
@@ -1774,12 +2174,13 @@ createApp({
     connect();
     return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
+             section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
-             canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, VERB_LABEL, VERB_MARK, KIND_LABEL,
+             canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
-             createState, canCreate, createRes, captureRes, deleteRes,
+             createState, canCreate, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,

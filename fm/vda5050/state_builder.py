@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from fm.vda5050.state import (E_ROBOT_UNREACHABLE, ActionState, Error, Info,
-                              MobileRobotPosition, PowerSupply, SafetyState, State)
+                              MobileRobotPosition, PowerSupply, SafetyState, State, Velocity)
 
 if TYPE_CHECKING:   # solo para tipos: evita el import circular adapters ↔ vda5050
     from fm.adapters.base import Telemetry
@@ -66,6 +66,9 @@ def to_vda_state(header: dict, t: Telemetry | None, overlay: StateOverlay | None
     if t.pose is not None and t.map_id is not None:
         x, y, theta = t.pose
         s.mobileRobotPosition = MobileRobotPosition(x, y, theta, t.map_id, localized=True)
+    if t.velocity is not None:
+        vx, omega = t.velocity
+        s.velocity = Velocity(vx, 0.0, omega)
     s.powerSupply = PowerSupply(t.battery, _charging(t, overlay))
     s.safetyState = SafetyState(activeEmergencyStop="MANUAL" if t.emergency_stop else "NONE",
                                 fieldViolation=False)

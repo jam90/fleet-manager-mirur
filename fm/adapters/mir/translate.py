@@ -10,6 +10,7 @@ del `Telemetry`; aquí solo se interpreta lo que dice el MiR.
 """
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from typing import Collection
@@ -19,11 +20,40 @@ from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.client import (KEY_AUTO, KEY_IDLE, KEY_MANUAL, STATE_EMERGENCY_STOP, STATE_ERROR,
                                     STATE_EXECUTING, STATE_MANUAL, STATE_PAUSE, MirStatus)
 from fm.vda5050.order import Action, OrderRejected
-from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET,
-                              E_VALIDATION_FAILURE, Error, Info)
+from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET, E_VALIDATION_FAILURE,
+                              I_DISTANCE_TO_TARGET, I_MANUAL_DRIVE, I_MAP_UNSAVED, I_ODOMETER,
+                              I_ROBOT_MODEL, I_ROBOT_NAME, I_ROBOT_SERIAL, I_ROBOT_STATE,
+                              I_SAFETY_MUTED, I_UPTIME, I_USER_PROMPT, Error, Info)
 
 # state_id del MiR en los que NO se aceptan orders (decisión 16/18).
 UNAVAILABLE_STATES = (STATE_MANUAL, STATE_ERROR, STATE_EMERGENCY_STOP)
+
+
+def render_message(raw) -> str:
+    """Mensaje del MiR → texto legible.
+
+    Los pasos de una mission, el `message` de una entrada de la cola que
+    falla y la `description` de los `errors[]` de /status lo traen a veces
+    como JSON con plantilla de Python, p. ej.
+    `{"message": "Movement timed out, after being blocked a total of
+    %(path_block_timeout)d seconds", "args": {"path_block_timeout": 60}}`;
+    otras, como texto. Los ".." finales del MiR se dejan en uno."""
+    if not raw:
+        return ""
+    text = str(raw)
+    try:
+        d = json.loads(text)
+    except ValueError:
+        d = None
+    if isinstance(d, dict) and "message" in d:
+        try:
+            text = str(d["message"]) % (d.get("args") or {})
+        except (KeyError, TypeError, ValueError):
+            text = str(d["message"])
+    while text.endswith(".."):
+        text = text[:-1]
+    return text
+
 
 
 def _mir_errors(st: MirStatus) -> list[Error]:
@@ -33,7 +63,7 @@ def _mir_errors(st: MirStatus) -> list[Error]:
     out = []
     for e in st.errors:
         code = e.get("code", "unknown")
-        out.append(Error(f"MIR_{code}", level, str(e.get("description", "")),
+        out.append(Error(f"MIR_{code}", level, render_message(e.get("description")),
                          errorHint=e.get("module")))
     if st.state_id == STATE_ERROR and not out:
         out.append(Error("MIR_STATE_ERROR", "FATAL", st.state_text or "robot en estado Error"))
@@ -68,6 +98,43 @@ def _unavailable_reason(st: MirStatus) -> str:
     return f"robot en estado {st.state_text} (state_id={st.state_id})"
 
 
+def _prompt_text(prompt) -> str:
+    """`user_prompt` de /status → texto. Formato SIN VERIFICAR con un robot
+    preguntando (decisión 111): se espera un objeto con `question` y
+    `options`; si viene otra cosa se publica tal cual para no perderlo."""
+    if isinstance(prompt, dict):
+        q = str(prompt.get("question") or "").strip()
+        opts = [str(o) for o in prompt.get("options") or []]
+        if q:
+            return q + (f" [{' / '.join(opts)}]" if opts else "")
+    return str(prompt)
+
+
+def _robot_info(st: MirStatus) -> list[Info]:
+    """Lo que la pestaña Robot enseña y el FM no usa para decidir nada
+    (decisión 110). Lo vacío no se publica: así el `state` no crece en balde."""
+    info = []
+    for kind, value in ((I_ROBOT_NAME, st.robot_name), (I_ROBOT_MODEL, st.robot_model),
+                        (I_ROBOT_SERIAL, st.serial_number)):
+        if value:
+            info.append(Info(kind, "INFO", value))
+    text = " · ".join(t for t in (st.state_text, st.mode_text) if t)
+    if text:
+        info.append(Info(I_ROBOT_STATE, "INFO", text))
+    if st.user_prompt:
+        info.append(Info(I_USER_PROMPT, "INFO", _prompt_text(st.user_prompt)))
+    info.append(Info(I_DISTANCE_TO_TARGET, "INFO", f"{st.distance_to_next_target:.2f}"))
+    info.append(Info(I_ODOMETER, "INFO", f"{st.moved:.0f}"))
+    info.append(Info(I_UPTIME, "INFO", str(st.uptime)))
+    if st.joystick_active:
+        info.append(Info(I_MANUAL_DRIVE, "INFO", "conducido con el joystick de la web del MiR"))
+    if st.safety_system_muted:
+        info.append(Info(I_SAFETY_MUTED, "INFO", "sistema de seguridad silenciado"))
+    if st.unloaded_map_changes:
+        info.append(Info(I_MAP_UNSAVED, "INFO", "cambios de mapa sin guardar en el robot"))
+    return info
+
+
 def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetry:
     """`MirStatus` → `Telemetry`. `own_queue_ids` son las entradas de
     `mission_queue` que lanzó el FM: cualquier otra mission en marcha es ajena
@@ -81,10 +148,12 @@ def to_telemetry(st: MirStatus, own_queue_ids: Collection[int] = ()) -> Telemetr
                      f"state_id={st.state_id} key={st.mode_key_state or '?'} "
                      f"mission_queue_id={st.mission_queue_id}"
                      + (" (propia)" if st.mission_queue_id in own_queue_ids else "")))
+    info.extend(_robot_info(st))
     return Telemetry(
         battery=st.battery_percentage,
         pose=(st.x, st.y, st.theta),
         map_id=st.map_id,
+        velocity=(st.velocity_linear, st.velocity_angular),
         driving=st.state_id == STATE_EXECUTING,
         paused=st.state_id == STATE_PAUSE,
         # Heurística sobre /status PENDIENTE DE VALIDAR en el dock (CLAUDE.md

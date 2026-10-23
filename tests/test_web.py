@@ -100,13 +100,14 @@ class FakeSync:
     def catalog(self):
         return self.Cat()
 
-    def preview(self, guids):
+    def preview(self, guids, replace=()):
         if "nada" in guids:
             raise ValueError("nada no está en el catálogo")
         return None, [self.Op(g, "corregir" if g.startswith("fix") else "crear") for g in guids]
 
-    def deploy(self, guids, progress, only_create=False):
+    def deploy(self, guids, progress, only_create=False, replace=()):
         self.only_create = only_create
+        self.replace = list(replace)
         ops = self.preview(guids)[1]
         for op in ops:
             op.status = "hecho"
@@ -412,3 +413,30 @@ def test_baja_de_robot_por_la_api(tmp_path):
     p.write_text(SIM_YAML + "  sim-2:\n    driver: sim\n    actions: []\n", encoding="utf-8")
     r = TestClient(srv.app).post("/api/config", json={"robots": {"sim-2": None}})
     assert r.status_code == 200 and "sim-2" not in p.read_text(encoding="utf-8")
+
+
+def test_misiones_del_robot():
+    from fm.adapters.base import MissionRun, MissionsView
+    srv, _ = _server()
+    c = TestClient(srv.app)
+    # El sim no ofrece misiones: la pestaña lo dice, no falla
+    assert c.get("/api/robots/sim-1/missions").json() == {"supported": False}
+    assert c.get("/api/robots/nadie/missions").status_code == 404
+
+    class Src:
+        fail = False
+
+        def view(self, history=10):
+            if self.fail:
+                raise ConnectionError("sin red")
+            return MissionsView(None, [], [MissionRun("7", "coger", "FINISHED", own=True)])
+
+    src = Src()
+    srv.robots["sim-1"].driver.make_missions = lambda: src
+    r = c.get("/api/robots/sim-1/missions").json()
+    assert r["supported"] and r["current"] is None
+    assert r["history"][0]["name"] == "coger" and r["history"][0]["own"]
+    # Robot apagado: aviso en el JSON, no un 500
+    src.fail = True
+    r = c.get("/api/robots/sim-1/missions").json()
+    assert r["supported"] and "sin red" in r["error"]

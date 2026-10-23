@@ -18,7 +18,9 @@ def test_ready_disponible_y_libre():
     assert t.operating_mode == "AUTOMATIC" and not t.emergency_stop
     assert t.charging is None          # el MiR no lo dice: decide el overlay
     assert t.errors == []
-    assert [i.infoType for i in t.information] == ["MIR_STATUS"]      # solo el DEBUG
+    # Sin mission: primero el DEBUG; detrás, los de la pestaña Robot (decisión 110)
+    assert [i.infoType for i in t.information] == ["MIR_STATUS", "ROBOT_STATE", "DISTANCE_TO_TARGET",
+                                                   "ODOMETER", "UPTIME"]
     assert t.information[0].infoLevel == "DEBUG" and "state_id=3" in t.information[0].infoDescriptor
 
 
@@ -66,3 +68,48 @@ def test_errores_mir_a_vda():
     assert [(x.errorType, x.errorLevel, x.errorHint) for x in e] == [("MIR_10050", "FATAL", "AMCL")]
     st = _st(state_id=3, errors=[{"code": 1, "description": "warn"}])
     assert to_telemetry(st).errors[0].errorLevel == "URGENT"
+
+
+def _info(t):
+    return {i.infoType: i.infoDescriptor for i in t.information}
+
+
+def test_info_pestana_robot():
+    # Campos de /status que el FM no usa para decidir: van a information[] (decisión 110)
+    t = to_telemetry(_st(robot_name="Dejavu", robot_model="MiR250", serial_number="206001015",
+                         mode_text="Mission", distance_to_next_target=3.456, moved=8235.02, uptime=7258))
+    info = _info(t)
+    assert info["ROBOT_NAME"] == "Dejavu" and info["ROBOT_MODEL"] == "MiR250"
+    assert info["ROBOT_SERIAL"] == "206001015"
+    assert info["ROBOT_STATE"] == "Ready · Mission"
+    assert info["DISTANCE_TO_TARGET"] == "3.46" and info["ODOMETER"] == "8235" and info["UPTIME"] == "7258"
+    assert all(i.infoLevel == "INFO" for i in t.information if i.infoType != "MIR_STATUS")
+    # Lo vacío o en falso no se publica
+    for kind in ("USER_PROMPT", "MANUAL_DRIVE", "SAFETY_MUTED", "MAP_UNSAVED"):
+        assert kind not in info
+    assert "ROBOT_NAME" not in _info(to_telemetry(_st()))
+
+
+def test_avisos_y_user_prompt():
+    t = to_telemetry(_st(joystick_web_session_id="abc", safety_system_muted=True, unloaded_map_changes=True,
+                         user_prompt={"question": "¿Pieza cargada?", "options": ["Sí", "No"]}))
+    info = _info(t)
+    assert info["USER_PROMPT"] == "¿Pieza cargada? [Sí / No]"
+    assert {"MANUAL_DRIVE", "SAFETY_MUTED", "MAP_UNSAVED"} <= set(info)
+    # Formato sin verificar (decisión 111): si no es el esperado se publica tal cual
+    assert _info(to_telemetry(_st(user_prompt="texto suelto")))["USER_PROMPT"] == "texto suelto"
+
+
+def test_velocidad():
+    # Linear en m/s tal cual; angular en grados/s → rad/s (medido con mir-1)
+    t = to_telemetry(_st(velocity={"linear": 0.8, "angular": 90.0}))
+    assert t.velocity[0] == 0.8 and abs(t.velocity[1] - 1.5707963) < 1e-6
+    assert to_telemetry(_st()).velocity == (0.0, 0.0)
+
+
+def test_error_con_plantilla_legible():
+    # Visto en mir-2 el 2026-10-23: la descripción viene como JSON con plantilla
+    raw = ('{"message": "Movement timed out, after being blocked a total of %(path_block_timeout)d seconds", '
+           '"args": {"path_block_timeout":60}}')
+    e = to_telemetry(_st(state_id=12, errors=[{"code": 10101, "description": raw, "module": "MissionController"}])).errors[0]
+    assert e.errorDescription == "Movement timed out, after being blocked a total of 60 seconds"

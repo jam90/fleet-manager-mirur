@@ -12,7 +12,7 @@ import logging
 from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, RobotSpec, Telemetry
 from fm.adapters.mir.client import STATE_PAUSE, STATE_READY, MirClient, MirStatus
 from fm.adapters.mir.config import MirRobotConfig
-from fm.adapters.mir.translate import MissionRequest, from_vda_order, to_telemetry
+from fm.adapters.mir.translate import MissionRequest, from_vda_order, render_message, to_telemetry
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE, State
 
@@ -56,6 +56,10 @@ class MirDriver:
         self.last_error: str | None = None
         # Entradas de mission_queue lanzadas por el FM: lo demás es "ajeno".
         self._own_queue_ids: set[int] = set()
+        # Todas las que ha lanzado este FM desde que arrancó (las de arriba se
+        # olvidan al terminar): para marcar "lanzada por el FM" en el historial
+        # de la pestaña Robot. Crece una por order: no hace falta podarla.
+        self._launched_ids: set[int] = set()
         # `message` de mission_queue/<id> al terminar: el MiR pone `Aborted`
         # tanto si se para a mano como si falla, y solo el message lo distingue.
         self._job_results: dict[str, str] = {}
@@ -73,10 +77,13 @@ class MirDriver:
         """Resuelve nombres → GUID. Tolerante: si falla, se reintenta en el
         próximo tick y mientras tanto el robot solo publica telemetría."""
         try:
-            self.missions = self.client.index_missions_by_name(self.cfg.mission_group)
+            rows = self.client.group_missions(self.cfg.mission_group)
+            self.missions = self.client.index_missions_by_name(missions=rows)
             # En fleet.yaml una mission se puede nombrar por su GUID del
             # catálogo (común a toda la flota, decisión 87) o por su nombre.
-            self.mission_names = {g: n for n, g in self.missions.items()}
+            # Por GUID se encuentran TODAS, también si otra se llama igual (una
+            # copia de «Guardar como» no debe tapar a la de la flota, decisión 118).
+            self.mission_names = {m["guid"]: m.get("name", "") for m in rows}
             self.missions.update({g: g for g in self.mission_names})
             st = self.last_status or self.client.status_get()
             self.positions = self.client.index_positions_by_name(st.map_id)
@@ -141,6 +148,7 @@ class MirDriver:
         q = self.client.mission_queue_post(req.mission_guid, req.parameters or None, priority)
         qid = int(q["id"])
         self._own_queue_ids.add(qid)
+        self._launched_ids.add(qid)
         return str(qid)
 
     def job_status(self, job_id: str) -> JobStatus | None:
@@ -156,7 +164,7 @@ class MirDriver:
         elif status in ("FINISHED", "FAILED"):
             self._own_queue_ids.discard(int(job_id))
             if q.get("message"):
-                self._job_results[job_id] = str(q["message"])
+                self._job_results[job_id] = render_message(q["message"])
         return status
 
     def job_result(self, job_id: str) -> str | None:
@@ -215,6 +223,13 @@ class MirDriver:
         return out
 
     # -------------------------------------------------------- sincronización
+    def make_missions(self):
+        """Capacidad opcional (`RobotDriver.make_missions`): misiones del robot
+        para la pestaña Robot, con su propio cliente (corre en el hilo de la web)."""
+        from fm.adapters.mir.missions import MirMissions   # import tardío: solo si se usa
+        return MirMissions(MirClient(self.cfg.host, self.cfg.auth),
+                           is_own=lambda qid: qid in self._launched_ids)
+
     def make_sync(self, catalog_dir):
         """Capacidad opcional (no está en `RobotDriver`): la web la busca con
         `getattr` para la pestaña Sincronización. Ver `sync.py`."""

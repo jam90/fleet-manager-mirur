@@ -32,6 +32,21 @@ E_NO_MOBILE_ROBOT_AVAILABLE = "NO_MOBILE_ROBOT_AVAILABLE"     # propio: asignado
 E_ORDER_EXECUTION_FAILED = "ORDER_EXECUTION_FAILED"           # propio: mission Aborted/Cancelled
 E_ROBOT_UNREACHABLE = "ROBOT_UNREACHABLE"                     # propio: el driver no alcanza al robot
 
+# infoType propios (decisión 110). La norma no fija ninguno: `information[]`
+# es "solo para visualización o depuración" y la pestaña Robot los pinta.
+# Genéricos a propósito: cualquier driver puede rellenar los que conozca.
+I_ROBOT_NAME = "ROBOT_NAME"               # nombre que le dio el fabricante/usuario ("Dejavu")
+I_ROBOT_MODEL = "ROBOT_MODEL"
+I_ROBOT_SERIAL = "ROBOT_SERIAL"           # nº de serie de fábrica (el serialNumber VDA es otro)
+I_ROBOT_STATE = "ROBOT_STATE"             # estado con las palabras del robot ("Ready · Mission")
+I_USER_PROMPT = "USER_PROMPT"             # una mission espera respuesta del operario
+I_DISTANCE_TO_TARGET = "DISTANCE_TO_TARGET"   # m, como texto
+I_ODOMETER = "ODOMETER"                   # m recorridos en total, como texto
+I_UPTIME = "UPTIME"                       # s desde el arranque, como texto
+I_MANUAL_DRIVE = "MANUAL_DRIVE"           # alguien lo conduce a mano (joystick)
+I_SAFETY_MUTED = "SAFETY_MUTED"           # sistema de seguridad silenciado
+I_MAP_UNSAVED = "MAP_UNSAVED"             # cambios de mapa sin guardar en el robot
+
 
 def drop_none(d: Any) -> Any:
     """Quita claves con valor None (campos opcionales no informados), en
@@ -102,6 +117,14 @@ class PowerSupply:
 
 
 @dataclass
+class Velocity:
+    """En coordenadas del robot: `vx` hacia delante, `omega` giro sobre z."""
+    vx: float
+    vy: float = 0.0
+    omega: float = 0.0
+
+
+@dataclass
 class SafetyState:
     activeEmergencyStop: str = "NONE"     # MANUAL | REMOTE | NONE
     fieldViolation: bool = False
@@ -125,6 +148,7 @@ class State:
     newBaseRequest: bool = False
     operatingMode: str = "AUTOMATIC"
     mobileRobotPosition: MobileRobotPosition | None = None
+    velocity: Velocity | None = None
     powerSupply: PowerSupply = field(default_factory=lambda: PowerSupply(0.0, False))
     safetyState: SafetyState = field(default_factory=SafetyState)
     nodeStates: list = field(default_factory=list)

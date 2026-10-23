@@ -1849,7 +1849,158 @@ Configurador.
      un paso que sobra o falta) actualiza la Guía en el mismo cambio.
      Está también en el comentario de cabecera de la pestaña.
 
-## Pendiente (a 2026-10-14)
+## 2026-10-23 — Pestaña Robot y secciones arriba
+
+Petición del usuario: una vista de UN robot con lo que la tarjeta de
+Operación no cuenta, elegido con un selector arriba; y que las vistas
+generales (Robot; más adelante Fleet) vayan en la cabecera, por encima de
+las pestañas de la barra lateral, que son del Fleet Manager. Orden
+acordado: (1) Robot con lo que ya trae `/status` + el `state` VDA en
+crudo; (2) mission en curso con su paso, cola e historial; (3) Fleet con
+mapa; (4) cámara.
+
+110. **Lo que el FM no usa para decidir va en `state.information[]`**, con
+     `infoType` propios y genéricos (`I_*` en `fm/vda5050/state.py`:
+     `ROBOT_NAME`, `ROBOT_MODEL`, `ROBOT_SERIAL`, `ROBOT_STATE`,
+     `USER_PROMPT`, `DISTANCE_TO_TARGET`, `ODOMETER`, `UPTIME`,
+     `MANUAL_DRIVE`, `SAFETY_MUTED`, `MAP_UNSAVED`). La norma reserva
+     `information[]` para "visualización o depuración", que es justo esto, y
+     así la UI sigue siendo un cliente VDA más (no hay topic ni endpoint
+     nuevo) y el core sigue sin saber de MiR: los rellena
+     `adapters/mir/translate.py::to_telemetry` (puro, con tests) a partir de
+     campos de `GET /status` que antes se descartaban. Lo vacío o en falso no
+     se publica. La velocidad no va ahí: `state.velocity` es campo VDA
+     (`vx`, `vy` = 0, `omega`) y entra por `Telemetry.velocity`; un driver
+     que no la sabe (sim) no publica el campo.
+111. **Dos supuestos sin verificar con el robot** (ver #24):
+     `velocity.angular` del MiR en grados/s (como `orientation`), que se pasa
+     a rad/s; y `user_prompt` como objeto con `question` y `options`. Si el
+     formato no es ese, se publica tal cual en vez de perderlo.
+112. **Secciones arriba: Robot | Fleet Manager.** La cabecera lleva las
+     secciones generales; la barra lateral (Operación, Crear, Configurador,
+     Sincronización, Guía) solo se ve en Fleet Manager, y "Fleet Manager"
+     vuelve a la última pestaña lateral usada. Robot va en `#robot/<serial>`
+     (enlazable, sobrevive a recargar), con un selector arriba. Enseña:
+     aviso destacado si una mission espera respuesta del operario
+     (`USER_PROMPT`: explica un robot "parado sin motivo"), avisos de
+     joystick / seguridad silenciada / mapa sin guardar, estado y modo,
+     mission, distancia al destino, velocidad, posición con orientación,
+     batería con umbrales, actions habilitadas, order en curso, identidad
+     (nombre, modelo, nº de serie de fábrica), odómetro, tiempo encendido,
+     todos los errores (Operación enseña los 3 últimos) y el `state` VDA tal
+     cual se publica (material didáctico). Mandar (pausa, cancelar, orders)
+     sigue solo en Operación. Los robots siguen siendo `mir-1`/`mir-2`
+     (serial VDA, topics, `fleet.yaml`); la UI enseña el nombre de la web del
+     MiR (`ROBOT_NAME`: Dejavu, Toretto) y el serial en pequeño, también en
+     las tarjetas de Operación (decisión del usuario: no renombrar, para no
+     romper topics ni lo que los escucha). Probado con mir-1 y mir-2 reales
+     (solo lectura, FM arrancado y parado sin orders) y a 390 px de ancho.
+
+Aparte: `battery_min` de mir-1 y mir-2 está en **22 %** (antes 25; guardado
+desde el Configurador el 2026-10-16). Intencionado (usuario, 2026-10-23):
+ninguna mission actual gasta tanta batería, así que 2 puntos sobre
+`battery_floor` (20 %) bastan de histéresis (§6 del brief).
+
+## 2026-10-23 — Pestaña Robot: misiones en curso, cola e historial (punto #25)
+
+113. **Misiones fuera del `state`, a demanda.** VDA 5050 no tiene historial
+     ni pasos de una mission, y meterlo en el `state` de 1 Hz costaría
+     peticiones al robot aunque nadie mire. La pestaña pide
+     `GET /api/robots/<serial>/missions` cada 3 s, solo mientras está abierta
+     y solo para el robot elegido. Capacidad opcional del driver
+     `make_missions()` (como `make_sync`): objeto con su propio `MirClient`
+     que corre en el hilo de la web, nunca en el bucle. Tipos genéricos en
+     `fm/adapters/base.py` (`MissionsView`, `MissionRun`, `MissionStep`;
+     `status` con las palabras de `actionStatus`); lo de MiR en
+     `fm/adapters/mir/missions.py`. Coste: `GET /mission_queue` trae toda la
+     historia (1.482 entradas en mir-1) pero solo id y estado (~0,1 s); el
+     detalle de lo terminado se pide una vez y se guarda, y la caché se poda a
+     lo que se enseña. Primera consulta 0,47 s, siguientes 0,08 s. Salen
+     también las missions lanzadas desde la web o la tablet; "FM" marca las
+     que lanzó este FM desde que arrancó (`_launched_ids` del driver).
+114. **Reloj de los robots desfasado.** mir-1 iba 2 min 19 s y mir-2 5 min
+     27 s atrasados respecto al PC (cabecera HTTP `Date`). Las horas de la
+     cola son las del robot: se mide el desfase en cada consulta
+     (`clock_offset_s`) y la UI las pasa a la hora del PC, la de los logs del
+     FM, con un aviso si pasa de 1 min. No afecta al `state` VDA, cuyo
+     `timestamp` pone el FM. Conviene poner en hora los robots (NTP en la web
+     del MiR).
+115. **Mensajes del MiR con plantilla, legibles en todas partes.** El MiR
+     manda algunos textos como JSON con plantilla Python (`%(arg)s`): pasos,
+     `message` de la cola y `description` de `errors[]`. Antes llegaban
+     crudos a `actionResult`, a `state.errors` y a los eventos; ahora
+     `translate.render_message` los rellena (visto con mir-2: "Movement timed
+     out, after being blocked a total of 60 seconds").
+
+Prueba con los robots (autorizada por el usuario: `ir_a_espera` y las de
+prueba de parámetros): `ir_a_espera` en mir-1 (FINISHED, 41 s; un paso
+FAILED dentro de su Try/Catch, que la pestaña enseña tal cual);
+`prueba_parametros` (n=3) en mir-1, FINISHED; `prueba_parametros_v2`
+(Montaje, n=4) en mir-2: llegó a Montaje, escribió 4 en el registro 22, cargó
+"Ir a zona de espera" y se bloqueó 60 s al volver → FAILED y robot en Error
+(reseteado a mano en el robot). Con el robot girando se midió la orientación
+cada 0,5 s: `velocity.angular` va en **grados/s** (52 tramos, ratio 0,98), así
+que el supuesto de la decisión 111 queda confirmado.
+
+Aparte (decisión del usuario, 2026-10-23): `img_referencia/` sale del repo
+(capturas de la web del MiR y el PNG de `mapa_base/`). Sigue en el disco del
+PC del FM como material local y está en `.gitignore`; las menciones
+anteriores de esta bitácora y de `plan-admin.md` se refieren a esa carpeta local.
+
+## 2026-10-23 — Adoptar una mission hecha en la web y sustituir lo distinto (parte del #19)
+
+Caso real: en mir-1 se borró `coger` (`…-mission000-01-0001-001`) y se rehízo
+con «Guardar como» otra: la buena tiene GUID del robot (`181aad0a-…`), la
+action `coger` de `fleet.yaml` dejó de encontrar su mission en mir-1 (aviso
+al arrancar, `NO_ROUTE_TO_TARGET` en una order) y mir-2 y el catálogo
+seguían con la versión vieja (2 actions).
+
+116. **Adoptar** (pestaña Crear, «Hechas en la web del MiR»): lista las
+     missions de los grupos del catálogo que no tienen GUID de la flota, con
+     la del catálogo del mismo nombre y grupo como propuesta, y las guarda en
+     el catálogo con el GUID de esa (la sustituye) o con uno nuevo de su
+     grupo. Misma captura y mismas comprobaciones que «Capturar»
+     (`_capture_mission` con `source`); `_origen.guid` es el GUID del robot,
+     y mientras la copia siga en el robot sale como «ya adoptada». No
+     escribe en el robot: el MiR no deja cambiar el GUID de una mission, así
+     que se despliega la del catálogo y la copia se borra a mano en su web
+     (decisión 105: lo que no lleva GUID de la flota no se toca).
+117. **Sustituir** (Sincronización): una mission *distinta* lleva una casilla
+     «Sustituir»; marcada, la vista previa la pasa a `sustituir` y el
+     despliegue la borra y la vuelve a crear con el mismo GUID. Solo
+     missions (positions y mapas distintos siguen sin tocarse). Con el robot
+     ocupado se niega, como corregir (decisión 103). Probado en mir-2 con
+     missions temporales antes de escribirlo: el MiR deja borrar una mission
+     aunque otra la cargue, el `load_mission` conserva el GUID y vuelve a
+     valer al recrearla, así que si otra la carga solo se avisa; y al borrar
+     una mission el MiR borra sus actions (al recrearla sale vacía).
+     Guía: proceso nuevo «Cambiar una mission que ya está en la flota»
+     (editar en el sitio, sin «Guardar como»; y qué hacer si se usó).
+
+Al aplicarlo a `coger` (adoptada en el catálogo; nada desplegado todavía):
+la vista previa mostró que la nueva atraca en MESA_TKNIKA (`…-024`) y que en
+mir-1 ese marcador está ~4,7 m y ~180° lejos de lo que dice el catálogo
+(con otro docking offset), y que su entrada se "corregiría" a la pose vieja.
+El compañero seguía editando en mir-1 (una hora antes `coger` atracaba en
+H2D2-VL), así que se paró: falta volver a adoptar `coger` y recapturar
+MESA_TKNIKA de mir-1 cuando lo dé por bueno, y entonces desplegar.
+
+Seguimiento (mismo día): `coger` definitiva readoptada de mir-1 y
+desplegada en mir-1 con su GUID de la flota (solo "crear"; idéntica action
+a action a la copia). Para que el despliegue no "corrigiera" la entrada de
+MESA_TKNIKA a la pose vieja del catálogo, antes se recapturó MESA_TKNIKA
+(`…-024` y su entrada `…-025`) de mir-1. MESA_TKNIKA es un marcador nuevo
+que el compañero aún está colocando: **punto vivo**, se recaptura de mir-1
+cada vez que cambie (decisión del usuario).
+
+118. **Por GUID se encuentran todas las missions, aunque se repita el
+     nombre.** Tras desplegar, el FM seguía sin ver `…-001` en mir-1: el
+     índice era nombre → GUID con "el primero gana", la copia del «Guardar
+     como» salía antes y el GUID de la flota ni entraba. Ahora el driver
+     indexa por GUID todas las missions del grupo; por nombre, sigue el
+     primero con su aviso (`client.group_missions`, test con el caso real).
+
+## Pendiente (a 2026-10-23)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
 citan en decisiones anteriores ("punto 21"), así que no se renumeran; lo
@@ -1874,11 +2025,18 @@ y #16 (configurador completo: v3, decisión 108).
 
 **Configurador y sincronización, más adelante**
 
-- **#19** **Sincronización, siguientes versiones:** capturar desde la UI lo que
-    no se creó en la pestaña Crear (lo creado allí ya se captura desde la
-    UI, decisión 102; lo demás, con `scripts/catalog_capture.py`); sustituir lo que es "distinto" (borrar
-    y crear, con vista previa y aviso si otra mission lo usa); desplegar
-    mapas a un robot cuyo site activo es otro (no probado).
+- **#19** **Sincronización, siguientes versiones:** recapturar desde la UI una
+    position que no se creó en la pestaña Crear (p. ej. un marcador
+    recalibrado en un robot; hoy, con `POST /api/create/<serial>/capture` o
+    `scripts/catalog_capture.py`); sustituir positions y mapas distintos;
+    desplegar mapas a un robot cuyo site activo es otro (no probado).
+    Hecho el 2026-10-23: adoptar missions hechas en la web (decisión 116) y
+    sustituir missions distintas (decisión 117).
+- **#28** Terminar `coger` (decisiones 116–118). Hecho: adoptada y desplegada
+    en mir-1, y la copia `181aad0a-…` borrada en su web. Falta: cuando
+    MESA_TKNIKA esté colocada, recapturarla de mir-1 y desplegar en mir-2
+    (MESA_TKNIKA nueva + sustituir `coger`) y comprobar allí el atraque
+    (offset calibrado con mir-1).
 **Funcionalidad nueva**
 
 - **#5** **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
@@ -1957,6 +2115,25 @@ y #16 (configurador completo: v3, decisión 108).
     prueba de la flota (decisiones 105–106); alta de un MiR real y
     «Reiniciar el FM ahora» con los robots (decisión 108). Ya probado por el usuario:
     crear, abrir en la web del MiR, capturar y borrar (decisiones 100–104).
+
+- **#29** **Crear un VL-marker desde el FM, probarlo de punta a punta**
+    (petición del usuario, 2026-10-23). El camino diseñado (decisión 101):
+    Crear → position normal donde está el robot → en la web del MiR
+    convertirla en VL-marker y ajustarla → Capturar (recoge marcador, docking
+    offset y entrada, decisión 77) → Sincronización. Nunca se ha hecho con un
+    marcador real: falta comprobar que la web del MiR deja cambiar el tipo de
+    una position ya creada, y un test propio de `_capture_position` con un
+    marcador convertido (hoy solo se ejercita de rebote en el de borrar).
+
+**Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
+
+**Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
+
+- **#24** Verificar el formato real de `user_prompt` (decisión 111): lanzar
+    una mission con pregunta al operario y mirar `/status`. (La velocidad de
+    giro ya está verificada: grados/s.)
+- **#26** Sección Fleet arriba, con mapa de todos los robots.
+- **#27** Cámara: decidir la fuente (el MiR no da imagen por REST).
 
 **Entorno**
 
