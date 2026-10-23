@@ -6,3 +6,6 @@ venv/
 .pytest_cache/
 config/*.bak
 config/*.tmp
+
+# Capturas y planos de referencia: material local, no va al repo
+img_referencia/
