@@ -90,6 +90,7 @@ class CheckIn(BaseModel):
 class CreateIn(BaseModel):
     name: str
     parent: str          # GUID del catálogo: grupo (mission) o mapa (position)
+    type_id: int = 0     # position: tipo del MiR (decisión 119)
 
 
 class CaptureIn(BaseModel):
@@ -238,7 +239,8 @@ class WebServer:
         robots = [{**self.sync_status(s), "can_create": s in self.syncs and hasattr(self.syncs[s], "create_mission")}
                   for s in self.robots]
         first = self._first_creator()
-        choices = first.create_choices() if first else {"groups": [], "maps": [], "missions": [], "created": []}
+        choices = first.create_choices() if first else {"groups": [], "maps": [], "missions": [],
+                                                         "position_types": [], "created": []}
         for d in choices["created"]:
             y = self.syncs.get(d["robot"])
             d["url"] = y.web_url(d["guid"]) if y is not None else None
@@ -354,12 +356,13 @@ class WebServer:
                 log.info("[web] %s: no se pudieron leer sus GUIDs (%s)", s, e)
         return out
 
-    def create(self, serial: str, kind: str, name: str, parent: str) -> dict:
+    def create(self, serial: str, kind: str, name: str, parent: str, type_id: int = 0) -> dict:
         y = self._creator(serial)
         with self._create_lock:
             try:
                 others = self._others_guids(serial, kind, parent)
-                out = (y.create_mission if kind == "mission" else y.create_position)(name, parent, others)
+                out = (y.create_mission(name, parent, others) if kind == "mission"
+                       else y.create_position(name, parent, others, type_id))
             except ValueError as e:         # nombre repetido, falta el grupo/mapa en el robot…
                 raise HTTPException(400, str(e))
             except Exception as e:          # red, 4xx/5xx del robot
@@ -538,7 +541,7 @@ class WebServer:
 
         @app.post("/api/create/{serial}/position")
         def create_position(serial: str, body: CreateIn):
-            return self.create(serial, "position", body.name, body.parent)
+            return self.create(serial, "position", body.name, body.parent, body.type_id)
 
         @app.post("/api/retire/preview")
         def retire_preview(body: CaptureIn):

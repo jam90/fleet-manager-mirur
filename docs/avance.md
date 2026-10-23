@@ -2000,6 +2000,28 @@ cada vez que cambie (decisión del usuario).
      indexa por GUID todas las missions del grupo; por nombre, sigue el
      primero con su aviso (`client.group_missions`, test con el caso real).
 
+## 2026-10-23 — Crear VL-markers y cargadores desde la pestaña Crear (punto #29)
+
+El usuario comprobó en la web del MiR que el tipo de una position no se
+puede cambiar una vez creada (el selector "Select position type" solo sale
+al crearla), así que el camino de la decisión 101 (crear normal y
+convertirla en la web) no vale. Sí deja, en un VL-marker ya creado, volver
+a detectar el marcador y cambiar pose y offset.
+
+119. **El tipo se elige al crear** («Nueva position» → Tipo). Tabla
+     `POSITION_TYPES` en `fm/adapters/mir/create.py` con los tres que usa hoy
+     la flota y ya se crearon por la API al montar el catálogo: Robot
+     position (0), VL-marker (11) y MiR Charge 48V (20). Decisión del
+     usuario: solo esos; otro tipo (V, L, Bar, Precision marker…) es una
+     fila más y una prueba con el robot cuando haga falta (el robot da la
+     lista completa en `GET /position_types`). Un VL-marker se crea con
+     GUID de la flota, en la pose del robot y con un docking offset
+     provisional (x −0,8 m, como los del catálogo; la API lo exige), y el
+     MiR le pone su entrada; en la web se vuelve a detectar el marcador y se
+     ajusta el offset, y «Capturar» recoge marcador, offset y entrada
+     (decisión 77). Test nuevo de esa captura (lo que pedía el #29). Guía
+     actualizada («Añadir una position nueva»).
+
 ## Pendiente (a 2026-10-23)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2116,14 +2138,10 @@ y #16 (configurador completo: v3, decisión 108).
     «Reiniciar el FM ahora» con los robots (decisión 108). Ya probado por el usuario:
     crear, abrir en la web del MiR, capturar y borrar (decisiones 100–104).
 
-- **#29** **Crear un VL-marker desde el FM, probarlo de punta a punta**
-    (petición del usuario, 2026-10-23). El camino diseñado (decisión 101):
-    Crear → position normal donde está el robot → en la web del MiR
-    convertirla en VL-marker y ajustarla → Capturar (recoge marcador, docking
-    offset y entrada, decisión 77) → Sincronización. Nunca se ha hecho con un
-    marcador real: falta comprobar que la web del MiR deja cambiar el tipo de
-    una position ya creada, y un test propio de `_capture_position` con un
-    marcador convertido (hoy solo se ejercita de rebote en el de borrar).
+- **#29** **Probar con un marcador real** crear un VL-marker desde la
+    pestaña Crear (decisión 119): crear delante del marcador, re-detectarlo
+    en la web, capturar y desplegar en el otro robot. Cuando haya un
+    marcador nuevo que poner (o con uno de prueba que luego se borra).
 
 **Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 

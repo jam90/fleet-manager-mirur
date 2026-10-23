@@ -16,10 +16,14 @@ y la copia se borra en la web del MiR.
 
 - **Mission:** vacía, en un grupo del catálogo. Se sigue en
   `http://<ip>/missions/<guid>` (Blockly).
-- **Position:** normal (tipo 0) en la posición ACTUAL del robot, sobre un
-  mapa del catálogo que tiene que ser su mapa activo: quien no sabe dónde
-  está el (0, 0) del mapa la encuentra donde está el robot. Se ajusta en el
-  editor del mapa, `http://<ip>/maps/<guid del mapa>`.
+- **Position:** en la posición ACTUAL del robot, sobre un mapa del
+  catálogo que tiene que ser su mapa activo: quien no sabe dónde está el
+  (0, 0) del mapa la encuentra donde está el robot. Se ajusta en el editor
+  del mapa, `http://<ip>/maps/<guid del mapa>`. El tipo se elige al crearla
+  (`POSITION_TYPES`): la web del MiR no deja cambiarlo después (decisión
+  119). Un VL-marker nace con un docking offset provisional y su entrada
+  la crea el MiR; en la web se vuelve a detectar el marcador y se ajusta
+  el offset, y al capturar se recogen los dos.
 
 **Número del GUID** (§4): el máximo de los GUIDs estándar del mismo tipo (y
 del mismo mapa, en las positions) que hay en el catálogo — borradores y
@@ -46,6 +50,18 @@ from fm.adapters.mir.sync import (AUTO_CHILD_TYPES, FACTORY, FOLDERS, GUIDISH, C
 
 POSITION_NORMAL = 0
 MARKER_TYPES = (11, 20)          # marcador VL y cargador: el MiR les crea una entrada (12, 21)
+# Tipos que se pueden crear desde la pestaña (decisión 119): los que usa hoy
+# la flota y están probados con el robot. Otro tipo = una fila más y una
+# prueba real (qué exige el MiR al crearlo, si crea él la entrada…).
+# `offset`: el MiR exige un docking offset al crear el marcador por la API.
+POSITION_TYPES = {
+    0: {"label": "Robot position", "offset": False},
+    11: {"label": "VL-marker", "offset": True},
+    20: {"label": "MiR Charge 48V", "offset": False},
+}
+# Provisional (el de los VL-marker del catálogo, ~0,8 m antes del marcador):
+# se ajusta en la web al volver a detectar el marcador.
+PROVISIONAL_OFFSET = {"offset_x": -0.8, "offset_y": 0.0, "offset_orientation": 0.0}
 OFFSET_KEYS = ("docking_type", "name", "x_offset", "y_offset", "orientation_offset",
                "bar_length", "bar_distance", "shelf_leg_asymmetry_x")
 
@@ -136,12 +152,17 @@ def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = ())
     return {"kind": "mission", "guid": guid, "name": name, "url": sync.web_url(guid)}
 
 
-def create_position(sync, name: str, map_guid: str, others: Iterable[str] = ()) -> dict:
-    """Position normal `name` en el mapa `map_guid` del catálogo, donde está
-    ahora el robot de `sync` (ese mapa tiene que ser su mapa activo)."""
+def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
+                    type_id: int = POSITION_NORMAL) -> dict:
+    """Position `name` de tipo `type_id` (`POSITION_TYPES`) en el mapa
+    `map_guid` del catálogo, donde está ahora el robot de `sync` (ese mapa
+    tiene que ser su mapa activo)."""
     name = (name or "").strip()
     if not name:
         raise CreateError("falta el nombre")
+    kind = POSITION_TYPES.get(type_id)
+    if kind is None:
+        raise CreateError(f"tipo de position {type_id} no admitido aquí: créala en la web del MiR")
     cat = sync.catalog()
     mp = cat.items.get(map_guid)
     if mp is None or cat.kind(map_guid) != "map":
@@ -164,15 +185,17 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = ()) 
         taken = set(every) | _retired(sync) | robot_std_guids(c, "position", map_guid) | set(others)
         guid = next_guid("position", inst, map_num, taken, per_parent=True)
         pos = st["position"]
-        doc = {"guid": guid, "name": name, "type_id": POSITION_NORMAL,
+        doc = {"guid": guid, "name": name, "type_id": type_id,
                "pos_x": round(pos["x"], 3), "pos_y": round(pos["y"], 3),
                "orientation": round(pos["orientation"], 2), "map_id": map_guid}
-        c._req("POST", "positions", json=doc)
+        c._req("POST", "positions", json={**doc, **(PROVISIONAL_OFFSET if kind["offset"] else {})})
+    # Borrador: la entrada que crea el MiR y el offset de verdad entran al capturar.
     write_doc(sync.catalog_dir, "position",
               {**doc, "parent_id": None, "docking_offsets": [], "creada_por_mir": False, "borrador": True,
                "_origen": _origen(sync.serial, guid, mapa=mp["name"])})
     return {"kind": "position", "guid": guid, "name": name, "url": sync.web_url(guid, map_guid),
-            "pose": [doc["pos_x"], doc["pos_y"], doc["orientation"]]}
+            "pose": [doc["pos_x"], doc["pos_y"], doc["orientation"]], "type": kind["label"],
+            "marker": type_id in MARKER_TYPES}
 
 
 # ----------------------------------------------------------------- capturar

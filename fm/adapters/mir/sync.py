@@ -537,9 +537,9 @@ class MirSync:
         from fm.adapters.mir.create import create_mission
         return create_mission(self, name, group_guid, others)
 
-    def create_position(self, name: str, map_guid: str, others=()) -> dict:
+    def create_position(self, name: str, map_guid: str, others=(), type_id: int = 0) -> dict:
         from fm.adapters.mir.create import create_position
-        return create_position(self, name, map_guid, others)
+        return create_position(self, name, map_guid, others, type_id)
 
     def capture(self, guid: str) -> dict:
         from fm.adapters.mir.create import capture
@@ -568,7 +568,10 @@ class MirSync:
                                 "robot": d.get("_origen", {}).get("robot"),
                                 "date": d.get("_origen", {}).get("capturado")})
         created.sort(key=lambda x: (not x["draft"], x["guid"]))
-        return {"groups": pick("missiongrp"), "maps": pick("map"), "missions": pick("mission"), "created": created}
+        from fm.adapters.mir.create import POSITION_TYPES
+        types = [{"type_id": k, "label": v["label"]} for k, v in POSITION_TYPES.items()]
+        return {"groups": pick("missiongrp"), "maps": pick("map"), "missions": pick("mission"),
+                "position_types": types, "created": created}
 
     def delete_blockers(self, guid: str, definitions: dict, wanted) -> list[str]:
         from fm.adapters.mir.create import delete_blockers

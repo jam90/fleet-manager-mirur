@@ -304,7 +304,8 @@ def test_crear_y_capturar(tmp_path):
             raise ValueError("ya hay una mission 'repetida'")
         return {"kind": "mission", "guid": "M2", "name": name, "url": "http://robot/setup/missions/M2"}
     sync.create_mission = create_mission
-    sync.create_position = lambda n, p, o: {"kind": "position", "guid": "P1", "name": n, "url": "u"}
+    sync.create_position = lambda n, p, o, t=0: (calls.append(("pos", n, t)) or
+                                                 {"kind": "position", "guid": "P1", "name": n, "url": "u"})
     sync.capture = lambda g: {"kind": "mission", "guid": g, "name": "x", "detail": "3 actions"}
     c = TestClient(srv.app)
     info = c.get("/api/create").json()
@@ -317,6 +318,9 @@ def test_crear_y_capturar(tmp_path):
     bad = c.post("/api/create/sim-1/mission", json={"name": "repetida", "parent": "G"})
     assert bad.status_code == 400 and "repetida" in bad.json()["detail"]
     assert c.post("/api/create/sim-1/position", json={"name": "Mesa", "parent": "MAP"}).json()["guid"] == "P1"
+    assert calls[-1] == ("pos", "Mesa", 0)                                       # sin tipo: Robot position
+    c.post("/api/create/sim-1/position", json={"name": "VL", "parent": "MAP", "type_id": 11})
+    assert calls[-1] == ("pos", "VL", 11)
     assert c.post("/api/create/sim-1/capture", json={"guid": "M1"}).json()["detail"] == "3 actions"
 
 

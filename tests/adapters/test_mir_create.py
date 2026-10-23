@@ -197,3 +197,44 @@ def test_adoptar_como_nueva_y_errores(sync, tmp_path):
         {"id": "position", "value": "c7a22ec6-371d-11f1-99c4-000e8eb69199", "input_name": None}]})
     with pytest.raises(CreateError, match="no está en el catálogo"):
         sync.adopt(bad, M_SUB)
+
+
+def test_crear_vl_marker_y_cargador(sync, tmp_path):
+    # Decisión 119: el tipo se elige al crear (la web no deja cambiarlo).
+    r = sync.create_position("Mesa nueva", MAP, type_id=11)
+    assert r["type"] == "VL-marker" and r["marker"]
+    sent = sync.client.db["positions"][r["guid"]]
+    assert sent["type_id"] == 11 and sent["offset_x"] == -0.8                  # el MiR exige offset
+    entry = [p for p in sync.client.db["positions"].values() if p.get("parent_id") == r["guid"]]
+    assert len(entry) == 1 and entry[0]["type_id"] == 12                      # la entrada la pone el MiR
+    draft = Catalog.load(tmp_path).drafts[r["guid"]]
+    assert draft["type_id"] == 11 and draft["docking_offsets"] == []           # el offset bueno, al capturar
+    c = sync.create_position("Cargador", MAP, type_id=20)
+    assert "offset_x" not in sync.client.db["positions"][c["guid"]]           # un cargador no lleva offset
+    with pytest.raises(CreateError, match="no admitido"):
+        sync.create_position("Ascensor", MAP, type_id=25)
+
+
+def test_capturar_vl_marker_creado_aqui_con_su_entrada(sync, tmp_path):
+    # Tras crearlo, en la web se detecta el marcador (se mueve) y se ajusta el offset.
+    r = sync.create_position("Mesa nueva", MAP, type_id=11)
+    g = r["guid"]
+    sync.client.db["positions"][g].update(pos_x=9.5, pos_y=2.25, orientation=-93.0)
+    orig = sync.client._req
+
+    def req(method, path, json=None):                       # el docking offset que guarda el MiR
+        if path == f"positions/{g}/docking_offsets":
+            return [{"guid": "off-1"}]
+        if path == "docking_offsets/off-1":
+            return {"guid": "off-1", "x_offset": -0.75, "y_offset": 0.08, "orientation_offset": -2.7,
+                    "docking_type": None, "name": None}
+        return orig(method, path, json)
+    sync.client._req = req
+    out = sync.capture(g)
+    assert out["detail"] == "tipo 11 + entrada"
+    cat = Catalog.load(tmp_path)
+    doc = cat.items[g]
+    assert (doc["pos_x"], doc["orientation"]) == (9.5, -93.0)
+    assert doc["docking_offsets"][0]["x_offset"] == -0.75 and "borrador" not in doc
+    entry = [d for d in cat.items.values() if d.get("parent_id") == g]
+    assert len(entry) == 1 and entry[0]["type_id"] == 12 and entry[0]["creada_por_mir"]

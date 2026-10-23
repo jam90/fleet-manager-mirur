@@ -717,9 +717,13 @@
       </div>
       <div class="panel">
         <h3>Nueva position</h3>
-        <p class="hint">Se crea <b>donde está ahora el robot</b> (posición normal); en el editor del mapa del MiR se ajusta o se convierte en marcador.
+        <p class="hint">Se crea <b>donde está ahora el robot</b>, con el tipo elegido (en la web del MiR no se puede cambiar
+          después). Un marcador o cargador se termina en el editor del mapa del MiR: volver a detectarlo y ajustar el offset.
           El robot tiene que estar trabajando en ese mapa.</p>
         <label class="field">Nombre<input id="new-position-name" v-model="createState.position.name" autocomplete="off"></label>
+        <label class="field">Tipo
+          <select id="new-position-type" v-model.number="createState.position.type_id">
+            <option v-for="pt in createState.position_types" :key="pt.type_id" :value="pt.type_id">{{ pt.label }}</option></select></label>
         <label class="field">Mapa
           <select id="new-position-map" v-model="createState.position.parent">
             <option v-for="m in createState.maps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
@@ -749,7 +753,11 @@
         <b>{{ createState.result.kind === 'mission' ? 'Mission' : 'Position' }} «{{ createState.result.name }}» creada en {{ createState.result.robot }}</b>
         <code class="guid">{{ createState.result.guid }}</code>
         <span v-if="createState.result.pose">en ({{ createState.result.pose[0] }}, {{ createState.result.pose[1] }}), {{ createState.result.pose[2] }}°.</span>
-        Sigue en la web del MiR y, cuando esté terminada, vuelve aquí a capturarla.
+        <template v-if="createState.result.marker">
+          Es un <b>{{ createState.result.type }}</b>: en el editor del mapa del MiR ábrelo, <b>vuelve a detectar el marcador</b>
+          (o colócalo en el cargador) y ajusta el docking offset (el de ahora es provisional). El MiR ya le ha puesto su
+          entrada. Después vuelve aquí a capturarlo.</template>
+        <template v-else>Sigue en la web del MiR y, cuando esté terminada, vuelve aquí a capturarla.</template>
         <div class="acts"><a class="btn primary" :href="createState.result.url" target="_blank" rel="noopener">Abrir en la web del MiR ↗</a></div>
       </template>
     </div>
@@ -1265,14 +1273,17 @@
         <ol class="steps">
           <li><b>Llevar el robot al sitio</b><span class="where">web del MiR o joystick</span>
             <p>La position se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
-              (hoy <code>suberri_mirur</code>).</p></li>
+              (hoy <code>suberri_mirur</code>). Para un marcador, deja el robot delante de él.</p></li>
           <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
-            <p>Elige ese robot, escribe el nombre (no puede repetirse en el mapa) y «Crear position aquí».</p></li>
-          <li><b>Ajustarla en la web del MiR</b> (si hace falta)<span class="where">web del MiR</span>
-            <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Ahí se corrige la pose o se convierte en marcador
-              para atracar; el MiR le crea su entrada y su docking offset.</p></li>
+            <p>Elige ese robot, escribe el nombre (no puede repetirse en el mapa), el <b>tipo</b> (Robot position, VL-marker
+              o MiR Charge 48V) y «Crear position aquí». <b>El tipo no se puede cambiar después</b>, ni aquí ni en la web
+              del MiR: si te equivocas, «Borrar» y vuelve a crearla.</p></li>
+          <li><b>Terminarla en la web del MiR</b><span class="where">web del MiR</span>
+            <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Una Robot position se corrige si hace falta. Un
+              <b>VL-marker</b> o un cargador nace con un docking offset provisional y con su entrada (la pone el MiR):
+              ábrelo, <b>vuelve a detectar el marcador</b> y ajusta el offset.</p></li>
           <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
-            <p>«Capturar» en «Creado desde aquí». Si la has convertido en marcador, se captura también su entrada.</p></li>
+            <p>«Capturar» en «Creado desde aquí». En un marcador se capturan también su entrada y su offset.</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Igual que una mission. Un marcador calibrado con un robot puede necesitar ajustar el offset en otro:
               compruébalo antes de usarlo en producción.</p></li>
@@ -1767,13 +1778,15 @@ createApp({
       loadCreate();
     }
     const createState = reactive({ robots: [], groups: [], maps: [], missions: [], created: [], robot: '',
-                                   mission: { name: '', parent: '' }, position: { name: '', parent: '' },
+                                   mission: { name: '', parent: '' }, position: { name: '', parent: '', type_id: 0 },
+                                   position_types: [],
                                    busy: '', error: '', result: null });
     async function loadCreate() {
       try {
         const info = await (await fetch('/api/create')).json();
         Object.assign(createState, { robots: info.robots, groups: info.groups, maps: info.maps,
-                                     missions: info.missions || [], created: info.created });
+                                     missions: info.missions || [], position_types: info.position_types || [],
+                                     created: info.created });
         const ok = info.robots.filter(r => r.can_create && r.online);
         if (!ok.some(r => r.serial === createState.robot)) createState.robot = ok.length ? ok[0].serial : '';
         // Por defecto, el grupo mirur-tknika (o el primero) y el primer mapa.
@@ -1798,8 +1811,8 @@ createApp({
     }
     async function createRes(kind) {
       const f = createState[kind], robot = createState.robot;
-      const out = await postCreate(`/api/create/${robot}/${kind}`, { name: f.name.trim(), parent: f.parent },
-                                   `creando en ${robot}…`);
+      const body = { name: f.name.trim(), parent: f.parent, ...(kind === 'position' ? { type_id: f.type_id } : {}) };
+      const out = await postCreate(`/api/create/${robot}/${kind}`, body, `creando en ${robot}…`);
       if (out) { createState.result = { ...out, robot }; f.name = ''; addEvent(robot, `creada ${kind} «${out.name}» (${out.guid})`); }
       loadCreate();
     }
