@@ -75,14 +75,13 @@ robots:
   mir-1:
     driver: mir                # por defecto "mir"; el manufacturer lo pone el driver ("MiR")
     host: 192.168.15.5         # o MIR_HOST_MIR_1 en .env
-    battery_min: 25
+    battery_min: 22
     actions: [coger, dejar, ir_a_espera, abrir_puerta, prueba_parametros, prueba_parametros_v2]
   mir-2:
     driver: mir
     host: 192.168.15.15
-    battery_min: 25
-    actions: [coger, dejar, ir_a_espera, abrir_puerta, prueba_parametros, prueba_parametros_v2,
-              recoger_pieza]   # la mission de recoger_pieza solo existe en mir-2
+    battery_min: 22
+    actions: [coger, dejar, ir_a_espera, abrir_puerta, recoger_pieza, prueba_parametros, prueba_parametros_v2]                # la mission de recoger_pieza solo existe en mir-2
 
 # Un robot simulado puede convivir con los reales (útil en clase; ojo: el
 # asignador lo tratará como uno más). Flota solo simulada: config/fleet-sim.yaml.
