@@ -1,5 +1,5 @@
 services:
-  # Waits until the external whisper server answers on WHISPER_HEALTH_URL
+  # Espera a que el servidor whisper externo responda en WHISPER_HEALTH_URL
   whisper-check:
     image: curlimages/curl:latest
     env_file: .env
@@ -20,7 +20,7 @@ services:
   app:
     build: .
     env_file: .env
-    # Run as the host user so the voice log files in ./logs are not root-owned
+    # Corre con el usuario del host para que los archivos de ./logs no sean de root
     user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "${APP_PORT:-8000}:8000"

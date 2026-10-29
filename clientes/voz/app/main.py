@@ -28,7 +28,7 @@ async def index():
 async def voice(audio: UploadFile):
     data = await audio.read()
     if not data:
-        raise HTTPException(status_code=400, detail="empty audio")
+        raise HTTPException(status_code=400, detail="audio vacío")
     filename = audio.filename or "audio.webm"
     content_type = audio.content_type or "application/octet-stream"
     voice_id = new_id()
@@ -48,7 +48,7 @@ async def voice(audio: UploadFile):
 async def send_mission(mission: str, fleet: Fleet = "sim"):
     missions = load_missions()
     if mission not in missions or "actionType" not in missions[mission]:
-        raise HTTPException(status_code=404, detail=f"unknown mission: {mission}")
+        raise HTTPException(status_code=404, detail=f"misión desconocida: {mission}")
     entry = missions[mission]
     order_id = f"mm-{uuid.uuid4().hex[:8]}"
     try:
@@ -75,7 +75,7 @@ async def cancel_order(order_id: str, fleet: Fleet = "sim"):
     try:
         order = await get_order(base_url, order_id)
         if not order.get("serial"):
-            raise HTTPException(status_code=409, detail=f"order {order_id} has no robot assigned")
+            raise HTTPException(status_code=409, detail=f"la order {order_id} no tiene robot asignado")
         result = await instant_action(base_url, order["serial"], "cancelOrder")
     except FMError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

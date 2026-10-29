@@ -15,18 +15,18 @@ async def _request(base_url: str, method: str, path: str, **kwargs) -> dict:
         async with httpx.AsyncClient(base_url=base_url, timeout=settings.fm_wait + 10) as client:
             resp = await client.request(method, path, **kwargs)
     except httpx.HTTPError as exc:
-        raise FMError(502, f"fleet manager request failed: {exc}") from exc
+        raise FMError(502, f"fallo en la petición al Fleet Manager: {exc}") from exc
     if resp.status_code >= 400:
         try:
             detail = resp.json().get("detail", resp.text)
         except ValueError:
             detail = resp.text
-        raise FMError(resp.status_code, f"fleet manager: {detail}")
+        raise FMError(resp.status_code, f"Fleet Manager: {detail}")
     return resp.json()
 
 
 async def send_order(base_url: str, action_type: str, params: dict, order_id: str) -> dict:
-    """Send a fleet order (the FM picks the robot) and wait for its decision."""
+    """Envía una order a la flota (el FM elige el robot) y espera su decisión."""
     body = {"actionType": action_type, "params": params, "orderId": order_id}
     return await _request(base_url, "POST", "/api/fleet/order", params={"wait": settings.fm_wait}, json=body)
 
@@ -36,5 +36,5 @@ async def get_order(base_url: str, order_id: str) -> dict:
 
 
 async def instant_action(base_url: str, serial: str, action_type: str) -> dict:
-    """Send an instant action (startPause, stopPause, cancelOrder, stateRequest) to one robot."""
+    """Envía una instantAction (startPause, stopPause, cancelOrder, stateRequest) a un robot."""
     return await _request(base_url, "POST", f"/api/robots/{serial}/instant", json={"actionType": action_type})

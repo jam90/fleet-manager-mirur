@@ -1,85 +1,87 @@
 # Mission Manager
 
-FastAPI gateway: browser voice (MediaRecorder) → whisper.cpp server → decision → client.
+Pasarela FastAPI: voz del navegador (MediaRecorder) → servidor whisper.cpp → decisión → cliente.
 
-Requires an external **whisper.cpp** `whisper-server` started with `--convert`
-(so it accepts webm/ogg/mp3 directly).
+Necesita un `whisper-server` de **whisper.cpp** externo, arrancado con `--convert`
+(para que acepte webm/ogg/mp3 directamente).
 
-## Config
+## Configuración
 
 ```bash
-cp .env.example .env   # edit WHISPER_URL / WHISPER_HEALTH_URL
+cp .env.example .env   # editar WHISPER_URL / WHISPER_HEALTH_URL
 ```
 
-## Run locally
+## Ejecución local
 
 ```bash
 uv sync
 uv run uvicorn app.main:app --reload
-uv run pytest   # logic tests
+uv run pytest   # tests de la lógica
 ```
 
-For local runs point the URLs at `http://localhost:8080/...` instead of `host.docker.internal`.
+En local, apunta las URLs a `http://localhost:8080/...` en vez de a `host.docker.internal`.
 
-## Run with Docker
+## Ejecución con Docker
 
 ```bash
 docker compose up --build
 ```
 
-`whisper-check` polls `WHISPER_HEALTH_URL` and the app only starts once it succeeds.
+`whisper-check` consulta `WHISPER_HEALTH_URL` y la app solo arranca cuando responde.
 
-Open http://localhost:8000 (the microphone only works on `localhost` or HTTPS).
+Abre http://localhost:8000 (el micrófono solo funciona en `localhost` o con HTTPS).
 
 ## API
 
-- `POST /api/voice` — multipart field `audio` → `{transcription, normalized, mission, matched_word, actionType}`
-- `POST /api/missions/{mission}` — send that mission to the Fleet Manager
-- `GET /api/orders/{orderId}` — order status from the Fleet Manager
-- `POST /api/orders/{orderId}/cancel` — cancel it (`cancelOrder` on its robot)
-- `GET /api/config` — wake/confirm words, windows and missions for the page
-- all Fleet Manager endpoints take `?fleet=sim|real` (default `sim`)
-- `GET /health` — `{status, whisper: ok|down}`
+- `POST /api/voice`: campo multipart `audio` → `{transcription, normalized, mission, matched_word, actionType}`
+- `POST /api/missions/{mission}`: envía esa misión al Fleet Manager
+- `GET /api/orders/{orderId}`: estado de la order en el Fleet Manager
+- `POST /api/orders/{orderId}/cancel`: la cancela (`cancelOrder` en su robot)
+- `GET /api/config`: palabras de activación y confirmación, ventanas y misiones para la página
+- todos los endpoints del Fleet Manager aceptan `?fleet=sim|real` (por defecto `sim`)
+- `GET /health`: `{status, whisper: ok|down}`
 
 ```bash
 curl -F audio=@sample.wav http://localhost:8000/api/voice
 ```
 
-## Missions
+## Misiones
 
-`missions.json` maps each mission to its trigger words. Matching is whole-word,
-case- and accent-insensitive ("Tráelo" → `traelo`); the first trigger word spoken wins.
-The file is re-read on every request and mounted into the container, so edits apply immediately.
+`missions.json` asocia cada misión con sus palabras de disparo. La coincidencia es por palabra
+completa, sin distinguir mayúsculas ni tildes ("Tráelo" → `traelo`); gana la primera palabra de
+disparo que se diga. El archivo se relee en cada petición y está montado en el contenedor, así que
+los cambios se aplican al momento.
 
-Each entry also says which Fleet Manager mission to run:
+Cada entrada dice también qué misión del Fleet Manager se ejecuta:
 
 ```json
 "mission_2": {"actionType": "coger", "params": {}, "words": ["trae", "traelo", "traer"]}
 ```
 
-Decision logic lives in `app/logic.py`.
+La lógica de decisión está en `app/logic.py`.
 
-## Hands-free (wake word)
+## Manos libres (palabra de activación)
 
-Tick **Manos libres** on the page: the mic stays open and a VAD
-([@ricky0123/vad-web](https://github.com/ricky0123/vad), loaded from jsdelivr) cuts each phrase.
+Marca **Manos libres** en la página: el micro se queda abierto y un VAD
+([@ricky0123/vad-web](https://github.com/ricky0123/vad), cargado desde jsdelivr) corta cada frase.
 
-- `tonto, coge la pieza` → waits for `adelante` → sends `coger`
-- `tonto` (beep, ARMADO for 5 s) … `deja la pieza` → waits for `adelante` → sends `dejar`
-- `tonto, para` → cancels the last order sent from the page right away (no confirmation)
-- phrases without the wake word are ignored; only one request to whisper at a time
+- `tonto, coge la pieza` → espera `adelante` → envía `coger`
+- `tonto` (pitido, ARMADO durante 5 s) … `deja la pieza` → espera `adelante` → envía `dejar`
+- `tonto, para` → cancela al momento la última order enviada desde la página (sin confirmación)
+- las frases sin palabra de activación se ignoran; solo hay una petición a whisper a la vez
 
-Wake word, its variants, the confirm word and the time windows are set in `.env`.
+La palabra de activación, sus variantes, la palabra de confirmación y las ventanas de tiempo se
+configuran en `.env`.
 
-## Missions → Fleet Manager
+## Misiones → Fleet Manager
 
-Set `FM_SIM_URL` (simulated fleet, `:8051`) and `FM_URL` (real robots, `:8050`) in `.env`;
-the page chooses the fleet (default **Virtual**). See `docs/mir-ur-api.md`.
-After a voice match the page shows a **Send** button; the order is only sent when you click it,
-then the page polls its status until `FINISHED`, `FAILED` or `REJECTED`.
+Configura `FM_SIM_URL` (flota simulada, `:8051`) y `FM_URL` (robots reales, `:8050`) en `.env`;
+la página elige la flota (por defecto **Virtual**). Ver `docs/mir-ur-api.md`.
+Tras reconocer una orden por voz, la página muestra un botón **Enviar**: la order solo sale al
+pulsarlo, y luego la página consulta su estado hasta `FINISHED`, `FAILED` o `REJECTED`.
 
 ```bash
-curl -X POST 'http://localhost:8000/api/missions/mission_2?fleet=sim'   # → FM order (check "status")
-curl 'http://localhost:8000/api/orders/mm-1a2b3c4d?fleet=sim'          # → current order status
-curl -X POST 'http://localhost:8000/api/orders/mm-1a2b3c4d/cancel?fleet=sim'  # → cancelOrder on its robot
+curl -X POST 'http://localhost:8000/api/missions/mission_2?fleet=sim'   # → order del FM (mira "status")
+curl 'http://localhost:8000/api/orders/mm-1a2b3c4d?fleet=sim'          # → estado actual de la order
+curl -X POST 'http://localhost:8000/api/orders/mm-1a2b3c4d/cancel?fleet=sim'  # → cancelOrder en su robot
 ```

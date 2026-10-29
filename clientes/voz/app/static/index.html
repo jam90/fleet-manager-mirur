@@ -74,9 +74,9 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const FINAL = ["FINISHED", "FAILED", "REJECTED"];
-    const MIN_SAMPLES = 16000 * 0.3;  // discard phrases shorter than 300 ms
+    const MIN_SAMPLES = 16000 * 0.3;  // descarta frases de menos de 300 ms
     let config = { wakeWord: "tonto", confirmWord: "adelante", armWindowS: 5, confirmWindowS: 5 };
-    let lastOrder = null;  // {orderId, fleet} of the last order sent from this page
+    let lastOrder = null;  // {orderId, fleet} de la última order enviada desde esta página
 
     fetch("/api/config").then((r) => r.json()).then((c) => {
       config = c;
@@ -84,7 +84,7 @@
       $("confirmHint").textContent = c.confirmWord;
     });
 
-    // ---------- whisper health ----------
+    // ---------- salud de whisper ----------
     async function checkHealth() {
       let ok = false;
       try { ok = (await (await fetch("/health")).json()).whisper === "ok"; } catch {}
@@ -94,7 +94,7 @@
     checkHealth();
     setInterval(checkHealth, 5000);
 
-    // ---------- Fleet Manager orders (shared by button and hands-free) ----------
+    // ---------- orders al Fleet Manager (comunes al botón y a manos libres) ----------
     const fleet = () => $("fleet").value;
 
     function showOrder(o) {
@@ -127,7 +127,7 @@
       $("order").textContent = resp.ok ? `Parando ${orderId} (${data.serial})…` : "Error al parar: " + data.detail;
     }
 
-    // ---------- debug logging (console, prefix [MM]) ----------
+    // ---------- log de depuración (consola, prefijo [MM]) ----------
     const DEBUG = true;
     const dbg = (...a) => DEBUG && console.log("%c[MM]", "color:#7c3aed;font-weight:bold", ...a);
     const dbgStats = { worklet: 0, frames: 0, maxProb: 0, maxDb: -Infinity };
@@ -151,7 +151,7 @@
       }, 2000);
     }
 
-    // Count raw worklet messages and catch errors thrown while processing them
+    // Cuenta los mensajes crudos del worklet y captura los errores al procesarlos
     function instrumentWorklet(instance) {
       const port = instance._vadNode?.port;
       if (!port) { dbg("no hay _vadNode.port (procesador:", instance._audioProcessorAdapterType, ")"); return; }
@@ -162,13 +162,13 @@
       };
     }
 
-    // ---------- hands-free ----------
+    // ---------- manos libres ----------
     let vadInstance = null;
-    let audioCtx = null;  // for the beep (needs the speakers)
-    let vadCtx = null;    // for VAD + meter: no audio output, so a blocked output device can't freeze it
+    let audioCtx = null;  // para el pitido (necesita los altavoces)
+    let vadCtx = null;    // para el VAD y el medidor: sin salida de audio, así un dispositivo de salida bloqueado no lo congela
 
-    // Chrome drives an AudioContext's clock from the output device; if Windows blocks it the
-    // context says "running" but never processes audio. A context with sinkId "none" needs no output.
+    // Chrome mueve el reloj del AudioContext con el dispositivo de salida; si Windows lo bloquea el
+    // contexto dice "running" pero nunca procesa audio. Un contexto con sinkId "none" no necesita salida.
     function makeVadContext() {
       try {
         return new AudioContext({ sinkId: { type: "none" } });
@@ -178,13 +178,13 @@
       }
     }
     let hfState = "off";
-    // ARMADO / confirmation window: only counts while the app is really waiting for you,
-    // i.e. it pauses while you are speaking and while whisper is transcribing
+    // Ventana de ARMADO / confirmación: solo cuenta mientras la app te está esperando de verdad,
+    // es decir, se pausa mientras hablas y mientras whisper transcribe
     const win = { timer: null, remaining: 0, deadline: 0, onExpire: null };
     let speaking = false;
-    let pendingMission = null;  // mission waiting for the confirm word
+    let pendingMission = null;  // misión esperando la palabra de confirmación
     let inFlight = false;
-    let queued = null;          // at most one phrase waits while another is in flight
+    let queued = null;          // como mucho una frase espera mientras otra está en curso
 
     const STATE_LABEL = {
       off: "apagado", listening: "escuchando", armed: "ARMADO",
@@ -236,7 +236,7 @@
       dbg(`ventana en marcha: ${(win.remaining / 1000).toFixed(1)} s`);
     }
 
-    // Mic level + VAD speech probability, fed by every frame the VAD processes
+    // Nivel del micro + probabilidad de voz del VAD, con cada frame que procesa el VAD
     function onFrame(probs, frame) {
       let sum = 0;
       for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
@@ -297,7 +297,7 @@
           return;
         }
         discard("sin confirmación");
-        if (!r.wake) return;  // a new wake phrase is handled below as usual
+        if (!r.wake) return;  // una frase de activación nueva se trata abajo como siempre
       }
       if (hfState === "armed") {
         if (r.wake && !r.command) { beep(); setState("armed"); return; }
@@ -313,7 +313,7 @@
       const ms = Math.round(samples.length / 16);
       if (samples.length < MIN_SAMPLES) { dbg(`frase descartada: ${ms} ms < 300 ms`); resumeWindow(); return; }
       dbg(`frase capturada: ${ms} ms` + (inFlight ? " (en cola: hay una petición en vuelo)" : "") + (queued ? " (reemplaza a la pendiente)" : ""));
-      queued = samples;  // keep only the most recent phrase
+      queued = samples;  // solo se guarda la frase más reciente
       if (!inFlight) processQueue();
     }
 
@@ -334,7 +334,7 @@
           const resp = await fetch("/api/voice", { method: "POST", body: form, signal: AbortSignal.timeout(20000) });
           const data = await resp.json();
           dbg(`respuesta ${resp.status} en ${Math.round(performance.now() - t0)} ms`);
-          if (hfState === "off") return;  // switched off while waiting
+          if (hfState === "off") return;  // se apagó mientras esperaba
           $("hfLatency").textContent = Math.round(performance.now() - t0) + " ms";
           if (!resp.ok) throw new Error(data.detail || resp.status);
           $("hfText").textContent = data.transcription || "(vacío)";
@@ -351,10 +351,10 @@
           inFlight = false;
         }
       }
-      resumeWindow();  // nothing pending: resume the window if the state still has one
+      resumeWindow();  // nada pendiente: reanuda la ventana si el estado aún la tiene
     }
 
-    // Float32Array (16 kHz mono) -> 16-bit PCM WAV Blob
+    // Float32Array (16 kHz mono) -> Blob WAV PCM de 16 bits
     function encodeWAV(samples, rate = 16000) {
       const buf = new ArrayBuffer(44 + samples.length * 2);
       const v = new DataView(buf);
@@ -373,10 +373,10 @@
     $("handsfree").addEventListener("change", async (e) => {
       dbg("casilla Manos libres:", e.target.checked ? "ACTIVADA" : "desactivada");
       if (e.target.checked) {
-        // both created in the click, so Chrome lets them run
+        // los dos se crean en el clic, así Chrome los deja arrancar
         audioCtx = audioCtx || new AudioContext();
         vadCtx = vadCtx || makeVadContext();
-        audioCtx.resume().catch(() => {});  // not awaited: with a blocked output it may never settle
+        audioCtx.resume().catch(() => {});  // sin await: con la salida bloqueada puede no resolverse nunca
         await vadCtx.resume();
         lastCtxTime = vadCtx.currentTime;
         dbg("AudioContext VAD:", { state: vadCtx.state, sampleRate: vadCtx.sampleRate, sinkId: JSON.stringify(vadCtx.sinkId) },
@@ -423,7 +423,7 @@
       }
     });
 
-    // ---------- push-to-talk button (unchanged flow) ----------
+    // ---------- botón pulsar para hablar (flujo de siempre) ----------
     const btn = $("rec");
     let recorder = null;
     let chunks = [];
