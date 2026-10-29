@@ -28,7 +28,8 @@ por el WebSocket con el topic `fm/config`.
 
 Crear (docs/plan-admin.md §3, `fm/adapters/mir/create.py`): si el objeto de
 sincronización lo ofrece, la pestaña Crear da de alta en un robot una
-mission vacía o una position (en la posición actual del robot) con GUID
+mission vacía, una position (en la posición actual del robot) o una zona
+(delante del robot) con GUID
 estándar, la apunta en `catalog/` como borrador y luego la captura cuando el
 usuario la ha terminado en la web del MiR.
 
@@ -89,8 +90,24 @@ class CheckIn(BaseModel):
 
 class CreateIn(BaseModel):
     name: str
-    parent: str          # GUID del catálogo: grupo (mission) o mapa (position)
-    type_id: int = 0     # position: tipo del MiR (decisión 119)
+    parent: str          # GUID del catálogo: grupo (mission) o mapa (position, zona)
+    type_id: int = 0     # position o zona: tipo del MiR (decisiones 119 y 124)
+
+
+class SessionIn(BaseModel):
+    name: str
+    description: str = ""
+
+
+class MapIn(BaseModel):
+    name: str
+    png: str                     # base64 (o data URL) del PNG en gris de 8 bits
+    resolution: float = 0.05     # metros por píxel
+    origin_x: float = 0.0        # esquina inferior izquierda, en metros
+    origin_y: float = 0.0
+    session: str = ""            # GUID de un site del catálogo...
+    new_session: str = ""        # ...o el nombre de uno nuevo
+    filename: str = ""
 
 
 class CaptureIn(BaseModel):
@@ -108,6 +125,7 @@ class ConfigEditIn(BaseModel):
     robots: dict[str, dict[str, Any] | None] = {}       # None = baja del robot
     auto_charge: dict[str, Any] = {}
     assigner: dict[str, Any] = {}
+    site: dict[str, Any] | None = None                    # solo si se manda; None = quitarlo
 
 
 class WebServer:
@@ -172,9 +190,16 @@ class WebServer:
             robots.append({"serial": s, "manufacturer": r.manufacturer, "driver": r.cfg.driver,
                            "battery_min": r.cfg.battery_min, "actions": actions})
         return {"robots": robots,
+                "site": self.cfg.site, "sites": self.sites(),
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "instant_actions": list(INSTANT_ALLOWED)}
+
+    def sites(self) -> list[dict]:
+        """Sites del catálogo, para elegir el de la flota (decisión 129). El
+        catálogo es común: basta con el primer robot que lo ofrece."""
+        first = self._first_creator()
+        return first.create_choices().get("sessions", []) if first else []
 
     def config_info(self) -> dict:
         """Configuración en uso, para la pestaña Configurador. Si `fleet.yaml`
@@ -240,7 +265,7 @@ class WebServer:
                   for s in self.robots]
         first = self._first_creator()
         choices = first.create_choices() if first else {"groups": [], "maps": [], "missions": [],
-                                                         "position_types": [], "created": []}
+                                                         "position_types": [], "zone_types": [], "created": []}
         for d in choices["created"]:
             y = self.syncs.get(d["robot"])
             d["url"] = y.web_url(d["guid"]) if y is not None else None
@@ -273,6 +298,8 @@ class WebServer:
             try:
                 if y.exists(guid):
                     where.append(s)
+                    if self.robots[s].last_telemetry.map_id == guid:
+                        blockers.append(f"es el mapa activo de {s}: cámbialo antes en su web")
                     if self.robots[s].busy:
                         blockers.append(f"{s} está ocupado: espera a que quede libre")
                     if s in self._deploying:
@@ -351,7 +378,7 @@ class WebServer:
             if s == serial or self.robots[s].last_telemetry is None or not hasattr(y, "std_guids"):
                 continue
             try:
-                out |= y.std_guids(kind, parent if kind == "position" else None)
+                out |= y.std_guids(kind, parent if kind in ("position", "zone") else None)
             except Exception as e:          # p.ej. ese robot no tiene el mapa: nada que chocar
                 log.info("[web] %s: no se pudieron leer sus GUIDs (%s)", s, e)
         return out
@@ -361,13 +388,48 @@ class WebServer:
         with self._create_lock:
             try:
                 others = self._others_guids(serial, kind, parent)
-                out = (y.create_mission(name, parent, others) if kind == "mission"
-                       else y.create_position(name, parent, others, type_id))
+                if kind == "mission":
+                    out = y.create_mission(name, parent, others)
+                elif kind == "zone":
+                    out = y.create_zone(name, parent, others, type_id)
+                else:
+                    out = y.create_position(name, parent, others, type_id)
             except ValueError as e:         # nombre repetido, falta el grupo/mapa en el robot…
                 raise HTTPException(400, str(e))
             except Exception as e:          # red, 4xx/5xx del robot
                 raise HTTPException(502, f"{serial}: {e}")
         log.info("[web] creada en %s: %s %r (%s)", serial, kind, out["name"], out["guid"])
+        return out
+
+    def create_session(self, body: SessionIn) -> dict:
+        """Crear un site (decisión 128): como un mapa, solo en el catálogo."""
+        y = self._first_creator("create_session")
+        if y is None:
+            raise HTTPException(400, "ningún robot ofrece el catálogo")
+        with self._create_lock:
+            try:
+                out = y.create_session(body.name, body.description, self._others_guids("", "session", ""))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        log.info("[web] site %r creado en el catálogo (%s)", out["name"], out["guid"])
+        return out
+
+    def create_map(self, body: MapIn) -> dict:
+        """Subir un mapa (decisión 126): solo escribe en el catálogo, así que no
+        depende de ningún robot; sí se miran los que respondan para no repetir
+        un número de mapa o de site que ya tengan."""
+        from fm.adapters.mir.create import png_from_b64
+        y = self._first_creator("create_map")
+        if y is None:
+            raise HTTPException(400, "ningún robot ofrece el catálogo")
+        with self._create_lock:
+            try:
+                others = self._others_guids("", "map", "") | self._others_guids("", "session", "")
+                out = y.create_map(body.name, png_from_b64(body.png), body.resolution, body.origin_x,
+                                   body.origin_y, body.session or None, body.new_session, others, body.filename)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        log.info("[web] mapa %r subido al catálogo (%s, site %r)", out["name"], out["guid"], out["site"])
         return out
 
     def capture(self, serial: str, guid: str) -> dict:
@@ -529,7 +591,10 @@ class WebServer:
 
         @app.post("/api/config")
         def config_save(body: ConfigEditIn):
-            return self.save_config(body.model_dump())
+            edits = body.model_dump()
+            if "site" not in body.model_fields_set:   # no mandarlo ≠ quitarlo
+                del edits["site"]
+            return self.save_config(edits)
 
         @app.get("/api/create")
         def create_info():                  # `def`: lee catalog/ del disco
@@ -542,6 +607,18 @@ class WebServer:
         @app.post("/api/create/{serial}/position")
         def create_position(serial: str, body: CreateIn):
             return self.create(serial, "position", body.name, body.parent, body.type_id)
+
+        @app.post("/api/create/session")
+        def create_session(body: SessionIn):    # `def`: escribe en catalog/
+            return self.create_session(body)
+
+        @app.post("/api/create/map")
+        def create_map(body: MapIn):        # `def`: escribe en catalog/
+            return self.create_map(body)
+
+        @app.post("/api/create/{serial}/zone")
+        def create_zone(serial: str, body: CreateIn):
+            return self.create(serial, "zone", body.name, body.parent, body.type_id)
 
         @app.post("/api/retire/preview")
         def retire_preview(body: CaptureIn):

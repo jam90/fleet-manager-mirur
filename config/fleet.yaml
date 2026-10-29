@@ -2,7 +2,8 @@
 #
 # El core del FM solo lee las claves genéricas: `driver`, `manufacturer`,
 # `battery_min` y la lista `actions` de cada robot, más `auto_charge`,
-# `assigner`, `mqtt` y los nombres del catálogo `actions:`. Cada definición
+# `assigner`, `mqtt`, `site` (el site de la flota, que se elige en la
+# cabecera de la web) y los nombres del catálogo `actions:`. Cada definición
 # del catálogo la interpreta el driver del robot que la habilita. El resto
 # del bloque de cada robot lo interpreta su driver
 # (`fm/adapters/<driver>/config.py`), fusionado con `drivers.<driver>`.

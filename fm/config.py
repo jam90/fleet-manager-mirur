@@ -81,9 +81,21 @@ class FleetConfig:
     drivers: dict[str, dict] = field(default_factory=dict)   # defaults por marca: bloque `drivers:`
     actions: dict[str, dict] = field(default_factory=dict)   # catálogo `actions:`, tal cual (lo valida el driver)
     prefer_not_charging: bool = True
+    # Site de la flota (decisión 129): solo trabajan los robots cuyo mapa
+    # activo es de este site. None = sin comprobar (como antes).
+    site: str | None = None
 
     def driver_defaults(self, name: str) -> dict:
         return dict(self.drivers.get(name) or {})
+
+
+def _site(value) -> str | None:
+    """`site:` de la raíz: el GUID del site de la flota, o nada."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise ConfigError("'site' debe ser el GUID de un site (texto)")
+    return value.strip()
 
 
 def env_key(serial: str) -> str:
@@ -144,6 +156,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         drivers={k: (v or {}) for k, v in (raw.get("drivers") or {}).items()},
         actions=catalog,
         prefer_not_charging=bool((raw.get("assigner") or {}).get("prefer_not_charging", True)),
+        site=_site(raw.get("site")),
     )
 
     # Histéresis: si battery_min <= battery_floor el robot oscilaría entre

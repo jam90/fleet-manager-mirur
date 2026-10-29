@@ -51,6 +51,7 @@ del MiR (Help → API → Authorize). Broker de desarrollo: Mosquitto en
 ```yaml
 mqtt: { fleet_manufacturer: imperial_fleet }   # segmento <manufacturer> de fleet/*
 auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo pone el driver
+site: imperialfleet-session000-01-0000-001   # opcional: solo trabajan los robots de este site
 drivers:                            # defaults por marca (cualquier robot los puede pisar)
   mir:
     mission_group: "mirur-tknika"   # solo se indexan las missions de este grupo
@@ -219,6 +220,7 @@ Reglas (§6.1.4 de la norma):
 | otro `orderId` con order viva | `OTHER_ORDER_ACTIVE` |
 | robot en Manual / Error / EmergencyStop, o llave no en `auto` | `MOBILE_ROBOT_NOT_AVAILABLE` |
 | robot ejecutando una mission lanzada desde la web | `MOBILE_ROBOT_NOT_AVAILABLE` |
+| mapa activo del robot de otro site que el de la flota (`site:`) | `MOBILE_ROBOT_NOT_AVAILABLE` |
 | más de una action pendiente | `VALIDATION_FAILURE` |
 | `actionType` no mapeado en ese robot | `INVALID_ORDER_ACTION` |
 | position inexistente / fuera de allowlist / mission ausente en el robot | `NO_ROUTE_TO_TARGET` |
@@ -290,7 +292,8 @@ Predefinidos v3: `VALIDATION_FAILURE`, `INVALID_ORDER_ACTION`,
 `NO_MOBILE_ROBOT_AVAILABLE` (asignador sin candidatos),
 `ORDER_EXECUTION_FAILED` (mission Aborted/Cancelled), `MIR_<code>` (errores
 del MiR), `ROBOT_UNREACHABLE`, `ORDER_DURATION_EXCEEDED` (WARNING: la order
-supera el `expected_s` de su action).
+supera el `expected_s` de su action), `ROBOT_OUTSIDE_SITE` (WARNING: el mapa
+activo del robot es de otro site que el de la flota; no recibe orders).
 
 ## Scripts (`scripts/`)
 
@@ -416,19 +419,24 @@ Tres pestañas más, para el profesor y no para el operario (en la barra lateral
 debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
 
 - **Crear** (`/api/create`): da de alta en el MiR elegido una mission vacía
-  (en un grupo del catálogo) o una position (normal, donde está el robot, en
-  su mapa activo si es del catálogo) con GUID de la flota, y enlaza a su
+  (en un grupo del catálogo), una position (donde está el robot, en su mapa
+  activo si es del catálogo) o una zona del mapa (prohibida, preferida, de
+  velocidad…: un cuadrado de 1 m delante del robot que se termina de dibujar
+  en el editor del mapa) con GUID de la flota, y enlaza a su
   página en la web del MiR para terminarla (`/missions/<guid>` o el
   editor del mapa, `/maps/<guid>`). Queda como borrador en `catalog/`, que reserva su número
   de GUID; **Capturar** lo relee del robot al terminar y lo guarda en el
   catálogo, listo para Sincronización y Configurador. **Borrar** quita lo
   creado allí de los robots y del catálogo (con confirmación; no si lo usa
   `fleet.yaml` u otro recurso, ni con un robot sin conexión u ocupado).
+  **Nuevo mapa** (`POST /api/create/map`) sube un PNG en gris de 8 bits,
+  con su resolución y su origen, a un site del catálogo o a uno nuevo: solo
+  escribe en el catálogo, y se lleva a los robots en Sincronización.
   En **Sincronización**, con el robot ocupado solo se despliega lo que hay
   que crear; corregir lo que ya tiene espera a que quede libre. El estado
   de la flota marca las missions **sobrantes** de cada robot (su
   `fleet.yaml` no las pide) con un botón para **quitarlas de ese robot**
-  (siguen en el catálogo), y cada mission o position del catálogo tiene
+  (siguen en el catálogo), y cada mission, position o zona del catálogo tiene
   **Retirar de la flota** (se borra de los robots y del catálogo; su número
   de GUID queda reservado en `catalog/retirados.json`).
 

@@ -80,6 +80,9 @@
     border-bottom: 1px solid var(--line); padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--navy); }
   header .sub { color: var(--ink-3); font-size: 13px; }
+  .site-sel { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+  .site-sel select { font: inherit; font-weight: 400; padding: 4px 8px; border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); max-width: 180px; }
   .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); display: inline-block; }
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
@@ -121,6 +124,14 @@
   .todo a, .page-sub a { color: var(--accent); font-weight: 700; }
   .tag { display: table; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     padding: 1px 7px; border-radius: var(--radius-sm); color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  /* Crear: selector de qué se crea (botones segmentados) y un formulario de ancho contenido. */
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .seg button { font: inherit; font-weight: 700; font-size: 14px; padding: 7px 16px; cursor: pointer;
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-2); }
+  .seg button:hover { color: var(--navy); background: var(--surface-2); }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .create-form > .field, .create-form > .hint, .create-form > .acts { max-width: 640px; }
   .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 
   /* ---- tarjetas de robot: blancas, planas; el estado lo da la etiqueta ---- */
@@ -405,6 +416,12 @@
       <a :href="'#' + lastFmTab" :class="{ active: section === 'fm' }"
          :aria-current="section === 'fm' ? 'page' : null">Fleet Manager</a>
     </nav>
+    <!-- Site de la flota (decisión 129): solo trabajan los robots cuyo mapa activo es de este site. -->
+    <label class="site-sel" v-if="fleet.sites && fleet.sites.length">Site
+      <select id="fleet-site" :value="fleet.site || ''" @change="changeSite($event)"
+              title="Los robots cuyo mapa activo es de otro site no reciben orders">
+        <option value="">— sin elegir —</option>
+        <option v-for="x in fleet.sites" :key="x.guid" :value="x.guid">{{ x.name }}</option></select></label>
     <span class="conn"><i class="dot" :class="wsOk ? 'ok' : 'bad'"></i>{{ wsOk ? 'conectado al FM' : 'sin conexión con el FM' }}</span>
   </header>
   <div class="banner" v-if="!wsOk">No hay conexión con el Fleet Manager. Reintentando… (¿está arrancado <code>run_fm.py</code>?)</div>
@@ -684,17 +701,26 @@
   </main>
 
   <!-- ===== Crear (fm/adapters/mir/create.py). Alta en UN robot de una
-       mission vacía o de una position (donde está el robot) con GUID
-       estándar; se sigue en la web del MiR y se vuelve aquí a capturar. ===== -->
+       mission vacía, de una position (donde está el robot) o de una zona
+       (delante del robot) con GUID estándar; se sigue en la web del MiR y
+       se vuelve aquí a capturar. ===== -->
   <main v-show="tab === 'crear'">
     <h2 class="page-title">Crear</h2>
-    <p class="page-sub">Dar de alta en un MiR una mission vacía o una position con GUID de la flota, y seguir en su web.</p>
-    <ol class="flow">
-      <li><b>Crear</b> aquí</li><li>Terminarla en la <b>web del MiR</b></li><li><b>Capturar</b> aquí</li>
-      <li>Llevarla a otros robots en <a href="#sincronizacion">Sincronización</a></li>
-      <li>Habilitarla en el <a href="#configurador">Configurador</a></li>
-    </ol>
+    <p class="page-sub">Dar de alta con GUID de la flota un mapa en el catálogo, o una position, una zona o una mission
+      vacía en un MiR para terminarla en su web.</p>
+    <!-- Una sola sección cada vez (decisión 127): elegir qué se crea. Un tipo
+         nuevo es una entrada más en CREATE_KINDS y un <template v-if>. -->
     <div class="panel">
+      <h3>¿Qué quieres crear?</h3>
+      <div class="seg" role="radiogroup" aria-label="Qué crear">
+        <button v-for="k in CREATE_KINDS" :key="k.kind" type="button" role="radio" :id="'create-kind-' + k.kind"
+                :aria-checked="createWhat === k.kind" :class="{ on: createWhat === k.kind }" @click="setCreateWhat(k.kind)">
+          {{ k.label }}</button>
+      </div>
+      <p class="hint">{{ createKind.hint }}</p>
+      <ol class="flow"><li v-for="(step, i) in createKind.flow" :key="i" v-html="step"></li></ol>
+    </div>
+    <div class="panel" v-if="createKind.robot">
       <h3>Robot</h3>
       <div class="sync-robots row">
         <label v-for="r in createState.robots" :key="r.serial" class="sync-robot" :class="{ off: !r.can_create || !r.online }">
@@ -705,17 +731,41 @@
         </label>
       </div>
     </div>
-    <div class="grid-2">
-      <div class="panel">
-        <h3>Nueva mission</h3>
-        <p class="hint">Se crea vacía en el grupo elegido y se programa en el Blockly del MiR.</p>
-        <label class="field">Nombre<input id="new-mission-name" v-model="createState.mission.name" autocomplete="off"></label>
-        <label class="field">Grupo
-          <select id="new-mission-group" v-model="createState.mission.parent">
-            <option v-for="g in createState.groups" :key="g.guid" :value="g.guid">{{ g.name }}</option></select></label>
-        <div class="acts"><button class="btn primary" id="new-mission" :disabled="!canCreate('mission')" @click="createRes('mission')">Crear mission</button></div>
-      </div>
-      <div class="panel">
+    <div class="panel create-form">
+      <template v-if="createWhat === 'session'">
+        <h3>Nuevo site</h3>
+        <!-- Crear un site (decisión 128): solo al catálogo, sin robot. -->
+        <p class="hint">El <b>site</b> (en la API del MiR, <i>session</i>) es el entorno donde viven los mapas: una planta, un
+          edificio. Es lo primero que se crea en una flota nueva. No necesita robot: se guarda en el catálogo y llega a los
+          robots en <a href="#sincronizacion">Sincronización</a>, junto con sus mapas.</p>
+        <label class="field">Nombre<input id="new-session-name" v-model="siteForm.name" autocomplete="off"></label>
+        <label class="field">Descripción (opcional)<input id="new-session-description" v-model="siteForm.description" autocomplete="off"></label>
+        <div class="acts"><button class="btn primary" id="new-session" :disabled="!siteForm.name.trim() || !!createState.busy"
+                                  @click="createSite">Crear site</button></div>
+      </template>
+      <template v-else-if="createWhat === 'map'">
+        <h3>Nuevo mapa</h3>
+        <!-- Subir un mapa (decisión 126): solo al catálogo, sin robot. -->
+        <p class="hint">Sube un <b>PNG en gris de 8 bits</b> (como los que exporta la web del MiR: negro = obstáculo, blanco =
+          libre) a un site del catálogo. No necesita robot: se guarda en el catálogo y se lleva
+          a los robots en <a href="#sincronizacion">Sincronización</a>. Si viene de un MiR, pon su resolución y su origen.</p>
+        <label class="field">Nombre<input id="new-map-name" v-model="mapForm.name" autocomplete="off"></label>
+        <label class="field" v-if="createState.sessions.length">Site
+          <select id="new-map-session" v-model="mapForm.session">
+            <option v-for="x in createState.sessions" :key="x.guid" :value="x.guid">{{ x.name }}</option></select></label>
+        <p class="hint" v-else>Todavía no hay ningún site en el catálogo: un mapa vive dentro de uno.
+          <button class="link-btn" type="button" @click="setCreateWhat('session')">Crear el site primero</button></p>
+        <label class="field">Imagen (PNG)<input id="new-map-file" type="file" accept="image/png" @change="pickMapFile"></label>
+        <label class="field">Resolución (metros por píxel)
+          <input id="new-map-resolution" type="number" min="0.001" step="0.005" v-model.number="mapForm.resolution"></label>
+        <label class="field">Origen x (m)<input id="new-map-origin-x" type="number" step="0.025" v-model.number="mapForm.origin_x"></label>
+        <label class="field">Origen y (m)<input id="new-map-origin-y" type="number" step="0.025" v-model.number="mapForm.origin_y"></label>
+        <p class="hint">El origen es dónde cae, en metros del mapa, la <b>esquina inferior izquierda</b> de la imagen.
+          <template v-if="mapForm.size">Esta imagen mide {{ mapForm.size[0] }} × {{ mapForm.size[1] }} píxeles:
+            {{ (mapForm.size[0] * mapForm.resolution).toFixed(2) }} × {{ (mapForm.size[1] * mapForm.resolution).toFixed(2) }} m.</template></p>
+        <div class="acts"><button class="btn primary" id="new-map" :disabled="!canUploadMap" @click="uploadMap">Subir al catálogo</button></div>
+      </template>
+      <template v-else-if="createWhat === 'position'">
         <h3>Nueva position</h3>
         <p class="hint">Se crea <b>donde está ahora el robot</b>, con el tipo elegido (en la web del MiR no se puede cambiar
           después). Un marcador o cargador se termina en el editor del mapa del MiR: volver a detectarlo y ajustar el offset.
@@ -728,7 +778,32 @@
           <select id="new-position-map" v-model="createState.position.parent">
             <option v-for="m in createState.maps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
         <div class="acts"><button class="btn primary" id="new-position" :disabled="!canCreate('position')" @click="createRes('position')">Crear position aquí</button></div>
-      </div>
+      </template>
+      <template v-else-if="createWhat === 'zone'">
+        <h3>Nueva zona</h3>
+        <p class="hint">Se crea un <b>cuadrado de 1 m delante del robot</b>, con el tipo elegido (en la web del MiR no se puede
+          cambiar después). En el editor del mapa del MiR se le da la forma y, si las tiene, sus acciones (velocidad,
+          sonido…). Mientras tanto ya cuenta: una zona prohibida le cierra ese metro al robot. El robot tiene que estar
+          trabajando en ese mapa.</p>
+        <label class="field">Nombre<input id="new-zone-name" v-model="createState.zone.name" autocomplete="off"></label>
+        <label class="field">Tipo
+          <select id="new-zone-type" v-model.number="createState.zone.type_id">
+            <option v-for="zt in createState.zone_types" :key="zt.type_id" :value="zt.type_id">{{ zt.label }}</option></select></label>
+        <p class="hint" id="new-zone-help" v-if="zoneHelp">{{ zoneHelp }}</p>
+        <label class="field">Mapa
+          <select id="new-zone-map" v-model="createState.zone.parent">
+            <option v-for="m in createState.maps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
+        <div class="acts"><button class="btn primary" id="new-zone" :disabled="!canCreate('zone')" @click="createRes('zone')">Crear zona aquí</button></div>
+      </template>
+      <template v-else>
+        <h3>Nueva mission</h3>
+        <p class="hint">Se crea vacía en el grupo elegido y se programa en el Blockly del MiR.</p>
+        <label class="field">Nombre<input id="new-mission-name" v-model="createState.mission.name" autocomplete="off"></label>
+        <label class="field">Grupo
+          <select id="new-mission-group" v-model="createState.mission.parent">
+            <option v-for="g in createState.groups" :key="g.guid" :value="g.guid">{{ g.name }}</option></select></label>
+        <div class="acts"><button class="btn primary" id="new-mission" :disabled="!canCreate('mission')" @click="createRes('mission')">Crear mission</button></div>
+      </template>
     </div>
     <div class="resp" :class="createState.result ? 'ASSIGNED' : createState.error ? 'REJECTED' : 'pending'"
          v-if="createState.result || createState.error || createState.busy">
@@ -744,19 +819,34 @@
         lleva la del catálogo a los robots en <a href="#sincronizacion">Sincronización</a><template v-if="createState.result.replaced">
         (marca <b>Sustituir</b> donde tengan la antigua)</template> y después borra la copia en la web del MiR.
       </template>
+      <template v-else-if="createState.result.kind === 'session'">
+        <b>Site «{{ createState.result.name }}» creado en el catálogo</b> <code class="guid">{{ createState.result.guid }}</code>.
+        Ahora sube su primer mapa: <button class="link-btn" type="button" @click="setCreateWhat('map')">Nuevo mapa</button>.
+      </template>
+      <template v-else-if="createState.result.kind === 'map'">
+        <b>Mapa «{{ createState.result.name }}» subido al catálogo</b> <code class="guid">{{ createState.result.guid }}</code>
+        en el site <b>{{ createState.result.site }}</b><template v-if="createState.result.new_site"> (nuevo)</template>:
+        {{ createState.result.size[0] }} × {{ createState.result.size[1] }} píxeles, {{ createState.result.meters[0] }} ×
+        {{ createState.result.meters[1] }} m. Llévalo a los robots en <a href="#sincronizacion">Sincronización</a>; crearlo
+        en un robot no lo activa.
+      </template>
       <template v-else-if="createState.result.captured">
         <b>«{{ createState.result.name }}» capturada al catálogo</b> ({{ createState.result.detail }}).
         Ahora se puede llevar a otros robots en <a href="#sincronizacion">Sincronización</a><template v-if="createState.result.kind === 'mission'">
         y habilitar como action en el <a href="#configurador">Configurador</a></template>.
       </template>
       <template v-else>
-        <b>{{ createState.result.kind === 'mission' ? 'Mission' : 'Position' }} «{{ createState.result.name }}» creada en {{ createState.result.robot }}</b>
+        <b>{{ CREATED_LABEL[createState.result.kind] }} «{{ createState.result.name }}» creada en {{ createState.result.robot }}</b>
         <code class="guid">{{ createState.result.guid }}</code>
         <span v-if="createState.result.pose">en ({{ createState.result.pose[0] }}, {{ createState.result.pose[1] }}), {{ createState.result.pose[2] }}°.</span>
         <template v-if="createState.result.marker">
           Es un <b>{{ createState.result.type }}</b>: en el editor del mapa del MiR ábrelo, <b>vuelve a detectar el marcador</b>
           (o colócalo en el cargador) y ajusta el docking offset (el de ahora es provisional). El MiR ya le ha puesto su
           entrada. Después vuelve aquí a capturarlo.</template>
+        <template v-else-if="createState.result.kind === 'zone'">
+          Es una <b>{{ createState.result.type }}</b> de 1 m delante del robot: en el editor del mapa del MiR ábrela, arrastra sus
+          vértices hasta darle la forma (se añaden pinchando en un lado) y, si las tiene, ponle sus acciones. Después vuelve
+          aquí a capturarla.</template>
         <template v-else>Sigue en la web del MiR y, cuando esté terminada, vuelve aquí a capturarla.</template>
         <div class="acts"><a class="btn primary" :href="createState.result.url" target="_blank" rel="noopener">Abrir en la web del MiR ↗</a></div>
       </template>
@@ -766,25 +856,31 @@
       <p class="hint">Los <b>borradores</b> aún no se han capturado: su GUID está reservado en <code>catalog/</code>, pero no se
         despliegan. <b>Capturar</b> lee del robot lo que se ha hecho en su web y lo guarda en el catálogo (se puede repetir).
         <b>Borrar</b> lo quita de los robots que lo tengan y del catálogo; si era el número más alto, queda libre.</p>
-      <ul class="drafts" v-if="createState.created.length">
-        <li v-for="d in createState.created" :key="d.guid">
+      <div class="row" v-if="createState.created.length">
+        <label class="field" style="max-width: 320px">Mostrar
+          <select id="created-filter" v-model="createState.filter">
+            <option value="">Todo ({{ createState.created.length }})</option>
+            <option v-for="k in createdKinds" :key="k.kind" :value="k.kind">{{ k.label }} ({{ k.n }})</option></select></label>
+      </div>
+      <ul class="drafts" v-if="createdShown.length">
+        <li v-for="d in createdShown" :key="d.guid">
           <span><span class="muted">{{ KIND_LABEL[d.kind] }}</span> <b>{{ d.name }}</b>
-            <span class="chip">{{ d.draft ? 'borrador' : 'capturada' }}</span>
-            <span class="muted">· de {{ d.robot }} · {{ d.date }}</span>
+            <span class="chip">{{ d.draft ? 'borrador' : ['map', 'session'].includes(d.kind) ? 'en el catálogo' : 'capturada' }}</span>
+            <span class="muted">· {{ d.robot ? 'de ' + d.robot : 'en el catálogo' }} · {{ d.date }}</span>
             <code class="guid">{{ d.guid }}</code></span>
           <span class="acts">
             <a class="btn" v-if="d.url" :href="d.url" target="_blank" rel="noopener">Abrir en el MiR ↗</a>
-            <button class="btn" :class="{ primary: d.draft }" @click="captureRes(d)" :disabled="!!createState.busy">
+            <button class="btn" v-if="d.kind !== 'map' && d.kind !== 'session'" :class="{ primary: d.draft }" @click="captureRes(d)" :disabled="!!createState.busy">
               {{ d.draft ? 'Capturar' : 'Volver a capturar' }}</button>
             <button class="btn danger" @click="deleteRes(d)" :disabled="!!createState.busy">Borrar</button>
           </span>
         </li>
       </ul>
-      <p class="empty" v-else>No hay nada creado desde aquí.</p>
+      <p class="empty" v-else>{{ createState.created.length ? "No hay nada de ese tipo." : "No hay nada creado desde aquí." }}</p>
     </div>
     <!-- Adoptar (decisión 116): missions hechas o "guardadas como" en la web
          del MiR, sin GUID de la flota. Solo escribe en el catálogo. -->
-    <div class="panel">
+    <div class="panel" v-if="createWhat === 'mission'">
       <h3>Hechas en la web del MiR <small class="muted" v-if="createState.robot">· en {{ createState.robot }}</small></h3>
       <p class="hint">Missions de un grupo del catálogo que <b>no tienen GUID de la flota</b> (p. ej. un «Guardar como»):
         el FM no las ve. <b>Adoptar</b> las guarda en el catálogo con el GUID de la mission que sustituyen, o con uno nuevo.
@@ -1108,7 +1204,7 @@
                 <b>{{ it.name }}</b> <span class="muted">{{ it.extra }}</span>
                 <span class="muted" v-if="it.origin_group && it.kind === 'mission'"> · de {{ it.origin_group }}</span></label>
               <code class="guid">{{ it.guid }}</code>
-              <button class="link-btn" v-if="(it.kind === 'mission' || it.kind === 'position') && !it.auto" @click="retire(it)"
+              <button class="link-btn" v-if="['mission', 'position', 'zone'].includes(it.kind) && !it.auto" @click="retire(it)"
                       :title="'Borrar ' + it.name + ' de todos los robots y del catálogo; su número no se reutiliza'">Retirar de la flota</button>
               <span class="where" v-if="whereIs(it).length">
                 <span v-for="w in whereIs(it)" :key="w.serial" :class="'w-' + w.state" :title="w.title">{{ w.text }}</span>
@@ -1154,8 +1250,9 @@
               <span class="mark">{{ VERB_MARK[o.verb] }}</span>
               <span><span class="muted">{{ KIND_LABEL[o.kind] || o.kind }}</span> <b>{{ o.name }}</b><code class="guid">{{ o.guid }}</code></span>
               <span>{{ VERB_LABEL[o.verb] }}<template v-if="o.detail"> · {{ o.detail }}</template>
-                <!-- Sustituir (decisión 117): solo missions distintas; se borra y se crea con el mismo GUID. -->
-                <label class="replace" v-if="o.kind === 'mission' && (o.verb === 'distinta' || o.verb === 'sustituir') && o.status === 'pendiente'">
+                <!-- Sustituir (decisiones 117 y 124): missions distintas (se borran y se crean con el mismo
+                     GUID) y zonas distintas (se corrigen en su sitio). -->
+                <label class="replace" v-if="(o.kind === 'mission' || o.kind === 'zone') && (o.verb === 'distinta' || o.verb === 'sustituir') && o.status === 'pendiente'">
                   <input type="checkbox" :checked="!!syncState.replace[o.guid]" @change="toggleReplace(o.guid, $event.target.checked)"
                          :disabled="syncState.loading"> Sustituir</label>
                 <span class="warnline" v-if="o.warning">⚠ {{ o.warning }}</span></span>
@@ -1179,15 +1276,54 @@
     <p class="page-sub">Paso a paso de las tareas de administración. Abre la que necesites; cada paso lleva a su pestaña.</p>
     <div class="panel guide">
 
+      <!-- Para quien llega sin nada (decisión 128): el orden de todo lo demás. -->
+      <details class="guide-sec" id="guia-empezar">
+        <summary>Acabo de llegar: ¿por dónde empiezo?
+          <span class="hint">El orden para montar una flota desde cero. Cada paso enlaza a su proceso.</span></summary>
+        <ol class="steps">
+          <li><b>Dar de alta los robots</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>«Editar» → «Añadir robot» con su nombre y su IP, «Guardar» y «Reiniciar el FM ahora». Hace falta al menos uno:
+              las pestañas de administración leen y escriben los robots a través del FM.</p></li>
+          <li><b>Crear el site</b><a class="where" href="#crear">→ Crear</a>
+            <p>Arriba, «Site»: el entorno donde vivirán los mapas (una planta, un edificio).</p></li>
+          <li><b>Subir su mapa</b><a class="where" href="#crear">→ Crear</a>
+            <p>Arriba, «Mapa»: el PNG del mapa, con su resolución y su origen (ver «Subir un mapa nuevo»).</p></li>
+          <li><b>Llevar site y mapa a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Marca el mapa (arrastra su site), elige cada robot, «Vista previa» y «Desplegar».</p></li>
+          <li><b>Activar el mapa en cada robot</b><span class="where">web del MiR</span>
+            <p>Crear un mapa en un robot no lo activa: cámbialo en su web y localiza el robot en él. Las positions y zonas se
+              crean donde está el robot, así que este paso va antes.</p></li>
+          <li><b>Elegir el site de la flota</b><span class="where">cabecera, «Site»</span>
+            <p>Solo trabajan los robots cuyo mapa activo es de ese site: los demás salen avisados y no reciben orders hasta
+              que se cambie su mapa en su web.</p></li>
+          <li><b>Positions y zonas</b><a class="where" href="#crear">→ Crear</a>
+            <p>Los puntos a los que irán los robots y las zonas del mapa (ver «Añadir una position nueva» y «Añadir una
+              zona»). Captúralas y llévalas a los demás robots.</p></li>
+          <li><b>Missions</b><a class="where" href="#crear">→ Crear</a>
+            <p>Las tareas, programadas en el Blockly del MiR (ver «Añadir una mission nueva»). Necesitan un grupo de missions
+              del catálogo: hoy no se crea desde el FM.</p></li>
+          <li><b>Actions</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>Lo que piden las orders: una action por mission, con sus parámetros, habilitada en los robots que la
+              tienen.</p></li>
+          <li><b>Probar</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Manda una order de esa action y mira cómo la ejecuta un robot.</p></li>
+        </ol>
+      </details>
+
       <details class="guide-sec">
         <summary>Antes de empezar: las piezas
           <span class="hint">Qué es cada cosa y dónde vive. Léelo una vez.</span></summary>
         <dl class="kv">
+          <dt>Site</dt><dd>El entorno donde viven los mapas: una planta, un edificio. En la API del MiR se llama
+            <i>session</i>.</dd>
+          <dt>Mapa</dt><dd>Imagen de la planta (negro = obstáculo, blanco = libre) con su escala y su origen. Pertenece a un
+            site; cada robot trabaja en uno, su mapa activo.</dd>
+          <dt>Zona</dt><dd>Área de un mapa que cambia cómo circula el robot: prohibida, preferida, de velocidad…</dd>
           <dt>Mission</dt><dd>Programa del MiR (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.</dd>
           <dt>Position</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
           <dt>Action</dt><dd>Lo que pide una order (<code>actionType</code>): una mission + qué parámetros lleva. Se define en
             <code>config/fleet.yaml</code> y se habilita robot a robot.</dd>
-          <dt>Catálogo</dt><dd>La carpeta <code>catalog/</code>: copia de cada mission y position de la flota, con el mismo GUID
+          <dt>Catálogo</dt><dd>La carpeta <code>catalog/</code>: copia de cada site, mapa, position, zona y mission de la flota, con el mismo GUID
             (<code>imperialfleet-…</code>) en todos los robots. Va en git.</dd>
           <dt>Borrador</dt><dd>Algo creado desde «Crear» y aún no capturado: tiene su número reservado, pero no se despliega.</dd>
         </dl>
@@ -1199,7 +1335,7 @@
           <span class="hint">Desde cero hasta que una order la puede pedir a la flota.</span></summary>
         <ol class="steps">
           <li><b>Crearla vacía</b><a class="where" href="#crear">→ Crear</a>
-            <p>Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
+            <p>Arriba, «Mission». Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
               «Crear mission». El nombre no puede repetirse en el grupo.</p></li>
           <li><b>Programarla en la web del MiR</b><span class="where">web del MiR</span>
             <p>«Abrir en la web del MiR ↗» lleva directo a su editor Blockly. Lo que la order vaya a mandar (una position,
@@ -1281,7 +1417,7 @@
             <p>La position se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
               (hoy <code>suberri_mirur</code>). Para un marcador, deja el robot delante de él.</p></li>
           <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
-            <p>Elige ese robot, escribe el nombre (no puede repetirse en el mapa), el <b>tipo</b> (Robot position, VL-marker
+            <p>Arriba, «Position». Elige ese robot, escribe el nombre (no puede repetirse en el mapa), el <b>tipo</b> (Robot position, VL-marker
               o MiR Charge 48V) y «Crear position aquí». <b>El tipo no se puede cambiar después</b>, ni aquí ni en la web
               del MiR: si te equivocas, «Borrar» y vuelve a crearla.</p></li>
           <li><b>Terminarla en la web del MiR</b><span class="where">web del MiR</span>
@@ -1315,6 +1451,68 @@
         </ol>
       </details>
 
+      <details class="guide-sec">
+        <summary>Subir un mapa nuevo
+          <span class="hint">Una zona nueva de la planta, o el primer mapa al montar el FM.</span></summary>
+        <ol class="steps">
+          <li><b>Preparar la imagen</b><span class="where">PC</span>
+            <p>Un <b>PNG en gris de 8 bits</b>: negro = obstáculo, blanco = libre. El que exporta la web del MiR ya viene
+              así; uno en color se rechaza. Apunta su resolución (metros por píxel) y su origen (dónde cae, en metros, la
+              esquina inferior izquierda).</p></li>
+          <li><b>Subirlo</b><a class="where" href="#crear">→ Crear</a>
+            <p>Arriba, «Mapa» (no hace falta robot): nombre (no puede repetirse en el catálogo), site (si no hay ninguno, créalo
+              antes con «Site»), la imagen, la resolución y el origen. Debajo sale cuántos metros mide. «Subir al catálogo» no toca
+              ningún robot.</p></li>
+          <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>En «Mapas», márcalo (arrastra su site), elige el robot, «Vista previa» y «Desplegar». Crearlo en un robot no
+              lo activa: para trabajar en él, cámbialo en la web del MiR.</p></li>
+          <li><b>Si te has equivocado</b><a class="where" href="#crear">→ Crear</a>
+            <p>«Borrar» en «Creado desde aquí» lo quita del catálogo y de los robots que lo tengan, salvo que tenga positions
+              o zonas, o que sea el mapa activo de algún robot.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Añadir una zona
+          <span class="hint">Prohibida, preferida, de velocidad…, igual en todos los robots.</span></summary>
+        <ol class="steps">
+          <li><b>Llevar el robot cerca del sitio</b><span class="where">web del MiR o joystick</span>
+            <p>La zona nace como un cuadrado de 1 m <b>2 m delante del robot</b>, en su mapa activo (hoy
+              <code>suberri_mirur</code>). No hace falta que esté justo en el sitio: la forma se da después.</p></li>
+          <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
+            <p>Arriba, «Zona». Elige el robot, escribe el nombre (no puede repetirse en el mapa), el <b>tipo</b> (debajo sale qué hace cada
+              uno) y «Crear zona aquí».
+              <b>El tipo no se puede cambiar después</b>: si te equivocas, «Borrar» y vuelve a crearla. Desde ese momento la
+              zona ya cuenta para el robot: una prohibida le cierra ese metro.</p></li>
+          <li><b>Darle forma en la web del MiR</b><span class="where">web del MiR</span>
+            <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Abre la zona, arrastra sus vértices (pinchando en un lado
+              se añade otro) y, si es de velocidad, de sonido y luz o del planificador, añade sus acciones. Un sonido tiene que
+              ser de fábrica o del catálogo: uno subido solo a ese robot no se puede capturar.</p></li>
+          <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
+            <p>«Capturar» en «Creado desde aquí»: guarda el polígono y las acciones en el catálogo.</p></li>
+          <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Está en «Zonas de &lt;mapa&gt;»: márcala, elige el robot, «Vista previa» y «Desplegar».</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Cambiar o quitar una zona
+          <span class="hint">Se cambia en un robot y se lleva a los demás.</span></summary>
+        <ol class="steps">
+          <li><b>Cambiarla en la web del MiR</b><span class="where">web del MiR</span>
+            <p>En el robot donde se creó, edita la zona en el editor del mapa (forma, nombre, acciones). El tipo no.</p></li>
+          <li><b>Volver a capturarla</b><a class="where" href="#crear">→ Crear</a>
+            <p>«Volver a capturar» en «Creado desde aquí».</p></li>
+          <li><b>Llevar el cambio</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>En la vista previa de los demás robots sale <b>distinta</b>: marca <b>Sustituir</b> y «Desplegar». Se corrige en
+              su sitio, con el mismo GUID. Con el robot ocupado no se deja: espera a que quede libre.</p></li>
+          <li><b>Quitarla</b>
+            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear">→ Crear</a> «Borrar»: su número queda libre.</p>
+            <p><b>Si no</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota»: se borra de todos
+              los robots y su número queda reservado.</p></li>
+        </ol>
+      </details>
+
     </div>
   </main>
 </div>
@@ -1322,7 +1520,7 @@
 
 <script src="/static/vue.global.prod.js"></script>
 <script>
-const { createApp, reactive, computed, watch } = Vue;
+const { createApp, reactive, computed, watch, ref } = Vue;
 
 // vda5050/v3/<manufacturer>/<serial>/<subtopic>
 function parseTopic(t) {
@@ -1350,8 +1548,9 @@ const TABS = [
 // Sincronización: rótulos de las operaciones que devuelve el servidor (sync.py).
 const VERB_LABEL = { crear: 'crear', corregir: 'corregir', igual: 'ya está igual', distinta: 'distinta', sustituir: 'sustituir' };
 const VERB_MARK = { crear: '+', corregir: '~', igual: '=', distinta: '!', sustituir: '↻' };
-const KIND_LABEL = { session: 'session', map: 'mapa', position: 'position', sound: 'sonido',
+const KIND_LABEL = { session: 'site', map: 'mapa', position: 'position', sound: 'sonido', zone: 'zona',
                      missiongrp: 'grupo', mission: 'mission' };
+const CREATED_LABEL = { mission: 'Mission', position: 'Position', zone: 'Zona', map: 'Mapa', session: 'Site' };
 
 function hhmmss(iso) {
   const d = iso ? new Date(iso) : new Date();
@@ -1446,6 +1645,27 @@ createApp({
         for (const r of fleet.robots) if (!live[r.serial]) live[r.serial] = { state: null, connection: null, feedback: '' };
         if (!form.actionType && actionCatalog.value.length) form.actionType = actionCatalog.value[0].action_type;
       } catch (e) { setTimeout(loadFleet, 3000); }
+    }
+
+    // Site de la flota (decisión 129): se guarda en fleet.yaml y se aplica en caliente.
+    async function changeSite(ev) {
+      const guid = ev.target.value, site = (fleet.sites || []).find(x => x.guid === guid);
+      const msg = site ? `¿Trabajar en el site «${site.name}»?\n\nLos robots cuyo mapa activo sea de otro site dejarán de `
+                         + 'recibir orders hasta que se cambie su mapa en su web.'
+                       : '¿Dejar la flota sin site? El FM dejará de comprobar en qué site está cada robot.';
+      if (!confirm(msg)) { ev.target.value = fleet.site || ''; return; }
+      try {
+        const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                               body: JSON.stringify({ site: site ? { guid, name: site.name } : null }) });
+        const out = await r.json();
+        if (!r.ok) throw new Error(out.detail);
+        addEvent('flota', site ? `site de la flota: «${site.name}»` : 'flota sin site');
+      } catch (e) {
+        alert('No se pudo cambiar el site: ' + e.message);
+        ev.target.value = fleet.site || '';
+        return;
+      }
+      setTimeout(loadFleet, 1500);       // se aplica en el siguiente tick del FM
     }
 
     // ---------------- salida: HTTP → el servidor publica en el broker
@@ -1557,10 +1777,12 @@ createApp({
         const n = list.filter(i => syncState.sel[i.guid]).length;
         secs.push({ key, label, items: list, all: n === list.length, some: n > 0, open });
       };
-      add('session', 'Sessions', items.filter(i => i.kind === 'session'));
+      add('session', 'Sites', items.filter(i => i.kind === 'session'));
       add('map', 'Mapas', items.filter(i => i.kind === 'map'));
       for (const m of items.filter(i => i.kind === 'map'))
         add('pos-' + m.guid, 'Positions de ' + m.name, items.filter(i => i.kind === 'position' && i.parent === m.guid && !i.auto));
+      for (const m of items.filter(i => i.kind === 'map'))
+        add('zon-' + m.guid, 'Zonas de ' + m.name, items.filter(i => i.kind === 'zone' && i.parent === m.guid));
       add('sound', 'Sonidos', items.filter(i => i.kind === 'sound'));
       add('group', 'Grupos', items.filter(i => i.kind === 'missiongrp'));
       for (const g of items.filter(i => i.kind === 'missiongrp'))
@@ -1785,13 +2007,15 @@ createApp({
     }
     const createState = reactive({ robots: [], groups: [], maps: [], missions: [], created: [], robot: '',
                                    mission: { name: '', parent: '' }, position: { name: '', parent: '', type_id: 0 },
-                                   position_types: [],
+                                   zone: { name: '', parent: '', type_id: 206 }, filter: '', sessions: [],
+                                   position_types: [], zone_types: [],
                                    busy: '', error: '', result: null });
     async function loadCreate() {
       try {
         const info = await (await fetch('/api/create')).json();
-        Object.assign(createState, { robots: info.robots, groups: info.groups, maps: info.maps,
+        Object.assign(createState, { robots: info.robots, groups: info.groups, maps: info.maps, sessions: info.sessions || [],
                                      missions: info.missions || [], position_types: info.position_types || [],
+                                     zone_types: info.zone_types || [],
                                      created: info.created });
         const ok = info.robots.filter(r => r.can_create && r.online);
         if (!ok.some(r => r.serial === createState.robot)) createState.robot = ok.length ? ok[0].serial : '';
@@ -1799,10 +2023,99 @@ createApp({
         if (!createState.mission.parent && info.groups.length)
           createState.mission.parent = (info.groups.find(g => g.name === 'mirur-tknika') || info.groups[0]).guid;
         if (!createState.position.parent && info.maps.length) createState.position.parent = info.maps[0].guid;
+        if (!createState.zone.parent && info.maps.length) createState.zone.parent = info.maps[0].guid;
+        if (!(info.sessions || []).some(x => x.guid === mapForm.session))
+          mapForm.session = (info.sessions || []).length ? info.sessions[0].guid : '';
+        if (!savedWhat && !(info.sessions || []).length) createWhat.value = 'session';   // flota nueva
       } catch (e) { createState.error = 'no se pudo leer el catálogo'; }
       loadAdoptable();
     }
     watch(() => createState.robot, (now, before) => { if (before !== undefined && now !== before) loadAdoptable(); });
+    // Qué se crea (decisión 127): una sección cada vez. `robot`: si hace falta
+    // elegir robot; `flow`: los pasos de ese recurso hasta poder usarlo.
+    const SYNC_LINK = '<a href="#sincronizacion">Sincronización</a>';
+    const CREATE_KINDS = [
+      { kind: 'session', label: 'Site', robot: false,
+        hint: 'El entorno donde viven los mapas (una planta, un edificio). Lo primero en una flota nueva.',
+        flow: ['<b>Crear</b> aquí el site', '<b>Subir</b> su primer mapa (botón «Mapa»)',
+               `Llevar los dos a los robots en ${SYNC_LINK}`] },
+      { kind: 'map', label: 'Mapa', robot: false,
+        hint: 'Un mapa nuevo de un site, a partir de un PNG. Va al catálogo, no a un robot.',
+        flow: ['<b>Subir</b> aquí el PNG', `Llevarlo a los robots en ${SYNC_LINK}`] },
+      { kind: 'position', label: 'Position', robot: true,
+        hint: 'Un punto del mapa, creado donde está el robot.',
+        flow: ['<b>Crear</b> aquí', 'Ajustarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
+               `Llevarla a otros robots en ${SYNC_LINK}`] },
+      { kind: 'zone', label: 'Zona', robot: true,
+        hint: 'Una zona del mapa (prohibida, preferida, de velocidad…), creada delante del robot.',
+        flow: ['<b>Crear</b> aquí', 'Darle forma en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
+               `Llevarla a otros robots en ${SYNC_LINK}`] },
+      { kind: 'mission', label: 'Mission', robot: true,
+        hint: 'Una mission vacía que se programa en el Blockly del MiR.',
+        flow: ['<b>Crear</b> aquí', 'Programarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
+               `Llevarla a otros robots en ${SYNC_LINK}`, 'Habilitarla en el <a href="#configurador">Configurador</a>'] },
+    ];
+    // La última elección se recuerda en este navegador. Sin ella, se empieza por
+    // el mapa (o por el site, si el catálogo aún no tiene ninguno: ver loadCreate).
+    let savedWhat = '';
+    try { savedWhat = localStorage.getItem('fm.crear.que') || ''; } catch (e) { /* sin almacenamiento */ }
+    const createWhat = ref(CREATE_KINDS.some(k => k.kind === savedWhat) ? savedWhat : 'map');
+    const createKind = computed(() => CREATE_KINDS.find(k => k.kind === createWhat.value));
+    function setCreateWhat(kind) {
+      createWhat.value = kind;
+      Object.assign(createState, { error: '', result: null });
+      try { localStorage.setItem('fm.crear.que', kind); } catch (e) { /* sin almacenamiento */ }
+    }
+    // Nuevo mapa (decisión 126): el PNG se lee en el navegador y viaja en base64.
+    const mapForm = reactive({ name: '', session: '', resolution: 0.05, origin_x: 0, origin_y: 0,
+                               png: '', filename: '', size: null });
+    function pickMapFile(ev) {
+      const f = ev.target.files[0];
+      Object.assign(mapForm, { png: '', filename: '', size: null });
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        mapForm.png = rd.result; mapForm.filename = f.name;
+        const img = new Image();
+        img.onload = () => { mapForm.size = [img.naturalWidth, img.naturalHeight]; };
+        img.src = rd.result;
+      };
+      rd.readAsDataURL(f);
+    }
+    // Nuevo site (decisión 128).
+    const siteForm = reactive({ name: '', description: '' });
+    async function createSite() {
+      const body = { name: siteForm.name.trim(), description: siteForm.description.trim() };
+      const out = await postCreate('/api/create/session', body, `creando el site «${body.name}»…`);
+      if (out) {
+        createState.result = out;
+        Object.assign(siteForm, { name: '', description: '' });
+        addEvent('catálogo', `creado el site «${out.name}» (${out.guid})`);
+      }
+      await loadCreate();
+      if (out) mapForm.session = out.guid;            // el mapa que se suba a continuación, en este site
+    }
+    const canUploadMap = computed(() => !createState.busy && !!mapForm.name.trim() && !!mapForm.png
+      && mapForm.resolution > 0 && !!mapForm.session);
+    async function uploadMap() {
+      const body = { name: mapForm.name.trim(), png: mapForm.png, resolution: mapForm.resolution,
+                     origin_x: mapForm.origin_x || 0, origin_y: mapForm.origin_y || 0, session: mapForm.session,
+                     filename: mapForm.filename };
+      const out = await postCreate('/api/create/map', body, `subiendo «${body.name}» al catálogo…`);
+      if (out) {
+        createState.result = out;
+        mapForm.name = '';
+        addEvent('catálogo', `subido el mapa «${out.name}» (${out.guid})`);
+      }
+      loadCreate();
+    }
+    const zoneHelp = computed(() => (createState.zone_types.find(z => z.type_id === createState.zone.type_id) || {}).help || '');
+    // «Creado desde aquí»: un filtro por tipo, con los que haya y cuántos.
+    const CREATED_PLURAL = { session: 'Sites', map: 'Mapas', mission: 'Missions', position: 'Positions', zone: 'Zonas' };
+    const createdKinds = computed(() => Object.keys(CREATED_PLURAL)
+      .map(kind => ({ kind, label: CREATED_PLURAL[kind], n: createState.created.filter(d => d.kind === kind).length }))
+      .filter(k => k.n));
+    const createdShown = computed(() => createState.created.filter(d => !createState.filter || d.kind === createState.filter));
     const canCreate = kind => !!createState.robot && !createState.busy
       && !!createState[kind].name.trim() && !!createState[kind].parent;
     async function postCreate(url, body, busy) {
@@ -1817,9 +2130,9 @@ createApp({
     }
     async function createRes(kind) {
       const f = createState[kind], robot = createState.robot;
-      const body = { name: f.name.trim(), parent: f.parent, ...(kind === 'position' ? { type_id: f.type_id } : {}) };
+      const body = { name: f.name.trim(), parent: f.parent, ...(kind !== 'mission' ? { type_id: f.type_id } : {}) };
       const out = await postCreate(`/api/create/${robot}/${kind}`, body, `creando en ${robot}…`);
-      if (out) { createState.result = { ...out, robot }; f.name = ''; addEvent(robot, `creada ${kind} «${out.name}» (${out.guid})`); }
+      if (out) { createState.result = { ...out, robot }; f.name = ''; addEvent(robot, `creada ${KIND_LABEL[kind]} «${out.name}» (${out.guid})`); }
       loadCreate();
     }
     // Borrar: primero el plan (en qué robots está y qué lo impide), luego confirmar.
@@ -1840,7 +2153,7 @@ createApp({
       const out = await postCreate(`/api/create/${d.robot}/capture`, { guid: d.guid }, `capturando «${d.name}» de ${d.robot}…`);
       if (out) {
         createState.result = { ...out, robot: d.robot, captured: true };
-        addEvent(d.robot, `capturada ${out.kind} «${out.name}» (${out.detail}) al catálogo`);
+        addEvent(d.robot, `capturada ${KIND_LABEL[out.kind]} «${out.name}» (${out.detail}) al catálogo`);
       }
       loadCreate();
     }
@@ -2197,11 +2510,11 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
-             canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL,
+             canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
-             createState, canCreate, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
+             changeSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap, siteForm, createSite, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,

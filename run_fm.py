@@ -63,7 +63,8 @@ def main(argv=None) -> int:
         log.error("robots desconocidos: %s (en fleet.yaml: %s)", unknown, sorted(cfg.robots))
         return 2
     try:
-        robots = {s: Robot(cfg.robots[s], make_driver(cfg.robots[s], cfg), cfg.auto_charge) for s in serials}
+        robots = {s: Robot(cfg.robots[s], make_driver(cfg.robots[s], cfg), cfg.auto_charge, site=cfg.site)
+                  for s in serials}
     except ConfigError as e:
         log.error("configuración inválida: %s", e)
         return 2

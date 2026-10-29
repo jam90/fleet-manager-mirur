@@ -23,6 +23,7 @@ class _FakeClient(MirClient):
         self.messages: dict[int, str] = {}       # mission_queue/<id>.message
         self.posted: list[dict] = []
         self.deleted: list[int] = []
+        self.site_reads = 0
 
     def _req(self, method, path, json=None):
         if method == "GET" and path == "status":
@@ -49,6 +50,11 @@ class _FakeClient(MirClient):
         if method == "DELETE" and path.startswith("mission_queue/"):
             self.deleted.append(int(path.split("/")[1]))
             return None
+        if method == "GET" and path == "maps/m":            # site del mapa activo (decisión 129)
+            self.site_reads += 1
+            return {"guid": "m", "session_id": "s-1"}
+        if method == "GET" and path == "sessions/s-1":
+            return {"guid": "s-1", "name": "planta"}
         if method == "PUT" and path == "status":
             self.status["state_id"] = json["state_id"]
             return self.status
@@ -201,3 +207,14 @@ def test_guid_de_la_flota_no_lo_tapa_una_copia_con_el_mismo_nombre():
     assert d.missions[flota] == flota                 # por GUID, siempre
     assert d.missions["coger"] == "181aad0a-copia"    # por nombre, el primero (con aviso)
     assert d.mission_names[flota] == "coger"
+
+
+def test_poll_dice_el_site_del_mapa_activo_y_lo_pregunta_una_vez():
+    d, c = _driver()
+    t = d.poll()
+    assert (t.site_id, t.site_name) == ("s-1", "planta")
+    d.poll()
+    assert c.site_reads == 1                        # cacheado por mapa
+    c.status["map_id"] = "otro"                     # mapa que el robot no sabe describir
+    t = d.poll()
+    assert t is not None and t.site_id is None      # no se sabe: no se compara

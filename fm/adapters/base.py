@@ -32,6 +32,10 @@ class Telemetry:
     battery: float                                   # %
     pose: tuple[float, float, float] | None = None   # x, y, theta (rad) en el mapa
     map_id: str | None = None
+    # Site (entorno de mapas; en MiR, la session) al que pertenece el mapa
+    # activo. None = el driver no lo sabe: no se compara con el de la flota.
+    site_id: str | None = None
+    site_name: str | None = None
     velocity: tuple[float, float] | None = None      # vx (m/s), omega (rad/s); robot diferencial: vy = 0
     driving: bool = False
     paused: bool = False

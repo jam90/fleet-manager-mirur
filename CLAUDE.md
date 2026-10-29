@@ -51,9 +51,12 @@
   caliente), v2 (crear, editar y borrar actions del catálogo) y v3 (altas
   y bajas de robots, con «Reiniciar el FM ahora») hechas.
   Pestaña **Crear** (`fm/adapters/mir/create.py`, decisiones 100–104):
-  mission vacía o position (en la pose del robot) con GUID estándar,
-  borrador en `catalog/`, Capturar y Borrar, probada por el usuario con
-  mir-1. En Sincronización, sobrantes y «Retirar de la flota» con el número
+  mission vacía, position (en la pose del robot) o zona del mapa
+  (decisión 124) con GUID estándar, borrador en `catalog/`, Capturar y
+  Borrar, probada por el usuario con mir-1; y subir un mapa (PNG) con su
+  site al catálogo (decisión 126). Site de la flota (`site:` en
+  `fleet.yaml`, selector en la cabecera, decisión 129): un robot cuyo mapa
+  activo es de otro site no recibe orders. En Sincronización, sobrantes y «Retirar de la flota» con el número
   reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Un solo FM
   por broker (decisión 107). Pestaña **Guía** (decisión 109): paso a paso
   de cada proceso de administración; **todo cambio en el flujo de otra

@@ -112,6 +112,7 @@ class Reloader:
         for s, r in self.robots.items():
             r.cfg = new.robots[s]
             r.charge.cfg = new.auto_charge
+            r.site = new.site
             if s in fresh:
                 r.driver.reconfigure(fresh[s])
                 r.reindex = True             # índices de las missions nuevas, en su hilo de poll

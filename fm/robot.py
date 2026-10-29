@@ -15,7 +15,7 @@ from fm.config import AutoChargeConfig, RobotConfig
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
-                              E_ROBOT_UNREACHABLE, State)
+                              E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, Error, State)
 from fm.vda5050.state_builder import to_vda_state
 
 log = logging.getLogger("fm.robot")
@@ -32,7 +32,7 @@ CONNECT_RETRY_S = 5.0
 class Robot:
     def __init__(self, cfg: RobotConfig, driver: RobotDriver,
                  auto_charge: AutoChargeConfig | None = None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, site: str | None = None):
         self.cfg = cfg
         self.clock = clock
         self.serial = cfg.serial
@@ -50,6 +50,9 @@ class Robot:
         self.reindex = False
         self.orders = OrderTracker(self.serial)
         self.charge = ChargeGuard(self.serial, auto_charge or AutoChargeConfig())
+        # Site de la flota (`FleetConfig.site`, decisión 129); lo cambia en
+        # caliente `fm/reload.py`.
+        self.site = site
 
     @property
     def manufacturer(self) -> str:
@@ -109,6 +112,8 @@ class Robot:
         El gancho solo se llama con telemetría fresca: sin ella no hay nada
         nuevo que decir del robot."""
         s = to_vda_state(header, self.last_telemetry, self.overlay(), error=self.last_error)
+        if self.outside_site:
+            s.errors.append(Error(E_ROBOT_OUTSIDE_SITE, "WARNING", self.outside_reason))
         extra = getattr(self.driver, "extra_state", None)
         if extra is not None and self.last_telemetry is not None:
             try:
@@ -131,20 +136,39 @@ class Robot:
         return t is not None and t.foreign_busy
 
     @property
-    def available(self) -> bool:
+    def outside_site(self) -> bool:
+        """Su mapa activo es de otro site que el de la flota (decisión 129).
+        Si la flota no tiene site o el driver no sabe el del robot, no."""
         t = self.last_telemetry
-        return t is not None and t.available
+        return bool(self.site and t is not None and t.site_id and t.site_id != self.site)
+
+    @property
+    def outside_reason(self) -> str:
+        t = self.last_telemetry
+        where = f"«{t.site_name}»" if t and t.site_name else (t.site_id if t else "")
+        return (f"su mapa activo es del site {where}, no del de la flota: no recibe orders hasta que "
+                "se cambie de mapa en su web")
+
+    @property
+    def available(self) -> bool:
+        """Puede recibir orders: el driver lo da por disponible y está en el
+        site de la flota. La auto-carga no mira el site (`charge.py`)."""
+        t = self.last_telemetry
+        return t is not None and t.available and not self.outside_site
 
     def snapshot(self) -> RobotSnapshot:
         t = self.last_telemetry
         charging = self.charge.charging or bool(t and t.charging)
         return RobotSnapshot(self.serial, t.battery if t else 0.0, self.busy,
-                             self.available, charging, t.pose[:2] if t and t.pose else None)
+                             self.available, charging, t.pose[:2] if t and t.pose else None,
+                             reason=self.outside_reason if self.outside_site else "")
 
     def translate_order(self, order: Order) -> Job:
         """Valida reglas de ciclo de vida + traduce a `Job` del driver. Sin red.
         Lanza IgnoreOrder / OrderRejected."""
         self.orders.check_new(order, self.last_telemetry)
+        if self.outside_site:
+            raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, self.outside_reason)
         if self.foreign_busy:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE,
                                 "el robot ejecuta un trabajo ajeno al FM (lanzado desde la web)")

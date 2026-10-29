@@ -1,17 +1,19 @@
 """Sincronización del catálogo (`catalog/`) con un MiR (docs/plan-admin.md §3).
 
-El catálogo guarda sessions, mapas, positions, sonidos, grupos y missions
-con **GUIDs comunes en toda la flota** (§4). Este módulo lleva a un robot
+El catálogo guarda sessions, mapas, positions, sonidos, zonas, grupos y
+missions con **GUIDs comunes en toda la flota** (§4). Este módulo lleva a un robot
 una **selección** de ese catálogo:
 
 1. `Catalog.closure(seleccion)` añade lo que la selección necesita (una
    mission arrastra su grupo, su session, sus positions, sus sub-missions y
-   sus sonidos; una position, su mapa) y lo ordena por dependencias.
+   sus sonidos; una position o una zona, su mapa) y lo ordena por
+   dependencias.
 2. `fetch_view(client, ...)` lee del robot solo lo que hace falta comparar.
 3. `plan(...)` — **puro, sin red** — compara y decide una operación por
    recurso: crear, corregir, igual (no se toca), distinta (no se toca) o,
    solo para las missions distintas que se piden en `replace`, sustituir
-   (borrar y volver a crear con el mismo GUID, decisión 117).
+   (borrar y volver a crear con el mismo GUID, decisión 117); una zona
+   distinta que se pide en `replace` se corrige en su sitio (decisión 124).
 4. `apply(...)` ejecuta las operaciones por REST e informa de cada una.
 
 Además, `MirSync.check()` dice qué recursos del catálogo tiene el robot
@@ -27,6 +29,8 @@ ya tiene salen "igual" y no generan escrituras.
 Qué lleva GUID nuestro y qué no (decisiones 77 y 78 de docs/avance.md): la
 entrada de un marcador o cargador, el docking offset y las actions de una
 mission los crea el MiR con sus propios GUIDs; se localizan por su padre.
+Lo mismo las actions de una zona y sus parámetros: en el catálogo van sin
+GUID.
 """
 from __future__ import annotations
 
@@ -51,6 +55,9 @@ GUIDISH = re.compile(r"^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]
 POSE = ("pos_x", "pos_y", "orientation")
 POSE_TOL = 1e-3
 MAP_FIELDS = ("name", "session_id", "resolution", "origin_x", "origin_y", "origin_theta")
+# Lo que se compara y se escribe de una zona (decisión 124). `type_id` no se
+# puede cambiar con PUT (el MiR lo ignora, probado en mir-2 el 2026-10-29).
+ZONE_FIELDS = ("name", "type_id", "shape_type", "stroke_width", "direction", "polygon", "actions")
 
 # tipo del GUID → carpeta del catálogo. El orden es el de despliegue.
 FOLDERS = {
@@ -58,12 +65,13 @@ FOLDERS = {
     "map": "maps",
     "position": "positions",
     "sound": "sounds",
+    "zone": "zones",            # después de los sonidos: una zona de sonido usa uno
     "missiongrp": "mission_groups",
     "mission": "missions",
 }
 KIND_ORDER = {k: i for i, k in enumerate(FOLDERS)}
 KIND_LABEL = {"session": "session", "map": "mapa", "position": "position",
-              "sound": "sonido", "missiongrp": "grupo", "mission": "mission"}
+              "sound": "sonido", "zone": "zona", "missiongrp": "grupo", "mission": "mission"}
 
 
 # --------------------------------------------------------------------- GUIDs
@@ -132,6 +140,9 @@ class Catalog:
             return {d["session_id"]}
         if k == "position":
             return {d["map_id"]} | ({d["parent_id"]} if d.get("parent_id") else set())
+        if k == "zone":
+            return {d["map_id"]} | {p["value"] for a in d["actions"] for p in a["parameters"]
+                                    if is_std(p["value"])}
         if k == "mission":
             refs = {p["value"] for a in d["actions"] for p in a["parameters"] if is_std(p["value"])}
             return {d["group_id"], d["session_id"]} | refs
@@ -184,6 +195,8 @@ class Catalog:
             extra = ""
             if k == "position":
                 extra = f"tipo {d['type_id']}"
+            elif k == "zone":
+                extra = zone_label(d["type_id"])
             elif k == "mission":
                 extra = f"{len(d['actions'])} actions"
             o = d.get("_origen", {})
@@ -202,6 +215,7 @@ class RobotView:
     maps: dict[str, dict] = field(default_factory=dict)
     positions: dict[str, dict] = field(default_factory=dict)   # todas las de los mapas del catálogo
     sounds: dict[str, dict] = field(default_factory=dict)
+    zones: dict[str, dict] = field(default_factory=dict)       # todas las de los mapas del catálogo, normalizadas
     groups: dict[str, dict] = field(default_factory=dict)
     missions: dict[str, dict] = field(default_factory=dict)    # {name, group_id, actions normalizadas}
 
@@ -225,6 +239,36 @@ def normalized_actions(client: MirClient, mission_guid: str) -> list[dict]:
             for x in acts]
 
 
+def zone_label(type_id: int) -> str:
+    from fm.adapters.mir.create import ZONE_TYPES
+    return ZONE_TYPES[type_id]["label"] if type_id in ZONE_TYPES else f"tipo {type_id}"
+
+
+def normalized_zone(z: dict) -> dict:
+    """Zona del robot con el formato del catálogo: solo `ZONE_FIELDS` y
+    `map_id`, y las actions sin GUIDs (el MiR pone uno a cada action y a cada
+    parámetro, y en `type` el nombre que enseña su web)."""
+    return {"name": z["name"], "type_id": z["type_id"], "shape_type": z.get("shape_type", "shape"),
+            "stroke_width": z.get("stroke_width", 0.0), "direction": z.get("direction", 0.0),
+            "polygon": [{"x": q["x"], "y": q["y"]} for q in z["polygon"]],
+            "actions": [{"type_id": a["type_id"],
+                         "parameters": [{"name": p["name"], "value": p["value"]} for p in a["parameters"]]}
+                        for a in z.get("actions", [])],
+            "map_id": z["map_id"]}
+
+
+def zone_diff(have: dict, d: dict) -> list[str]:
+    """Campos en que difieren dos zonas normalizadas (vértices con `POSE_TOL`)."""
+    out = [f for f in ("name", "type_id", "shape_type", "actions", "map_id") if have.get(f) != d[f]]
+    if any(abs(have[f] - d[f]) > POSE_TOL for f in ("stroke_width", "direction")):
+        out.append("forma")
+    a, b = have["polygon"], d["polygon"]
+    if len(a) != len(b) or any(abs(p["x"] - q["x"]) > POSE_TOL or abs(p["y"] - q["y"]) > POSE_TOL
+                               for p, q in zip(a, b)):
+        out.append("polígono")
+    return out
+
+
 def fetch_view(client: MirClient, cat: Catalog, guids: list[str]) -> RobotView:
     """Lee del robot lo necesario para planificar `guids` (solo GET)."""
     v = RobotView()
@@ -238,6 +282,8 @@ def fetch_view(client: MirClient, cat: Catalog, guids: list[str]) -> RobotView:
         v.maps[g] = client._req("GET", f"maps/{g}")
         for p in client._req("GET", f"maps/{g}/positions"):
             v.positions[p["guid"]] = client._req("GET", f"positions/{p['guid']}")
+        for z in client._req("GET", f"maps/{g}/zones"):
+            v.zones[z["guid"]] = normalized_zone(client._req("GET", f"zones/{z['guid']}"))
     robot_missions = {m["guid"] for m in client._req("GET", "missions")}
     for g in set(want["mission"]) & robot_missions:
         m = client._req("GET", f"missions/{g}")
@@ -251,7 +297,7 @@ def presence(client: MirClient, cat: Catalog) -> dict[str, bool]:
     lectura por tipo de recurso. La entrada de un marcador no tiene nuestro
     GUID en el robot: se da por presente si lo está su marcador."""
     have: set[str] = set()
-    for path in ("sessions", "maps", "positions", "sounds", "mission_groups", "missions"):
+    for path in ("sessions", "maps", "positions", "sounds", "zones", "mission_groups", "missions"):
         have |= {x["guid"] for x in client._req("GET", path)}
     return {g: (d["parent_id"] in have if d.get("creada_por_mir") else g in have)
             for g, d in cat.items.items()}
@@ -286,8 +332,8 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
     """Una operación por recurso de `guids` (ya en orden). Puro: no hay red.
 
     `map_png_b64(guid)` da la imagen del catálogo en base64 para comparar el
-    `base_map`; por defecto la lee del catálogo. `replace`: missions que, si
-    salen distintas, se sustituyen (decisión 117)."""
+    `base_map`; por defecto la lee del catálogo. `replace`: missions (y
+    zonas) que, si salen distintas, se sustituyen (decisiones 117 y 124)."""
     replace = set(replace)
     png = map_png_b64 or (lambda g: base64.b64encode(cat.map_png(g)).decode())
     ops: list[Op] = []
@@ -330,6 +376,18 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
             if d.get("docking_offsets") and d.get("_origen", {}).get("robot") not in (None, serial):
                 op.warning = (f"docking offset calibrado con {d['_origen']['robot']}: "
                               f"comprobar el atraque en {serial}")
+        elif k == "zone":
+            have = view.zones.get(g)
+            if have is None:
+                op.detail = zone_label(d["type_id"])
+            else:
+                diff = zone_diff(have, d)
+                op.verb = "distinta" if diff else "igual"
+                op.detail = ("difiere: " + ", ".join(diff)) if diff else ""
+                if diff and g in replace:
+                    op.verb = "sustituir"
+                    op.detail = (f"borrar y volver a crear ({op.detail})" if "type_id" in diff
+                                 else f"corregir en su sitio ({op.detail})")
         elif k == "mission":
             have = view.missions.get(g)
             if have is None:
@@ -351,7 +409,8 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                     if users:
                         op.warning = f"la cargan {', '.join(users)}: unos segundos sin ella"
         if op.verb == "distinta":
-            op.detail += " — no se toca (márcala para sustituirla)" if k == "mission" else " — no se toca"
+            op.detail += (" — no se toca (márcala para sustituirla)" if k in ("mission", "zone")
+                          else " — no se toca")
         ops.append(op)
     return ops
 
@@ -416,6 +475,18 @@ def _apply_one(client: MirClient, cat: Catalog, op: Op) -> None:
         client._req("POST", "sounds", json={
             "guid": g, "name": d["name"], "note": d.get("note", ""), "volume": d.get("volume", 100),
             "sound": base64.b64encode(cat.sound_bytes(g)).decode()})
+    elif op.kind == "zone":
+        body = {k: d[k] for k in ZONE_FIELDS}
+        same_type = op.verb == "sustituir" and client._req("GET", f"zones/{g}")["type_id"] == d["type_id"]
+        if same_type:
+            # Corregir en su sitio: el PUT cambia todo menos el tipo.
+            client._req("PUT", f"zones/{g}", json={k: v for k, v in body.items() if k != "type_id"})
+        else:
+            if op.verb == "sustituir":      # otro tipo: el PUT no lo cambia
+                client._req("DELETE", f"zones/{g}")
+            client._req("POST", "zones", json={"guid": g, "map_id": d["map_id"], **body})
+        if zone_diff(normalized_zone(client._req("GET", f"zones/{g}")), {**body, "map_id": d["map_id"]}):
+            raise RuntimeError("escrita, pero al releerla no coincide con el catálogo")
     elif op.kind == "missiongrp":
         client._req("POST", "mission_groups", json={"guid": g, "name": d["name"], "priority": 0,
                                                     "feature": "default", "icon": ""})
@@ -513,11 +584,11 @@ class MirSync:
     # ---- pestaña Crear (fm/adapters/mir/create.py)
     def web_url(self, guid: str, map_guid: str | None = None) -> str:
         """Dónde seguir en la web del MiR: el editor de la mission o, para una
-        position, el del mapa en el que está. Rutas comprobadas por el usuario
+        position o una zona, el del mapa en el que está. Rutas comprobadas por el usuario
         en mir-1 el 2026-10-14 (`/missions/<guid>`; el prefijo `/setup` del
         router de su web da 404)."""
         host = self.client.host
-        if is_std(guid) and self.catalog_kind(guid) == "position":
+        if is_std(guid) and self.catalog_kind(guid) in ("position", "zone"):
             if map_guid is None:
                 cat = self.catalog()
                 map_guid = (cat.items.get(guid) or cat.drafts.get(guid) or {}).get("map_id", "")
@@ -540,6 +611,20 @@ class MirSync:
     def create_position(self, name: str, map_guid: str, others=(), type_id: int = 0) -> dict:
         from fm.adapters.mir.create import create_position
         return create_position(self, name, map_guid, others, type_id)
+
+    def create_session(self, name: str, description: str = "", others=()) -> dict:
+        from fm.adapters.mir.create import create_session
+        return create_session(self, name, description, others)
+
+    def create_map(self, name: str, png: bytes, resolution: float, origin_x: float, origin_y: float,
+                   session_guid: str | None = None, new_session: str = "", others=(), filename: str = "") -> dict:
+        from fm.adapters.mir.create import create_map
+        return create_map(self, name, png, resolution, origin_x, origin_y, session_guid, new_session,
+                          others, filename)
+
+    def create_zone(self, name: str, map_guid: str, others=(), type_id: int = 206) -> dict:
+        from fm.adapters.mir.create import create_zone
+        return create_zone(self, name, map_guid, others, type_id)
 
     def capture(self, guid: str) -> dict:
         from fm.adapters.mir.create import capture
@@ -568,10 +653,12 @@ class MirSync:
                                 "robot": d.get("_origen", {}).get("robot"),
                                 "date": d.get("_origen", {}).get("capturado")})
         created.sort(key=lambda x: (not x["draft"], x["guid"]))
-        from fm.adapters.mir.create import POSITION_TYPES
+        from fm.adapters.mir.create import POSITION_TYPES, ZONE_TYPES
         types = [{"type_id": k, "label": v["label"]} for k, v in POSITION_TYPES.items()]
+        zone_types = [{"type_id": k, **v} for k, v in ZONE_TYPES.items()]
         return {"groups": pick("missiongrp"), "maps": pick("map"), "missions": pick("mission"),
-                "position_types": types, "created": created}
+                "sessions": pick("session"),
+                "position_types": types, "zone_types": zone_types, "created": created}
 
     def delete_blockers(self, guid: str, definitions: dict, wanted) -> list[str]:
         from fm.adapters.mir.create import delete_blockers

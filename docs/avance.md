@@ -2125,6 +2125,169 @@ herramienta del paso 2.
      (7 s en ejecución). En `config/fleet.yaml` no se pone ninguno: el
      valor lo decide el usuario.
 
+## 2026-10-29 — Zonas del mapa desde la pestaña Crear (punto #23)
+
+Igual que una position: se crea aquí con GUID de la flota, se termina en el
+editor del mapa del MiR y se captura al catálogo, desde donde Sincronización
+la lleva a los demás robots. Antes de escribir código se probó la API en
+mir-2 sobre el mapa `suberri`, que en ese momento no era el activo; todo lo
+creado se borró al momento. **No debió hacerse ahí:** `suberri` es el mapa
+de trabajo de otros proyectos y no se toca nunca (CLAUDE.md). Las pruebas
+van en el mapa de la flota o en uno de pruebas.
+
+- `POST /zones` conserva el GUID elegido. Pide `name`, `type_id`, `map_id`
+  y `polygon` (vértices en metros del mapa); `shape_type` (`shape` o
+  `stroke`, un trazo con `stroke_width`), `direction` y `actions` tienen
+  valor por defecto. `GET /maps/<guid>/zones` las lista por mapa.
+- Tipos (`type_id`, sacados del JavaScript de la web del MiR): 203
+  direccional, 204 preferida, 205 no preferida, 206 prohibida, 208 de
+  acceso; con acciones, 101 planificador, 102 sonido y luz, 103 límite de
+  robots, 104 velocidad, 105 módulo E/S y 106 evacuación. El 207 da "Zone
+  type not found".
+- Las acciones van con el formato de la web: `{"type_id": 1, "parameters":
+  [{"name": "desired_speed", "value": "0.3"}]}` (valores en texto). Con el
+  `action_type`/`id` de `GET /area_events/action_definitions` el MiR da
+  500. Les pone un GUID a cada acción y a cada parámetro.
+- `PUT /zones/<guid>` cambia polígono, nombre y acciones, pero **ignora
+  `type_id`**: como en las positions, el tipo se elige al crear.
+- En el mapa de la flota (`suberri_mirur`) no había ninguna zona: las 5 de
+  los robots (Baños, Salida Suberri, Vallas…) son del mapa `suberri`.
+
+124. **Zonas en el catálogo (`catalog/zones/`), con GUID `zone000000` por
+     mapa** (la fila ya estaba en `docs/plan-admin.md` §4). Se guardan
+     tipo, forma, polígono y acciones sin GUIDs (`normalized_zone`). Van
+     después de los sonidos al desplegar, porque una zona de sonido usa uno,
+     y sus dependencias son su mapa y los sonidos del catálogo que use.
+     **Crear** (`create_zone`) pone un cuadrado de 1 m con su centro 2 m
+     delante del robot, en su mapa activo. Delante y no debajo: una zona
+     prohibida bajo el robot le impediría planificar. Tipos ofrecidos
+     (`ZONE_TYPES`): 206, 205, 204, 203, 208, 104, 102 y 101; fuera, 103 y
+     106 (son de MiR Fleet) y 105 (apunta a un módulo E/S propio de cada
+     robot). **Capturar** rechaza una acción que use un GUID que no es de
+     fábrica ni del catálogo (p. ej. un sonido subido solo a ese robot),
+     igual que en las missions. **Sincronización:** una zona distinta no se
+     toca salvo que se marque «Sustituir», como una mission; entonces se
+     corrige en su sitio con PUT o, si el tipo es otro, se borra y se crea
+     con el mismo GUID. Con el robot ocupado no se sustituye (decisión
+     103). «Borrar» y «Retirar de la flota» valen también para zonas.
+     Guía: «Añadir una zona» y «Cambiar o quitar una zona». Tests nuevos en
+     `tests/adapters/test_mir_create.py` y `test_mir_sync.py`. Prueba con
+     los robots, sobre una copia del catálogo en el scratchpad: zona no
+     preferida creada en mir-1, editada por PUT, capturada, desplegada en
+     mir-2 con el mismo polígono, renombrada en mir-1, «distinta» en mir-2
+     y corregida con «Sustituir»; borrada de los dos a los 3 s. La
+     interfaz no se ha probado aún con el FM real (hay que reiniciarlo).
+
+Después, el usuario la probó desde la interfaz ("la creación funciona bien")
+y pidió dos cosas:
+
+125. **Qué es cada tipo de zona, al elegirlo.** Debajo del selector de tipo
+     sale un resumen de la ayuda de la web del MiR (sacada de su
+     JavaScript, en castellano), en `ZONE_TYPES[tipo]["help"]`. **En
+     «Creado desde aquí», un selector «Mostrar»** (todo, missions,
+     positions, zonas), con cuántos hay de cada tipo; solo salen los tipos
+     que tienen algo.
+
+## 2026-10-29 — Subir un mapa al catálogo desde la pestaña Crear
+
+El usuario: el FM tiene que poder subir un mapa, porque aparece una zona
+nueva en la planta o porque alguien despliega el FM por primera vez; "el
+principio es el mapa + site". Acordado en tres partes: (1) subir un PNG del
+PC, (2) capturar un mapa que ya está en un robot, con sus positions y zonas,
+y (3) copiar un mapa del catálogo con sus positions y zonas (para
+`mapa-pruebas`, copia de `suberri_mirur`). Ante una zona nueva de la planta
+se crea **otro mapa** en el mismo site, no se sustituye la imagen del que
+está en uso; las transiciones entre mapas, el día que haga falta.
+
+126. **Parte 1: «Nuevo mapa» en Crear** (`create.create_map`,
+     `POST /api/create/map`). Nombre, site del catálogo o uno nuevo, PNG,
+     resolución (m/píxel, 0,05 por defecto) y origen (esquina inferior
+     izquierda, en metros). **Solo escribe en el catálogo**, completo y sin
+     borrador (`maps/<guid>.json` + `.png` y, si el site es nuevo,
+     `sessions/<guid>.json`): no depende de ningún robot, y llega a ellos
+     desplegándolo en Sincronización, que ya sabía crear sessions y mapas.
+     GUIDs numerados en la instalación (§4 de `plan-admin.md`), mirando
+     también los de los robots que respondan. **El PNG tiene que venir en
+     gris de 8 bits** (se lee la cabecera IHDR, sin dependencias): el MiR
+     guarda `base_map` tal cual, sin convertir (decisión 76), y así lo
+     exporta su web; convertir uno en color pediría Pillow y decidir
+     umbrales, y no hace falta de momento. El mapa sale en «Creado desde
+     aquí» (sin «Capturar») y «Borrar» se lleva también su PNG; no se deja
+     si tiene positions o zonas, o si es el mapa activo de algún robot.
+     Guía: «Subir un mapa nuevo». Tests nuevos en `test_mir_create.py`.
+     Probado con la web sobre un robot simulado y un catálogo temporal:
+     subir el PNG de `suberri_mirur` da 1053 × 631 px = 52,65 × 31,55 m.
+
+## 2026-10-29 — Crear: una sección cada vez
+
+El usuario: con cuatro formularios en paralelo (mission, position, zona,
+mapa) la pestaña ya era incómoda en una pantalla pequeña, y no escala al
+añadir otro tipo.
+
+127. **«¿Qué quieres crear?» arriba**, con botones Mapa · Position · Zona ·
+     Mission (en ese orden: primero el mapa), y debajo un solo formulario.
+     Cada tipo trae su frase y sus pasos (`CREATE_KINDS` en `index.html`:
+     un mapa no pasa por la web del MiR ni por Capturar). El panel Robot
+     solo sale en los tipos que lo necesitan, y «Hechas en la web del MiR»
+     (adoptar) solo con Mission. La elección se recuerda en el navegador
+     (`localStorage`, con `try`: si no se puede, se empieza por Mapa). Un
+     tipo nuevo es una entrada más en `CREATE_KINDS` y un `<template v-if>`.
+     Guía: cada proceso dice qué botón elegir. Revisado con un Chromium sin
+     ventana a 1300 y 390 px de ancho: sin errores en consola ni scroll
+     horizontal.
+
+## 2026-10-29 — Crear un site, y «Acabo de llegar» en la Guía
+
+El usuario: el site (session del MiR) es el entorno donde se crean los
+mapas, y para quien empieza con el FM es lo primero que hay que crear. Y
+la Guía necesita un "acabo de llegar, ¿por dónde empiezo?".
+
+128. **«Site» es el primer botón de Crear** (`create.create_session`,
+     `POST /api/create/session`): nombre y descripción, solo en el
+     catálogo, como el mapa. «Nuevo mapa» ya no crea sites: elige uno del
+     catálogo y, si no hay ninguno, lo dice con un enlace a «Site» (la API
+     de subir un mapa sigue admitiendo `new_session`). Con el catálogo sin
+     sites, Crear empieza en «Site». Un site sale en «Creado desde aquí» y
+     se puede borrar mientras no tenga mapas ni missions. En la interfaz se
+     dice **site**, como en la web del MiR (en Sincronización, «Sites»);
+     en código y en el catálogo sigue siendo `session`. **Guía:**
+     «Acabo de llegar: ¿por dónde empiezo?» abre la lista: robots
+     (Configurador, hace falta al menos uno, porque el catálogo se lee a
+     través de ellos), site, mapa, Sincronización, activar el mapa en la
+     web del MiR, positions y zonas, missions, actions y probar. «Las
+     piezas» define site, mapa y zona. **Hueco que queda a la vista:** una
+     mission nueva necesita un grupo de missions del catálogo, y eso no se
+     crea desde el FM.
+
+## 2026-10-29 — Site de la flota (fase 1: operación)
+
+El usuario: el FM tiene que saber en qué site está, porque cambiar de site
+cambia de mapa y las missions dependen de positions de un mapa concreto.
+Decidido: el site es **de la flota** (en `fleet.yaml`, elegido en la
+cabecera), y si un robot está en un mapa de otro site **el FM avisa**; el
+cambio de mapa se sigue haciendo en la web del MiR.
+
+129. **`site:` en la raíz de `fleet.yaml`** (GUID de un site del catálogo;
+     sin él, no se comprueba nada, como antes). El driver dice en qué site
+     está el robot: `Telemetry.site_id`/`site_name` (genéricos; en MiR, la
+     session del mapa activo, con `GET /maps/<id>` y `GET /sessions/<id>`
+     una vez por mapa). Un robot con otro site (`Robot.outside_site`):
+     no está disponible para el asignador (con el motivo, no el genérico),
+     rechaza las `<serial>/order` con `MOBILE_ROBOT_NOT_AVAILABLE` y lleva
+     en su `state` un `ROBOT_OUTSIDE_SITE` (propio, WARNING), que la web
+     resalta en su tarjeta. Si el driver no sabe el site (`None`), no se
+     compara. **La auto-carga no mira el site:** un robot con poca batería
+     va a cargar aunque esté fuera. Se cambia en caliente con el selector
+     «Site» de la cabecera (confirmación, `POST /api/config` con `site`;
+     se escribe al final de `fleet.yaml` con el nombre de comentario);
+     «— sin elegir —» lo quita. `/api/fleet` da el site y los del catálogo.
+     Tests en `test_robot_state.py`, `test_config_edit.py`, `test_web.py`
+     y `test_mir_driver.py`. Leído de los robots (solo GET): **los dos
+     están ahora en el mapa `suberri`** (sites «Suberri» y «suberri», con
+     GUID propio de cada robot), así que con `suberri_mirur` como site de
+     la flota ninguno recibiría orders hasta cambiar su mapa. Guía: paso
+     «Elegir el site de la flota» en «Acabo de llegar».
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2134,11 +2297,27 @@ cerrado se quita (su historia está en la entrada de su fecha). Cerrados el
 (mapa activo: ya es `suberri_mirur`), #21 (un solo FM por broker, decisión 107)
 y #16 (configurador completo: v3, decisión 108).
 Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
-(rechazos acotados, decisión 121) y #6 (`--validate`, decisión 122).
+(rechazos acotados, decisión 121), #6 (`--validate`, decisión 122) y #23
+(zonas del mapa desde la pestaña Crear, decisión 124).
 
 **En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
 
 - *(nada en curso: #21 y #16 cerrados el 2026-10-14)*
+
+**Site de la flota, fase 2** (decisión 129)
+
+- Crear, Sincronización y Configurador: enseñar solo los mapas, positions,
+    zonas y missions del site de la flota.
+
+**Mapas desde el FM** (acordado el 2026-10-29, decisión 126)
+
+- **Capturar un mapa que ya está en un robot** (primer despliegue del FM, o
+    un mapa grabado con el robot), con su site, sus positions y sus zonas,
+    al catálogo con GUIDs de la flota. Hoy solo con
+    `scripts/catalog_capture.py positions`.
+- **Copiar un mapa del catálogo** con imagen, positions y zonas (GUIDs
+    nuevos de ese mapa). Primer uso: `mapa-pruebas`, copia de
+    `suberri_mirur`.
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 
@@ -2241,9 +2420,6 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
      ejecuciones, así que su primer umbral se pone a mano y se ajusta
      cuando haya historia. Las de carga (20–30 min, muy variables) quedan
      fuera del aviso.
-- **#23** **Áreas del mapa desde el FM** (idea del usuario, 2026-10-23, sin
-   diseñar): crear y quitar zonas del mapa del MiR desde la web del FM.
-   Cuando se haga, su paso a paso va a la pestaña Guía (decisión 109).
 
 **Probar con robot (hecho, solo con tests o con simulación)**
 

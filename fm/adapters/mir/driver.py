@@ -60,6 +60,8 @@ class MirDriver:
         # olvidan al terminar): para marcar "lanzada por el FM" en el historial
         # de la pestaña Robot. Crece una por order: no hace falta podarla.
         self._launched_ids: set[int] = set()
+        # mapa → (site, nombre del site): `_site_of`.
+        self._map_sites: dict[str, tuple[str | None, str | None]] = {}
         # `message` de mission_queue/<id> al terminar: el MiR pone `Aborted`
         # tanto si se para a mano como si falla, y solo el message lo distingue.
         self._job_results: dict[str, str] = {}
@@ -132,7 +134,25 @@ class MirDriver:
             self.last_error = f"{type(e).__name__}: {str(e)[:160]}"
             self.log.warning("GET /status falló: %s", self.last_error)
             return None
-        return to_telemetry(self.last_status, self._own_queue_ids)
+        t = to_telemetry(self.last_status, self._own_queue_ids)
+        t.site_id, t.site_name = self._site_of(t.map_id)
+        return t
+
+    def _site_of(self, map_id: str | None) -> tuple[str | None, str | None]:
+        """Site (session) del mapa activo, con su nombre (decisión 129). Se
+        pregunta una vez por mapa: el mapa activo casi nunca cambia. Si falla,
+        no se guarda nada y se vuelve a preguntar en el siguiente poll."""
+        if not map_id:
+            return None, None
+        if map_id not in self._map_sites:
+            try:
+                session = self.client.maps_map_id_get(map_id).get("session_id")
+                name = self.client.sessions_session_id_get(session).get("name") if session else None
+            except Exception as e:
+                self.log.warning("no se pudo saber el site del mapa %s: %s", map_id, e)
+                return None, None
+            self._map_sites[map_id] = (session, name)
+        return self._map_sites[map_id]
 
     # ----------------------------------------------------------------- jobs
     def translate(self, action: Action) -> Job:

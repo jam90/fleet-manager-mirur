@@ -51,3 +51,37 @@ def test_extra_state_que_lanza_no_rompe_el_state():
     s = _robot(_Driver(extra), Telemetry(battery=50)).state(_header())
     assert s.powerSupply.stateOfCharge == 50
     assert_valid("state", s.to_dict())
+
+
+def test_fuera_del_site_de_la_flota_no_recibe_orders_y_avisa():
+    from fm.assigner import assign
+    from fm.config import FleetConfig
+    r = _robot(_Driver(), Telemetry(battery=80, site_id="s-otro", site_name="suberri"))
+    assert r.available and not r.outside_site                     # flota sin site: no se compara
+    r.site = "s-flota"
+    assert r.outside_site and not r.available
+    s = r.state(_header())
+    warn = [e for e in s.errors if e.errorType == "ROBOT_OUTSIDE_SITE"]
+    assert len(warn) == 1 and warn[0].errorLevel == "WARNING" and "«suberri»" in warn[0].errorDescription
+    assert_valid("state", s.to_dict())
+    cfg = FleetConfig(robots={"r1": RobotConfig("r1", action_types=frozenset({"coger"}))})
+    res = assign("coger", {"r1": r.snapshot()}, cfg)
+    assert res.serial is None and "«suberri»" in res.reason
+    r.last_telemetry.site_id = "s-flota"
+    assert r.available and not r.outside_site
+    r.last_telemetry.site_id = None                               # el driver no lo sabe
+    assert r.available
+
+
+def test_order_dirigida_a_un_robot_fuera_del_site_se_rechaza():
+    import pytest
+    from fm.vda5050.order import OrderRejected, parse_order
+    r = _robot(_Driver(), Telemetry(battery=80, site_id="s-otro"))
+    r.site = "s-flota"
+    order = parse_order({"headerId": 1, "timestamp": "2026-10-29T10:00:00.000Z", "version": "3.0.0",
+                         "manufacturer": "FAKE", "serialNumber": "r1", "orderId": "o1", "orderUpdateId": 0,
+                         "nodes": [{"nodeId": "n", "sequenceId": 0, "released": True, "actions": [
+                             {"actionType": "coger", "actionId": "a1", "blockingType": "HARD"}]}],
+                         "edges": []})
+    with pytest.raises(OrderRejected, match="no recibe orders"):
+        r.translate_order(order)

@@ -1,5 +1,5 @@
 """Pestaña Crear (docs/plan-admin.md §3): dar de alta en UN MiR una mission
-vacía o una position con GUID estándar (§4), para seguir en su web.
+vacía, una position o una zona con GUID estándar (§4), para seguir en su web.
 
 El ciclo de un recurso nuevo:
 
@@ -24,6 +24,18 @@ y la copia se borra en la web del MiR.
   119). Un VL-marker nace con un docking offset provisional y su entrada
   la crea el MiR; en la web se vuelve a detectar el marcador y se ajusta
   el offset, y al capturar se recogen los dos.
+- **Site** (decisión 128): la session del MiR, el entorno donde viven los
+  mapas; es lo primero que se crea en una flota nueva. Como el mapa, solo
+  se escribe en el catálogo y llega a los robots desde Sincronización.
+- **Mapa** (decisión 126): se sube un PNG desde el PC, con su resolución y
+  su origen, a un site del catálogo o a uno nuevo. Solo se escribe en el
+  catálogo (completo, sin borrador): llega a los robots desplegándolo en
+  Sincronización, como cualquier otro recurso.
+- **Zona** (decisión 124): un cuadrado de 1 m delante del robot, en su mapa
+  activo, con el tipo elegido (`ZONE_TYPES`; el MiR tampoco deja cambiarlo
+  después). En el editor del mapa se le da la forma y, si es de velocidad o
+  de sonido y luz, sus acciones. Al capturar se recogen el polígono y las
+  acciones.
 
 **Número del GUID** (§4): el máximo de los GUIDs estándar del mismo tipo (y
 del mismo mapa, en las positions) que hay en el catálogo — borradores y
@@ -38,7 +50,10 @@ Solo GET y POST de alta: nada de esto mueve el robot.
 """
 from __future__ import annotations
 
+import base64
 import json
+import math
+import struct
 from datetime import date
 from pathlib import Path
 from typing import Iterable
@@ -46,7 +61,7 @@ from typing import Iterable
 from fm.adapters.mir.client import MirApiError
 from fm.adapters.mir.remove import retired, usage_blockers
 from fm.adapters.mir.sync import (AUTO_CHILD_TYPES, FACTORY, FOLDERS, GUIDISH, Catalog, is_std,
-                                  normalized_actions, parse_std, std_guid)
+                                  normalized_actions, normalized_zone, parse_std, std_guid)
 
 POSITION_NORMAL = 0
 MARKER_TYPES = (11, 20)          # marcador VL y cargador: el MiR les crea una entrada (12, 21)
@@ -62,6 +77,40 @@ POSITION_TYPES = {
 # Provisional (el de los VL-marker del catálogo, ~0,8 m antes del marcador):
 # se ajusta en la web al volver a detectar el marcador.
 PROVISIONAL_OFFSET = {"offset_x": -0.8, "offset_y": 0.0, "offset_orientation": 0.0}
+# Tipos de zona que se pueden crear (decisión 124), con el nombre que les da
+# la web del MiR y un resumen de su ayuda (decisión 125). Todos probados por
+# la API en mir-2 el 2026-10-29. Fuera: 207 (el MiR dice "Zone type not
+# found"), 103 y 106 (son de MiR Fleet) y 105 (módulo E/S: apunta a un
+# módulo propio de cada robot).
+ZONE_TYPES = {
+    206: {"label": "Zona prohibida",
+          "help": "El robot nunca entra: ni al planificar el trayecto ni al esquivar un obstáculo."},
+    205: {"label": "Zona no preferida",
+          "help": "El robot la evita al planificar y solo la cruza si todos los demás caminos están "
+                  "bloqueados. Útil para alejarlo de pasillos con mucha gente."},
+    204: {"label": "Zona preferida",
+          "help": "El robot intenta planificar su trayecto por ella; sale de la zona si tiene que "
+                  "esquivar un obstáculo."},
+    203: {"label": "Zona direccional",
+          "help": "Dentro de ella el trayecto siempre va en el sentido de la flecha (se fija en el editor "
+                  "del mapa). Las positions cercanas deben mirar en ese sentido."},
+    208: {"label": "Zona de acceso",
+          "help": "El robot ignora los obstáculos detectados dentro al planificar, para pasar por rampas "
+                  "o puertas. Si encuentra uno, se acerca y espera a que desaparezca."},
+    104: {"label": "Zona de velocidad",
+          "help": "Dentro, el robot circula con otro límite de velocidad: más bajo donde hay gente, más "
+                  "alto en zonas despejadas."},
+    102: {"label": "Zona de sonido y de luz",
+          "help": "Dentro, el robot puede emitir un sonido y hacer parpadear sus luces para avisar a "
+                  "las personas."},
+    101: {"label": "Zona del planificador",
+          "help": "Dentro, el robot puede localizarse solo con los encoders, reducir su campo de visión, "
+                  "ajustar el tiempo de espera y la desviación del trayecto o ignorar obstáculos."},
+}
+ZONE_FORBIDDEN = 206
+# Cuadrado provisional: 1 m de lado, con su centro 2 m delante del robot. No
+# encima: una zona prohibida bajo el robot le impediría planificar.
+ZONE_SIDE, ZONE_AHEAD = 1.0, 2.0
 OFFSET_KEYS = ("docking_type", "name", "x_offset", "y_offset", "orientation_offset",
                "bar_length", "bar_distance", "shelf_leg_asymmetry_x")
 
@@ -83,10 +132,10 @@ def next_guid(kind: str, inst: int, parent: int, taken: Iterable[str], per_paren
 
 def robot_std_guids(client, kind: str, map_guid: str | None = None) -> set[str]:
     """GUIDs estándar que ya hay en un robot (para no repetir número)."""
-    if kind == "mission":
-        rows = client._req("GET", "missions")
-    else:
-        rows = client._req("GET", f"maps/{map_guid}/positions")
+    if kind in ("mission", "map", "session"):        # se numeran en toda la instalación
+        rows = client._req("GET", FOLDERS[kind])
+    else:                              # position o zona: van por mapa
+        rows = client._req("GET", f"maps/{map_guid}/{FOLDERS[kind]}")
     return {r["guid"] for r in rows if is_std(r["guid"])}
 
 
@@ -198,6 +247,144 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
             "marker": type_id in MARKER_TYPES}
 
 
+def placeholder_square(x: float, y: float, orientation_deg: float) -> list[dict]:
+    """Vértices del cuadrado provisional de una zona nueva, delante del robot."""
+    a = math.radians(orientation_deg)
+    cx, cy = x + ZONE_AHEAD * math.cos(a), y + ZONE_AHEAD * math.sin(a)
+    h = ZONE_SIDE / 2
+    return [{"x": round(cx + dx, 3), "y": round(cy + dy, 3)} for dx, dy in ((-h, -h), (h, -h), (h, h), (-h, h))]
+
+
+def create_zone(sync, name: str, map_guid: str, others: Iterable[str] = (),
+                type_id: int = ZONE_FORBIDDEN) -> dict:
+    """Zona `name` de tipo `type_id` (`ZONE_TYPES`) en el mapa `map_guid` del
+    catálogo: un cuadrado delante del robot de `sync`, que tiene que estar
+    trabajando en ese mapa (es su posición la que dice dónde ponerla)."""
+    name = (name or "").strip()
+    if not name:
+        raise CreateError("falta el nombre")
+    if type_id not in ZONE_TYPES:
+        raise CreateError(f"tipo de zona {type_id} no admitido aquí: créala en la web del MiR")
+    cat = sync.catalog()
+    mp = cat.items.get(map_guid)
+    if mp is None or cat.kind(map_guid) != "map":
+        raise CreateError(f"el mapa {map_guid} no está en el catálogo")
+    every = {**cat.items, **cat.drafts}
+    same_map = [d for g, d in every.items() if cat.kind(g) == "zone" and d.get("map_id") == map_guid]
+    _, inst, _, map_num = parse_std(map_guid)
+    with sync.lock:
+        c = sync.client
+        _get_or(c, f"maps/{map_guid}",
+                f"el mapa {mp['name']!r} no está en {sync.serial}: despliégalo antes en Sincronización")
+        st = c._req("GET", "status")
+        if st.get("map_id") != map_guid:
+            raise CreateError(f"{sync.serial} no está trabajando en el mapa {mp['name']!r}: su posición actual "
+                              "no vale para ese mapa")
+        names = {z["name"] for z in c._req("GET", f"maps/{map_guid}/zones")}
+        names |= {d["name"] for d in same_map}
+        if name in names:
+            raise CreateError(f"ya hay una zona {name!r} en el mapa {mp['name']!r}")
+        taken = set(every) | _retired(sync) | robot_std_guids(c, "zone", map_guid) | set(others)
+        guid = next_guid("zone", inst, map_num, taken, per_parent=True)
+        pos = st["position"]
+        body = {"guid": guid, "name": name, "type_id": type_id, "map_id": map_guid,
+                "polygon": placeholder_square(pos["x"], pos["y"], pos["orientation"]), "actions": []}
+        c._req("POST", "zones", json=body)
+        doc = normalized_zone(c._req("GET", f"zones/{guid}"))
+    # Borrador: la forma y las acciones de verdad entran al capturar.
+    write_doc(sync.catalog_dir, "zone",
+              {"guid": guid, **doc, "borrador": True, "_origen": _origen(sync.serial, guid, mapa=mp["name"])})
+    return {"kind": "zone", "guid": guid, "name": name, "url": sync.web_url(guid, map_guid),
+            "type": ZONE_TYPES[type_id]["label"]}
+
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def png_size(data: bytes) -> tuple[int, int]:
+    """(ancho, alto) de un PNG en gris de 8 bits, el formato en que el MiR
+    guarda `base_map` (0 = obstáculo, 255 = libre). El MiR lo guarda tal
+    cual, sin convertir (decisión 76), así que otro formato se rechaza: la
+    web del MiR exporta así sus mapas."""
+    if data[:8] != PNG_SIGNATURE or data[12:16] != b"IHDR":
+        raise CreateError("el fichero no es un PNG")
+    width, height, depth, color = struct.unpack(">IIBB", data[16:26])
+    if (depth, color) != (8, 0):
+        raise CreateError(f"el PNG tiene que estar en gris de 8 bits (este es de {depth} bits y "
+                          f"{'color' if color in (2, 3, 6) else 'gris con transparencia' if color == 4 else 'otro tipo'}): "
+                          "expórtalo así desde un editor de imágenes o desde la web del MiR")
+    return width, height
+
+
+def create_session(sync, name: str, description: str = "", others: Iterable[str] = ()) -> dict:
+    """Site `name` (session del MiR) en el catálogo. No escribe en ningún
+    robot. `others`: GUIDs estándar de sites de los robots."""
+    name = (name or "").strip()
+    if not name:
+        raise CreateError("falta el nombre del site")
+    cat = sync.catalog()
+    every = {**cat.items, **cat.drafts}
+    if any(cat.kind(g) == "session" and d["name"] == name for g, d in every.items()):
+        raise CreateError(f"ya hay un site {name!r} en el catálogo")
+    inst = parse_std(next(iter(every)))[1] if every else 1
+    guid = next_guid("session", inst, 0, set(every) | _retired(sync) | set(others), per_parent=False)
+    doc = {"guid": guid, "name": name, "description": (description or "").strip(),
+           "_origen": {"guid": guid, "capturado": date.today().isoformat()}}
+    write_doc(sync.catalog_dir, "session", doc)
+    return {"kind": "session", "guid": guid, "name": name}
+
+
+def create_map(sync, name: str, png: bytes, resolution: float, origin_x: float, origin_y: float,
+               session_guid: str | None = None, new_session: str = "", others: Iterable[str] = (),
+               filename: str = "") -> dict:
+    """Mapa `name` con la imagen `png` en el site `session_guid` del catálogo
+    o, si no se da, en un site nuevo `new_session` (`create_session`). Solo
+    escribe en el catálogo. `others`: GUIDs estándar de mapas y sites de los
+    robots."""
+    name, new_session = (name or "").strip(), (new_session or "").strip()
+    if not name:
+        raise CreateError("falta el nombre del mapa")
+    if not resolution or resolution <= 0:
+        raise CreateError("la resolución tiene que ser mayor que 0 (metros por píxel)")
+    width, height = png_size(png)
+    cat = sync.catalog()
+    every = {**cat.items, **cat.drafts}
+    if any(cat.kind(g) == "map" and d["name"] == name for g, d in every.items()):
+        raise CreateError(f"ya hay un mapa {name!r} en el catálogo")
+    if session_guid:
+        if cat.kind(session_guid) != "session" or session_guid not in cat.items:
+            raise CreateError(f"el site {session_guid} no está en el catálogo")
+        session, new_site = cat.items[session_guid], False
+    else:
+        if not new_session:
+            raise CreateError("elige un site (o crea uno antes)")
+        created = create_session(sync, new_session, others=others)
+        cat = sync.catalog()
+        session, new_site = cat.items[created["guid"]], True
+    every = {**cat.items, **cat.drafts}
+    _, inst, _, session_num = parse_std(session["guid"])
+    guid = next_guid("map", inst, session_num, set(every) | _retired(sync) | set(others), per_parent=False)
+    doc = {"guid": guid, "name": name, "session_id": session["guid"], "resolution": float(resolution),
+           "origin_x": float(origin_x), "origin_y": float(origin_y), "origin_theta": 0.0,
+           "base_map": f"{guid}.png",
+           "_origen": {"fichero": filename or "", "guid": guid, "capturado": date.today().isoformat()}}
+    out = Path(sync.catalog_dir) / FOLDERS["map"]
+    out.mkdir(parents=True, exist_ok=True)
+    (out / doc["base_map"]).write_bytes(png)
+    write_doc(sync.catalog_dir, "map", doc)
+    return {"kind": "map", "guid": guid, "name": name, "site": session["name"],
+            "new_site": new_site, "size": [width, height],
+            "meters": [round(width * resolution, 2), round(height * resolution, 2)]}
+
+
+def png_from_b64(data: str) -> bytes:
+    """El PNG que manda la web (base64, con o sin prefijo `data:`)."""
+    try:
+        return base64.b64decode(data.split(",", 1)[1] if data.startswith("data:") else data, validate=True)
+    except (ValueError, IndexError):
+        raise CreateError("la imagen no ha llegado bien (base64 no válido)") from None
+
+
 # ----------------------------------------------------------------- capturar
 def capture(sync, guid: str) -> dict:
     """Relee del robot un recurso creado aquí (borrador, o ya capturado de
@@ -214,14 +401,22 @@ def capture(sync, guid: str) -> dict:
             docs = [_capture_mission(sync, cat, old)]
         elif kind == "position":
             docs = _capture_position(sync, cat, old)
+        elif kind == "zone":
+            docs = [_capture_zone(sync, cat, old)]
         else:
             raise CreateError(f"no se captura un recurso de tipo {kind} desde aquí")
     for k, d in docs:
         write_doc(sync.catalog_dir, k, d)
     main = docs[0][1]
-    return {"kind": kind, "guid": guid, "name": main["name"],
-            "detail": f"{len(main['actions'])} actions" if kind == "mission" else
-                      (f"tipo {main['type_id']}" + (" + entrada" if len(docs) > 1 else ""))}
+    if kind == "mission":
+        detail = f"{len(main['actions'])} actions"
+    elif kind == "zone":
+        detail = (f"{ZONE_TYPES[main['type_id']]['label'] if main['type_id'] in ZONE_TYPES else main['type_id']}, "
+                  f"{len(main['polygon'])} vértices"
+                  + (f", {len(main['actions'])} acciones" if main["actions"] else ""))
+    else:
+        detail = f"tipo {main['type_id']}" + (" + entrada" if len(docs) > 1 else "")
+    return {"kind": kind, "guid": guid, "name": main["name"], "detail": detail}
 
 
 def _capture_mission(sync, cat: Catalog, old: dict, source: str | None = None) -> tuple[str, dict]:
@@ -288,6 +483,32 @@ def _capture_position(sync, cat: Catalog, old: dict) -> list[tuple[str, dict]]:
                 "creada_por_mir": e["type_id"] in AUTO_CHILD_TYPES,
                 "_origen": _origen(sync.serial, e["guid"], mapa=doc["_origen"]["mapa"])}))
     return docs
+
+
+def _capture_zone(sync, cat: Catalog, old: dict) -> tuple[str, dict]:
+    """La zona tal como la ha dejado la web del MiR. Sus acciones solo pueden
+    apuntar a recursos de fábrica o del catálogo (p. ej. el sonido de una
+    zona de sonido): un GUID propio del robot no existiría en los demás."""
+    c, guid = sync.client, old["guid"]
+    z = normalized_zone(_get_or(c, f"zones/{guid}", f"{old['name']!r} ya no está en {sync.serial}"))
+    errors = []
+    for a in z["actions"]:
+        for p in a["parameters"]:
+            v = p["value"]
+            if not isinstance(v, str) or v.startswith(FACTORY):
+                continue
+            if is_std(v) and v in cat.drafts:
+                errors.append(f"usa {cat.drafts[v]['name']!r}, que aún es un borrador: captúralo antes")
+            elif is_std(v) and v not in cat.items:
+                errors.append(f"usa {v}, que no está en el catálogo")
+            elif not is_std(v) and GUIDISH.match(v):
+                errors.append(f"la acción {a['type_id']} usa {v}, que no está en el catálogo "
+                              "(¿un sonido subido solo a este robot?)")
+    if errors:
+        raise CreateError(f"no se captura {old['name']!r}: " + "; ".join(errors))
+    doc = {"guid": guid, **z,
+           "_origen": _origen(sync.serial, guid, mapa=old.get("_origen", {}).get("mapa", ""))}
+    return "zone", doc
 
 
 # ------------------------------------------------------------------ adoptar
@@ -360,11 +581,11 @@ def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = 
 
 # ------------------------------------------------------------------- borrar
 def created_here(cat: Catalog, guid: str) -> dict | None:
-    """El documento, si es una mission o position creada desde la pestaña
-    Crear (borrador o ya capturada). Se reconoce porque su GUID en el robot
+    """El documento, si es una mission, position o zona creada desde la
+    pestaña Crear (borrador o ya capturada). Se reconoce porque su GUID en el robot
     es el nuestro: lo capturado con el script trae el GUID propio del robot."""
     d = cat.drafts.get(guid) or cat.items.get(guid)
-    if d is None or not is_std(guid) or cat.kind(guid) not in ("mission", "position"):
+    if d is None or not is_std(guid) or cat.kind(guid) not in ("mission", "position", "zone", "map", "session"):
         return None
     return d if d.get("_origen", {}).get("guid") == guid else None
 

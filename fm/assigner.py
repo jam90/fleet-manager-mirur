@@ -24,6 +24,7 @@ class RobotSnapshot:
     available: bool = True            # False = MANUAL / Error / EmergencyStop / sin REST
     charging: bool = False
     position: tuple[float, float] | None = None   # hueco para "menor distancia" (futuro)
+    reason: str = ""                  # por qué no está disponible, si se sabe (p. ej. fuera del site)
 
 
 @dataclass
@@ -48,7 +49,7 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
         if rcfg is None or action_type not in rcfg.action_types:
             rejections[serial] = f"no soporta '{action_type}'"
         elif not s.available:
-            rejections[serial] = "no disponible (manual/error/sin REST)"
+            rejections[serial] = s.reason or "no disponible (manual/error/sin REST)"
         elif s.battery < rcfg.battery_min:
             rejections[serial] = f"batería {s.battery:.1f}% < mínimo {rcfg.battery_min:.0f}%"
         elif s.busy:

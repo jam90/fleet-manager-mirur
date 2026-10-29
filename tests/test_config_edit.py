@@ -246,3 +246,14 @@ def test_alta_validada_por_su_driver(tmp_path):
     with pytest.raises(ConfigError, match="desconocido"):
         save(p, {"robots": {"x-1": {"driver": "kuka"}}}, env_path=tmp_path / "no.env")
     assert p.read_text(encoding="utf-8") == YAML
+
+
+def test_site_de_la_flota_se_pone_cambia_y_quita():
+    new = apply_edits(YAML, {"site": {"guid": "imperialfleet-session000-01-0000-001", "name": "suberri_mirur"}})
+    assert new.startswith(YAML) and new.endswith("site: imperialfleet-session000-01-0000-001   # suberri_mirur\n")
+    otra = apply_edits(new, {"site": {"guid": "imperialfleet-session000-01-0000-002", "name": "nave 2"}})
+    assert "site: imperialfleet-session000-01-0000-002   # nave 2\n" in otra and otra.count("site:") == 1
+    assert apply_edits(otra, {"site": None}) == YAML
+    assert apply_edits(YAML, {"site": None}) == YAML
+    with pytest.raises(EditError, match="site debe ser"):
+        apply_edits(YAML, {"site": "sin nombre"})

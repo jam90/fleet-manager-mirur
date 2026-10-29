@@ -7,7 +7,7 @@ import pytest
 
 from fm.adapters.mir.create import CreateError, next_guid
 from fm.adapters.mir.sync import Catalog, MirSync, std_guid
-from tests.adapters.test_mir_sync import GRP, M_MAIN, M_SUB, MAP, P_NORMAL, SES, FakeMir, write_catalog, move
+from tests.adapters.test_mir_sync import GRP, M_MAIN, M_SUB, MAP, P_NORMAL, SES, SND, FakeMir, write_catalog, move
 
 
 @pytest.fixture
@@ -238,3 +238,135 @@ def test_capturar_vl_marker_creado_aqui_con_su_entrada(sync, tmp_path):
     assert doc["docking_offsets"][0]["x_offset"] == -0.75 and "borrador" not in doc
     entry = [d for d in cat.items.values() if d.get("parent_id") == g]
     assert len(entry) == 1 and entry[0]["type_id"] == 12 and entry[0]["creada_por_mir"]
+
+
+# -------------------------------------------------------------------- zonas
+def test_crear_zona_delante_del_robot(sync, tmp_path):
+    # Decisión 124: cuadrado de 1 m con su centro 2 m delante (el robot mira a +y).
+    r = sync.create_zone("Pasillo", MAP, type_id=206)
+    assert r["guid"] == std_guid("zone", 1, 1, 1) and r["type"] == "Zona prohibida"
+    assert r["url"] == f"http://10.0.0.2/maps/{MAP}"
+    z = sync.client.db["zones"][r["guid"]]
+    assert z["type_id"] == 206 and z["map_id"] == MAP and z["actions"] == []
+    xs, ys = [q["x"] for q in z["polygon"]], [q["y"] for q in z["polygon"]]
+    assert (min(xs), max(xs), min(ys), max(ys)) == (0.735, 1.735, 6.0, 7.0)   # robot en (1.235, 4.5)
+    draft = Catalog.load(tmp_path).drafts[r["guid"]]
+    assert draft["polygon"] == z["polygon"] and draft["shape_type"] == "shape"
+    assert sync.create_zone("Otra", MAP)["guid"] == std_guid("zone", 1, 1, 2)
+    with pytest.raises(CreateError, match="ya hay una zona 'Pasillo'"):
+        sync.create_zone("Pasillo", MAP)
+    with pytest.raises(CreateError, match="no admitido"):
+        sync.create_zone("Rara", MAP, type_id=207)            # el MiR no lo conoce
+    sync.client.status["map_id"] = "otro-mapa"
+    with pytest.raises(CreateError, match="no está trabajando en el mapa"):
+        sync.create_zone("Lejos", MAP)
+
+
+def test_capturar_zona_con_su_forma_y_sus_acciones(sync, tmp_path):
+    g = sync.create_zone("Despacio", MAP, type_id=102)["guid"]
+    # En la web se le da forma y se le pone un sonido del catálogo y la luz.
+    sync.client._req("PUT", f"zones/{g}", json={
+        "polygon": [{"x": 0, "y": 0}, {"x": 4, "y": 0}, {"x": 4, "y": 2}],
+        "actions": [{"type_id": 2, "parameters": []},
+                    {"type_id": 3, "parameters": [{"name": "sound", "value": SND}, {"name": "volume", "value": "40"}]}]})
+    out = sync.capture(g)
+    assert out["detail"] == "Zona de sonido y de luz, 3 vértices, 2 acciones"
+    doc = Catalog.load(tmp_path).items[g]
+    assert "borrador" not in doc and len(doc["polygon"]) == 3
+    assert doc["actions"][1] == {"type_id": 3, "parameters": [{"name": "sound", "value": SND},
+                                                              {"name": "volume", "value": "40"}]}  # sin GUIDs
+    assert Catalog.load(tmp_path).deps(g) == {MAP, SND}
+
+
+def test_capturar_zona_rechaza_un_sonido_propio_del_robot(sync, tmp_path):
+    g = sync.create_zone("Pitido", MAP, type_id=102)["guid"]
+    sync.client._req("PUT", f"zones/{g}", json={"actions": [
+        {"type_id": 3, "parameters": [{"name": "sound", "value": "fb225e1c-3d65-11f1-8021-000e8eb5b8fb"}]}]})
+    with pytest.raises(CreateError, match="no está en el catálogo"):
+        sync.capture(g)
+    assert g in Catalog.load(tmp_path).drafts
+
+
+def test_borrar_zona_creada_aqui(sync, tmp_path):
+    g = sync.create_zone("Prueba", MAP)["guid"]
+    sync.capture(g)
+    assert [d["kind"] for d in sync.create_choices()["created"]] == ["zone"]
+    assert sync.delete_blockers(g, {}, []) == [] and sync.exists(g)
+    sync.delete(g)
+    assert not sync.exists(g) and sync.forget(g) == [g]
+    assert sync.create_zone("Otra", MAP)["guid"] == g                # el número queda libre
+
+
+# -------------------------------------------------------------------- mapas
+def _png(width=4, height=3, color=0):
+    """PNG mínimo válido (gris de 8 bits si `color` = 0; 2 = RGB)."""
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    row = b"\x00" + b"\xff" * (width * (3 if color == 2 else 1))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, color, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(row * height)) + chunk(b"IEND", b""))
+
+
+def test_subir_mapa_a_un_site_del_catalogo(sync, tmp_path):
+    r = sync.create_map("mapa-nave-2", _png(40, 20), 0.05, -1.5, 2.0, session_guid=SES,
+                        others={std_guid("map", 1, 1, 3)}, filename="nave2.png")
+    assert r["guid"] == std_guid("map", 1, 1, 4)                  # se numera en la instalación
+    assert (r["site"], r["new_site"], r["size"], r["meters"]) == ("s", False, [40, 20], [2.0, 1.0])
+    cat = Catalog.load(tmp_path)
+    doc = cat.items[r["guid"]]                                    # completo: no es borrador
+    assert (doc["session_id"], doc["origin_x"], doc["origin_y"], doc["resolution"]) == (SES, -1.5, 2.0, 0.05)
+    assert cat.map_png(r["guid"]) == _png(40, 20)
+    assert cat.closure([r["guid"]]) == [SES, r["guid"]]           # Sincronización lo despliega con su site
+    assert sync.client.writes == []                               # no toca el robot
+    with pytest.raises(CreateError, match="ya hay un mapa 'mapa-nave-2'"):
+        sync.create_map("mapa-nave-2", _png(), 0.05, 0, 0, session_guid=SES)
+
+
+def test_subir_mapa_con_site_nuevo_y_errores(sync, tmp_path):
+    r = sync.create_map("planta", _png(), 0.05, 0, 0, new_session="nave nueva")
+    cat = Catalog.load(tmp_path)
+    ses = cat.items[r["guid"]]["session_id"]
+    assert ses == std_guid("session", 1, 0, 2) and cat.items[ses]["name"] == "nave nueva" and r["new_site"]
+    assert r["guid"] == std_guid("map", 1, 2, 2)                  # padre = su site
+    with pytest.raises(CreateError, match="gris de 8 bits"):
+        sync.create_map("color", _png(color=2), 0.05, 0, 0, session_guid=SES)
+    with pytest.raises(CreateError, match="no es un PNG"):
+        sync.create_map("jpg", b"\xff\xd8\xff\xe0 JFIF", 0.05, 0, 0, session_guid=SES)
+    with pytest.raises(CreateError, match="ya hay un site 'nave nueva'"):
+        sync.create_map("otro", _png(), 0.05, 0, 0, new_session="nave nueva")
+    with pytest.raises(CreateError, match="resolución"):
+        sync.create_map("otro", _png(), 0, 0, 0, session_guid=SES)
+
+
+def test_borrar_mapa_subido_se_lleva_su_imagen(sync, tmp_path):
+    g = sync.create_map("prueba", _png(), 0.05, 0, 0, session_guid=SES)["guid"]
+    assert [d["kind"] for d in sync.create_choices()["created"]] == ["map"]
+    assert sync.delete_blockers(g, {}, []) == []
+    assert sync.forget(g) == [g]
+    assert not (tmp_path / "maps" / f"{g}.png").exists() and not (tmp_path / "maps" / f"{g}.json").exists()
+    # Uno subido aquí con positions encima no se borra.
+    g = sync.create_map("con positions", _png(), 0.05, 0, 0, session_guid=SES)["guid"]
+    (tmp_path / "positions" / "p.json").write_text(json.dumps({
+        "guid": std_guid("position", 1, 5, 1), "name": "X", "type_id": 0, "pos_x": 0, "pos_y": 0,
+        "orientation": 0, "map_id": g, "parent_id": None, "docking_offsets": []}))
+    assert "la usan otros recursos del catálogo: X" in sync.delete_blockers(g, {}, [])[0]
+
+
+# --------------------------------------------------------------------- site
+def test_crear_site_y_su_primer_mapa(sync, tmp_path):
+    r = sync.create_session("nave 3", "planta baja")
+    assert r == {"kind": "session", "guid": std_guid("session", 1, 0, 2), "name": "nave 3"}
+    doc = Catalog.load(tmp_path).items[r["guid"]]
+    assert doc["description"] == "planta baja" and sync.client.writes == []      # solo el catálogo
+    with pytest.raises(CreateError, match="ya hay un site 'nave 3'"):
+        sync.create_session("nave 3")
+    m = sync.create_map("planta baja", _png(), 0.05, 0, 0, session_guid=r["guid"])
+    assert m["guid"] == std_guid("map", 1, 2, 2) and not m["new_site"]
+    # Sale en «Creado desde aquí», pero no se borra mientras tenga un mapa.
+    assert {d["kind"] for d in sync.create_choices()["created"]} == {"session", "map"}
+    assert "la usan otros recursos del catálogo: planta baja" in sync.delete_blockers(r["guid"], {}, [])[0]
+    sync.forget(m["guid"])
+    assert sync.delete_blockers(r["guid"], {}, []) == []

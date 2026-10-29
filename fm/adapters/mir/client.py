@@ -235,6 +235,12 @@ class MirClient:
     def missions_mission_id_get(self, mission_guid: str) -> dict:
         return self._req("GET", f"missions/{mission_guid}")
 
+    def maps_map_id_get(self, map_guid: str) -> dict:
+        return self._req("GET", f"maps/{map_guid}")
+
+    def sessions_session_id_get(self, session_guid: str) -> dict:
+        return self._req("GET", f"sessions/{session_guid}")
+
     # ---------------------------------------------------------------- índices
     def index_mission_groups_by_name(self) -> dict[str, str]:
         return {g["name"]: g["guid"] for g in self.mission_groups_get()}

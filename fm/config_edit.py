@@ -92,9 +92,10 @@ def plan(text: str, edits: dict) -> list[Op]:
     `{"actions": {"coger": {"definition": {...}, "comments": {"mission": "coger"}},
                   "vieja": None},                                   # None = borrar
       "robots": {"mir-1": {"actions": [...], "battery_min": 30}},
-      "auto_charge": {"battery_floor": 20}, "assigner": {"prefer_not_charging": true}}`
+      "auto_charge": {"battery_floor": 20}, "assigner": {"prefer_not_charging": true},
+      "site": {"guid": "imperialfleet-session000-…", "name": "suberri_mirur"}}`   # None = quitarlo
     """
-    unknown = set(edits) - {"actions", "robots", "auto_charge", "assigner"}
+    unknown = set(edits) - {"actions", "robots", "auto_charge", "assigner", "site"}
     if unknown:
         raise EditError(f"no se puede editar {sorted(unknown)} desde aquí")
     current = yaml.safe_load(text) or {}
@@ -137,6 +138,15 @@ def plan(text: str, edits: dict) -> list[Op]:
                 ops.append(Op(("robots", serial, "host"), _host(f"robots.{serial}.host", value)))
             else:
                 ops.append(Op(("robots", serial, key), _number(f"robots.{serial}.{key}", value, float)))
+    if "site" in edits:                  # decisión 129; el nombre va de comentario
+        site = edits["site"]
+        if not site:
+            if "site" in current:
+                ops.append(Op(("site",), delete=True))
+        elif not isinstance(site, dict) or not isinstance(site.get("guid"), str) or not site["guid"].strip():
+            raise EditError("site debe ser {guid, name} o nada")
+        else:
+            ops.append(Op(("site",), site["guid"].strip(), comment=str(site.get("name") or "") or None))
     for block in ("auto_charge", "assigner"):
         for key, value in (edits.get(block) or {}).items():
             typ = GLOBAL_KEYS.get((block, key))

@@ -3,7 +3,9 @@
 `FakeMir` imita lo que se vio con robot el 2026-10-13: acepta GUIDs elegidos,
 da 409 si se repiten, crea solo la entrada de un marcador/cargador (con GUID
 propio y en una posición por defecto) y pone GUIDs propios a las actions y a
-sus parámetros.
+sus parámetros. Las zonas, como se vio en mir-2 el 2026-10-29: valores por
+defecto en la forma, GUID propio en cada acción y parámetro, y un PUT que no
+cambia el tipo.
 """
 import base64
 import json
@@ -71,7 +73,7 @@ class FakeMir:
     """REST mínimo del MiR en memoria: `_req(method, path, json)` como MirClient."""
 
     def __init__(self):
-        self.db = {"sessions": {}, "maps": {}, "positions": {}, "sounds": {}, "mission_groups": {},
+        self.db = {"sessions": {}, "maps": {}, "positions": {}, "sounds": {}, "zones": {}, "mission_groups": {},
                    "missions": {}, "actions": {}}
         self.writes: list[tuple[str, str]] = []
         self.status = {"map_id": MAP, "position": {"x": 1.23456, "y": 4.5, "orientation": 89.987}}
@@ -87,6 +89,11 @@ class FakeMir:
                 raise MirApiError(method, path, 409, {"error_code": "duplicate_entry"})
             doc = {**json, "guid": g}
             table[g] = doc
+            if parts[0] == "zones":
+                doc.setdefault("shape_type", "shape")
+                doc.setdefault("stroke_width", 0.05)
+                doc.setdefault("direction", 0.0)
+                doc["actions"] = self._zone_actions(doc.get("actions", []))
             if parts[0] == "positions":
                 doc.setdefault("parent_id", None)
                 if doc["type_id"] in (11, 20):    # el MiR crea la entrada solo, 1 m más allá
@@ -115,6 +122,12 @@ class FakeMir:
         if method == "PUT" and parts[0] == "positions":
             self.db["positions"][parts[1]].update(json)
             return self.db["positions"][parts[1]]
+        if method == "PUT" and parts[0] == "zones":
+            z = self.db["zones"][parts[1]]
+            z.update({k: v for k, v in json.items() if k != "type_id"})     # el tipo no cambia
+            if "actions" in json:
+                z["actions"] = self._zone_actions(json["actions"])
+            return z
         if method == "GET":
             if path == "status":
                 return self.status
@@ -125,7 +138,7 @@ class FakeMir:
             if len(parts) == 1:
                 return list(self.db[parts[0]].values())
             if parts[0] == "maps" and len(parts) == 3:
-                return [p for p in self.db["positions"].values() if p["map_id"] == parts[1]]
+                return [p for p in self.db[parts[2]].values() if p["map_id"] == parts[1]]
             if parts[0] == "positions" and len(parts) == 3:
                 return [p for p in self.db["positions"].values() if p["parent_id"] == parts[1]]
             if parts[0] == "missions" and len(parts) == 3:
@@ -136,6 +149,11 @@ class FakeMir:
                 return self.db[parts[0]][parts[1]]
             raise MirApiError(method, path, 404, {})
         raise AssertionError(f"llamada no simulada: {method} {path}")
+
+    @staticmethod
+    def _zone_actions(actions):
+        return [{"type_id": a["type_id"], "type": f"tipo {a['type_id']}", "guid": str(uuid.uuid4()),
+                 "parameters": [{**q, "guid": str(uuid.uuid4())} for q in a["parameters"]]} for a in actions]
 
 
 @pytest.fixture
@@ -307,3 +325,52 @@ def test_sustituir_mission_distinta_solo_si_se_pide(cat):
     with pytest.raises(RuntimeError, match="ocupado"):
         s.deploy([M_MAIN], only_create=True, replace=[M_SUB])
     assert mir.writes == before
+
+
+# -------------------------------------------------------------------- zonas
+ZONE = std_guid("zone", 1, 1, 1)
+
+
+def _zone_catalog(root):
+    (root / "zones").mkdir(exist_ok=True)
+    doc = {"guid": ZONE, "name": "lento", "type_id": 104, "shape_type": "shape", "stroke_width": 0.05,
+           "direction": 0.0, "polygon": [{"x": 0, "y": 0}, {"x": 2, "y": 0}, {"x": 2, "y": 1}],
+           "actions": [{"type_id": 1, "parameters": [{"name": "desired_speed", "value": "0.3"}]}],
+           "map_id": MAP, "_origen": {"robot": "mir-2"}}
+    (root / "zones" / f"{ZONE}.json").write_text(json.dumps(doc))
+    return Catalog.load(root)
+
+
+def test_zona_arrastra_su_mapa_y_va_despues_de_los_sonidos(tmp_path):
+    cat = write_catalog(tmp_path)
+    cat = _zone_catalog(tmp_path)
+    assert cat.closure([ZONE]) == [SES, MAP, ZONE]
+    assert cat.closure([ZONE, M_SUB]).index(ZONE) > cat.closure([ZONE, M_SUB]).index(SND)
+
+
+def test_desplegar_zona_y_sustituir_si_es_distinta(tmp_path):
+    write_catalog(tmp_path)
+    cat = _zone_catalog(tmp_path)
+    mir = FakeMir()
+    guids = cat.closure([ZONE])
+    ops = apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-1"))
+    assert {o.status for o in ops} == {"hecho"}, [(o.name, o.status, o.detail) for o in ops]
+    z = mir.db["zones"][ZONE]
+    assert z["type_id"] == 104 and z["actions"][0]["parameters"][0]["value"] == "0.3"
+    again = plan(cat, fetch_view(mir, cat, guids), guids, "mir-1")
+    assert next(o for o in again if o.guid == ZONE).verb == "igual"
+    # Alguien la cambia en la web de mir-1: distinta, no se toca salvo que se pida.
+    z["polygon"] = [{"x": 0, "y": 0}, {"x": 5, "y": 0}, {"x": 5, "y": 1}]
+    z["actions"][0]["parameters"][0]["value"] = "0.8"
+    op = next(o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-1") if o.guid == ZONE)
+    assert op.verb == "distinta" and "actions" in op.detail and "polígono" in op.detail
+    ops = apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-1", replace=[ZONE]))
+    op = next(o for o in ops if o.guid == ZONE)
+    assert op.verb == "sustituir" and op.status == "hecho" and "en su sitio" in op.detail
+    assert ("PUT", f"zones/{ZONE}") in mir.writes and ("DELETE", f"zones/{ZONE}") not in mir.writes
+    assert mir.db["zones"][ZONE]["polygon"][1]["x"] == 2
+    # Con otro tipo el PUT no basta: se borra y se crea con el mismo GUID.
+    mir.db["zones"][ZONE]["type_id"] = 206
+    ops = apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-1", replace=[ZONE]))
+    assert next(o for o in ops if o.guid == ZONE).status == "hecho"
+    assert ("DELETE", f"zones/{ZONE}") in mir.writes and mir.db["zones"][ZONE]["type_id"] == 104

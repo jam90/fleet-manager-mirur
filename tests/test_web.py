@@ -444,3 +444,21 @@ def test_misiones_del_robot():
     src.fail = True
     r = c.get("/api/robots/sim-1/missions").json()
     assert r["supported"] and "sin red" in r["error"]
+
+
+def test_site_de_la_flota_desde_la_cabecera(tmp_path):
+    # Decisión 129: se guarda en fleet.yaml, se aplica en caliente y otra
+    # edición que no lo manda no lo quita.
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    assert c.get("/api/fleet").json()["site"] is None
+    r = c.post("/api/config", json={"site": {"guid": "imperialfleet-session000-01-0000-001", "name": "nave"}}).json()
+    assert r["changed"] and r["restart"] == []
+    srv.reloader.apply_pending()
+    assert srv.robots["sim-1"].site == "imperialfleet-session000-01-0000-001"
+    assert c.get("/api/fleet").json()["site"] == "imperialfleet-session000-01-0000-001"
+    c.post("/api/config", json={"auto_charge": {"battery_floor": 15}})
+    assert "site: imperialfleet-session000-01-0000-001   # nave" in p.read_text(encoding="utf-8")
+    c.post("/api/config", json={"site": None})
+    srv.reloader.apply_pending()
+    assert srv.robots["sim-1"].site is None and "site:" not in p.read_text(encoding="utf-8")

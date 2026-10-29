@@ -11,6 +11,7 @@ catalog/
 ├── maps/<guid>.json         metadatos del mapa (resolución, origen, session)
 ├── maps/<guid>.png          su imagen (base_map), aparte para poder abrirla
 ├── positions/<guid>.json    una por position, con su docking offset si lo tiene
+├── zones/<guid>.json        una por zona: tipo, polígono y acciones
 ├── mission_groups/<guid>.json
 ├── missions/<guid>.json     una por mission, con sus actions dentro
 └── sounds/<guid>.json + .ogg/.wav   sonidos subidos a mano (el audio, aparte)
@@ -33,6 +34,11 @@ catalog/
   `"scope": {"action": <priority de la contenedora>, "parameter": "try"}`.
   Los valores que apuntan a positions, missions o sonidos van traducidos a
   GUIDs del catálogo; los recursos de fábrica (`mirconst-…`), tal cual.
+- **Zonas** (decisión 124): `type_id` (no se puede cambiar en el robot),
+  `polygon` en metros del mapa, `shape_type`/`stroke_width` (polígono o
+  trazo) y `actions` sin GUID, como `{"type_id": 1, "parameters":
+  [{"name": "desired_speed", "value": "0.3"}]}` (los valores, en texto,
+  como los guarda el MiR). Se crean desde la pestaña Crear.
 - Los ficheros los escribe el FM (hoy, `scripts/catalog_capture.py
   positions|missions`; se llevan al robot con `scripts/catalog_deploy.py
   positions|missions`).
