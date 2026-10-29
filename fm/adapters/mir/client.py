@@ -200,6 +200,9 @@ class MirClient:
     def positions_get(self) -> list[dict]:
         return self._req("GET", "positions")
 
+    def maps_get(self) -> list[dict]:
+        return self._req("GET", "maps")
+
     def mission_queue_post(self, mission_guid: str, parameters: list[dict] | None = None,
                            priority: int = 0) -> dict:
         """Encola una mission. `parameters` = [{"id": <input_name>, "value": ...}].
@@ -273,7 +276,8 @@ class MirClient:
             idx[name] = m["guid"]
         return idx
 
-    def index_positions_by_name(self, active_map_id: str | None = None) -> dict[str, str]:
+    def index_positions_by_name(self, active_map_id: str | None = None,
+                                positions: list[dict] | None = None) -> dict[str, str]:
         """nombre → GUID de positions (incluye markers de docking, no sus
         entry positions: `POSITION_ENTRY_TYPES`).
 
@@ -282,7 +286,7 @@ class MirClient:
         warning. Ver docs/avance.md, decisiones 15 y 48.
         """
         by_name: dict[str, list[dict]] = {}
-        for p in self.positions_get():
+        for p in self.positions_get() if positions is None else positions:
             if p.get("type_id") in POSITION_ENTRY_TYPES:
                 continue
             # El listado no trae `map_id`, solo `map` = "/v2.0.0/maps/<guid>".
@@ -302,9 +306,24 @@ class MirClient:
 
     def index_mission_params(self, mission_guid: str) -> set[str]:
         """`input_name`s que expone la mission (para validar antes de postear)."""
-        names: set[str] = set()
-        for a in self.missions_mission_id_actions_get(mission_guid):
-            for p in a.get("parameters") or []:
-                if p.get("input_name"):
-                    names.add(p["input_name"])
-        return names
+        return mission_input_names(self.missions_mission_id_actions_get(mission_guid))
+
+
+def mission_input_names(actions: list[dict]) -> set[str]:
+    """`input_name`s de las actions de una mission (`GET missions/<guid>/actions`)."""
+    return {p["input_name"] for a in actions for p in a.get("parameters") or [] if p.get("input_name")}
+
+
+def fixed_position_maps(actions: list[dict], position_maps: dict[str, str]) -> set[str]:
+    """Mapas de las positions FIJAS de una mission: parámetros cuyo valor es
+    una position y que no son un input (decisión 131). Un input se resuelve
+    por nombre en el mapa activo de cada robot, así que no ata la mission a
+    un mapa. `position_maps`: GUID de position → GUID de su mapa."""
+    return {position_maps[p["value"]] for a in actions for p in a.get("parameters") or []
+            if not p.get("input_name") and isinstance(p.get("value"), str) and p["value"] in position_maps}
+
+
+def loaded_missions(actions: list[dict]) -> set[str]:
+    """GUIDs de las sub-missions que carga una mission (`load_mission`, fijas)."""
+    return {p["value"] for a in actions for p in a.get("parameters") or []
+            if p.get("id") == "mission_id" and not p.get("input_name") and p.get("value")}

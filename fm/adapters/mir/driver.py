@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 
 from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, RobotSpec, Telemetry
-from fm.adapters.mir.client import STATE_PAUSE, STATE_READY, MirClient, MirStatus
+from fm.adapters.mir.client import (STATE_PAUSE, STATE_READY, MirClient, MirStatus, fixed_position_maps,
+                                    loaded_missions, mission_input_names, position_map_id)
 from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, render_message, to_telemetry
 from fm.vda5050.order import Action, OrderRejected
-from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE, State
+from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE, E_NO_ROUTE_TO_TARGET, State
 
 log = logging.getLogger("fm.mir")
 
@@ -51,6 +52,8 @@ class MirDriver:
         self.mission_names: dict[str, str] = {}         # GUID → nombre (para logs y UI)
         self.positions: dict[str, str] = {}             # nombre → GUID
         self.mission_inputs: dict[str, set[str]] = {}   # GUID mission → input_names
+        self.mission_maps: dict[str, set[str]] = {}     # GUID mission → mapas de sus positions fijas
+        self.map_names: dict[str, str] = {}             # GUID mapa → nombre (para los mensajes)
         self.indexed = False
         self.last_status: MirStatus | None = None
         self.last_error: str | None = None
@@ -88,7 +91,10 @@ class MirDriver:
             self.mission_names = {m["guid"]: m.get("name", "") for m in rows}
             self.missions.update({g: g for g in self.mission_names})
             st = self.last_status or self.client.status_get()
-            self.positions = self.client.index_positions_by_name(st.map_id)
+            rows = self.client.positions_get()
+            self.positions = self.client.index_positions_by_name(st.map_id, rows)
+            position_maps = {p["guid"]: position_map_id(p) for p in rows}
+            self.map_names = {m["guid"]: m.get("name", "") for m in self.client.maps_get()}
             wanted = {a.mission for a in self.cfg.actions.values()}
             if self.cfg.charge_mission:
                 wanted.add(self.cfg.charge_mission)
@@ -97,7 +103,9 @@ class MirDriver:
                 if guid is None:
                     self.log.warning("mission '%s' no existe en este robot (irá a NO_ROUTE_TO_TARGET)", name)
                     continue
-                self.mission_inputs[guid] = self.client.index_mission_params(guid)
+                actions = self.client.missions_mission_id_actions_get(guid)
+                self.mission_inputs[guid] = mission_input_names(actions)
+                self.mission_maps[guid] = self._fixed_maps(guid, actions, position_maps, set())
             self._check_inputs()
             self.indexed = True
             self.log.info("índices: %d missions, %d positions", len(self.mission_names), len(self.positions))
@@ -105,6 +113,15 @@ class MirDriver:
         except Exception as e:   # red, 4xx, JSON raro: todo se reintenta luego
             self.log.warning("no se pudieron cargar los índices: %s", e)
             return False
+
+    def _fixed_maps(self, guid: str, actions: list[dict], position_maps: dict[str, str], seen: set[str]) -> set[str]:
+        """Mapas de las positions fijas de una mission y de las sub-missions
+        que carga (decisión 131). `seen` evita los ciclos de `load_mission`."""
+        seen.add(guid)
+        maps = fixed_position_maps(actions, position_maps)
+        for sub in loaded_missions(actions) - seen:
+            maps |= self._fixed_maps(sub, self.client.missions_mission_id_actions_get(sub), position_maps, seen)
+        return maps
 
     def _check_inputs(self) -> None:
         """Avisa al arrancar si `fleet.yaml` declara un input que la mission no
@@ -161,7 +178,22 @@ class MirDriver:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, "índices de missions/positions no cargados")
         req = from_vda_order(action, self.cfg, self.missions, self.positions,
                              self.mission_inputs, self.cfg.positions_allowlist)
+        self._check_map(req)
         return Job(action, f"mission '{req.mission_name}'", req)
+
+    def _check_map(self, req: MissionRequest) -> None:
+        """Una mission con positions fijas solo se puede hacer en su mapa
+        (decisión 131). Con otro mapa activo se rechaza, y el asignador de la
+        flota prueba el siguiente robot (decisión 89)."""
+        maps = self.mission_maps.get(req.mission_guid)
+        active = self.last_status.map_id if self.last_status else None
+        if not maps or not active or active in maps:
+            return
+        names = ", ".join(sorted(f"«{self.map_names.get(m, m)}»" for m in maps))
+        raise OrderRejected(E_NO_ROUTE_TO_TARGET,
+                            f"la mission '{self.mission_names.get(req.mission_guid) or req.mission_name}' va a "
+                            f"positions fijas del mapa {names} y el robot "
+                            f"está en «{self.map_names.get(active, active)}»")
 
     def execute(self, job: Job, priority: int = 0) -> str:
         req: MissionRequest = job.payload

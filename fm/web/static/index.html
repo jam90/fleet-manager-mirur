@@ -971,7 +971,9 @@
           <tbody>
             <tr v-for="a in viewActions" :key="a.name" :class="{ deleted: a.status === 'borrada' }">
               <th scope="row"><b>{{ a.name }}</b> <span class="chip" v-if="a.status">{{ a.status }}</span>
-                <span class="muted sub" v-if="missionLabel(a)">{{ missionLabel(a) }}</span></th>
+                <span class="muted sub" v-if="missionLabel(a)">{{ missionLabel(a) }}</span>
+                <span class="muted sub" v-if="a.needs && a.needs.maps && a.needs.maps.length"
+                      title="Va a positions fijas de este mapa: solo la hace un robot que esté en él">mapa {{ a.needs.maps.join(', ') }}</span></th>
               <td v-for="r in cfgState.robots" :key="r.serial" :class="{ on: cell(a, r).enabled }" :title="cell(a, r).title">
                 <input type="checkbox" :disabled="!cfgEdit.on || a.status === 'borrada'" :checked="cell(a, r).enabled" @change="toggleAction(a, r)"
                        :aria-label="a.name + ' en ' + r.serial">
@@ -1330,7 +1332,9 @@
           <dt>Mapa</dt><dd>Imagen de la planta (negro = obstáculo, blanco = libre) con su escala y su origen. Pertenece a un
             site; cada robot trabaja en uno, su mapa activo.</dd>
           <dt>Zona</dt><dd>Área de un mapa que cambia cómo circula el robot: prohibida, preferida, de velocidad…</dd>
-          <dt>Mission</dt><dd>Programa del MiR (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.</dd>
+          <dt>Mission</dt><dd>Programa del MiR (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.
+            Si lleva positions fijas, solo vale en el mapa de esas positions (el Configurador lo dice: «mapa …»); si recibe la
+            position como parámetro, vale en cualquier mapa que tenga una con ese nombre.</dd>
           <dt>Position</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
           <dt>Action</dt><dd>Lo que pide una order (<code>actionType</code>): una mission + qué parámetros lleva. Se define en
             <code>config/fleet.yaml</code> y se habilita robot a robot.</dd>

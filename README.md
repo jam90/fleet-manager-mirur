@@ -221,6 +221,7 @@ Reglas (§6.1.4 de la norma):
 | robot en Manual / Error / EmergencyStop, o llave no en `auto` | `MOBILE_ROBOT_NOT_AVAILABLE` |
 | robot ejecutando una mission lanzada desde la web | `MOBILE_ROBOT_NOT_AVAILABLE` |
 | mapa activo del robot de otro site que el de la flota (`site:`) | `MOBILE_ROBOT_NOT_AVAILABLE` |
+| la mission va a positions fijas de un mapa que no es el activo del robot | `NO_ROUTE_TO_TARGET` (la flota prueba otro robot) |
 | más de una action pendiente | `VALIDATION_FAILURE` |
 | `actionType` no mapeado en ese robot | `INVALID_ORDER_ACTION` |
 | position inexistente / fuera de allowlist / mission ausente en el robot | `NO_ROUTE_TO_TARGET` |

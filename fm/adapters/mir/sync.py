@@ -145,6 +145,31 @@ class Catalog:
             return self.site_of(d["map_id"]) if d.get("map_id") else None
         return None
 
+    def maps_of(self, guid: str, seen: set[str] | None = None) -> set[str]:
+        """Mapas a los que está atada una mission (decisión 131): los de sus
+        positions FIJAS y los de las sub-missions que carga. Una position que
+        llega como input no ata: el FM la busca por nombre en el mapa activo
+        de cada robot. Vacío = vale en cualquier mapa."""
+        d = self.items.get(guid) or self.drafts.get(guid)
+        seen = set() if seen is None else seen
+        if d is None or self.kind(guid) != "mission" or guid in seen:
+            return set()
+        seen.add(guid)
+        out: set[str] = set()
+        for a in d["actions"]:
+            for p in a["parameters"]:
+                v = p["value"]
+                if p.get("input_name") or not is_std(v):
+                    continue
+                if self.kind(v) == "position" and (self.items.get(v) or {}).get("map_id"):
+                    out.add(self.items[v]["map_id"])
+                elif self.kind(v) == "mission":
+                    out |= self.maps_of(v, seen)
+        return out
+
+    def map_names(self, maps: Iterable[str]) -> list[str]:
+        return sorted((self.items.get(m) or {}).get("name", m) for m in maps)
+
     def entry_of(self, parent: str) -> str | None:
         """Entrada (creada por el MiR) de un marcador o cargador del catálogo."""
         return next((g for g, d in self.items.items()
@@ -215,7 +240,8 @@ class Catalog:
             elif k == "zone":
                 extra = zone_label(d["type_id"])
             elif k == "mission":
-                extra = f"{len(d['actions'])} actions"
+                maps = self.map_names(self.maps_of(g))
+                extra = f"{len(d['actions'])} actions" + (f" · mapa {', '.join(maps)}" if maps else "")
             o = d.get("_origen", {})
             out.append({"guid": g, "kind": k, "name": d["name"], "parent": parent, "extra": extra,
                         "site": self.site_of(g),
@@ -593,6 +619,7 @@ class MirSync:
             out[name] = {"mission": ref, "mission_guid": g,
                          "mission_name": cat.items[g]["name"] if g else None,
                          "site": cat.site_of(g) if g else None,
+                         "maps": cat.map_names(cat.maps_of(g)) if g else [],
                          "required": cat.closure([g]) if g else []}
         return out
 

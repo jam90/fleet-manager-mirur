@@ -2307,6 +2307,39 @@ cambio de mapa se sigue haciendo en la web del MiR.
      el mapa del otro site no sale para crear zonas ni en «Creado desde
      aquí», y sí con «Ver todo».
 
+## 2026-10-29 — Una mission con positions fijas va atada a su mapa
+
+Al plantear la estructura del catálogo (se queda igual: una carpeta por
+tipo y un fichero por GUID; la jerarquía site → mapa → positions ya está
+en los campos y en el GUID, y la interfaz la enseña) salió lo que sí
+importa: **7 de las 12 missions del catálogo llevan positions fijas** de
+`suberri_mirur` (`coger` y `traer` → MESA_TKNIKA, la carga → su estación,
+`Ir a zona de espera MIRUR` → sus tres puntos), y otras las heredan de la
+sub-mission que cargan. Esas missions no son de un site sino de un mapa: en
+`mapa-pruebas` (mismo site, otras positions con otros GUIDs) no valen, y
+sincronizar no lo arregla (copia el mismo GUID). Las que reciben la
+position como input (`target_pos`) valen en cualquier mapa, porque el FM
+resuelve el nombre en el mapa activo.
+
+131. **Mapas de una mission = los de sus positions fijas y los de las
+     sub-missions que carga** (`load_mission`); un input no ata. Lo calcula
+     el driver MiR con lo que lee del robot al conectar (en la misma
+     lectura de `missions/<guid>/actions`, más `GET /positions` y
+     `GET /maps` una vez), así vale también para missions que no están en
+     el catálogo: `translate` rechaza con `NO_ROUTE_TO_TARGET` si el mapa
+     activo no es uno de ellos, y en `fleet/order` el asignador prueba el
+     siguiente robot (decisión 89). El catálogo lo calcula igual
+     (`Catalog.maps_of`) para enseñarlo: «· mapa suberri_mirur» en
+     Sincronización y en cada action del Configurador. Esta comprobación no
+     depende de elegir site. Leído de los robots: con los dos en `suberri`,
+     se rechazarían `coger` (en mir-1; la de mir-2 ya no lleva positions
+     fijas), `abrir_puerta`, `ir_a_espera` y `recoger_pieza`.
+     **Comprobado por el usuario con mir-2** (en `suberri`, una mission de
+     `suberri_mirur`, cola 627): el MiR la empieza y la aborta en el mismo
+     segundo con «Unable to find a way to get from start to goal in
+     different map», y **el robot queda en Error** (código 10101), que hay
+     que quitar a mano en su web. Rechazarla antes evita eso.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se

@@ -263,8 +263,9 @@ def test_action_needs_para_la_matriz_del_configurador(cat):
     assert needs["por_guid"]["mission_name"] == "principal"
     assert needs["por_nombre"]["mission_guid"] == M_SUB
     assert needs["fuera"] == {"mission": "no-catalogada", "mission_guid": None,
-                              "mission_name": None, "site": None, "required": []}
+                              "mission_name": None, "site": None, "maps": [], "required": []}
     assert needs["por_guid"]["site"] == SES
+    assert needs["por_guid"]["maps"] == ["m"]          # MAIN va a VL y A, y carga SUB (A)
     assert needs["sin_mission"]["mission_guid"] is None
 
 
@@ -388,3 +389,17 @@ def test_cada_recurso_dice_su_site(tmp_path):
     ch = s.form_choices()
     assert ch["position_sites"]["A"] == [SES] and {m["site"] for m in ch["missions"]} == {SES}
     assert s.create_choices()["maps"] == [{"guid": MAP, "name": "m", "site": SES}]
+
+
+def test_una_mission_esta_atada_al_mapa_de_sus_positions_fijas(tmp_path):
+    # Decisión 131: positions fijas (también las de una sub-mission) atan al
+    # mapa; una position que llega como input, no.
+    cat = write_catalog(tmp_path)
+    assert cat.maps_of(M_MAIN) == {MAP} and cat.maps_of(M_SUB) == {MAP}
+    doc = json.loads((tmp_path / "missions" / f"{M_SUB}.json").read_text())
+    doc["actions"][0]["parameters"][0]["input_name"] = "destino"      # move con input
+    (tmp_path / "missions" / f"{M_SUB}.json").write_text(json.dumps(doc))
+    cat = Catalog.load(tmp_path)
+    assert cat.maps_of(M_SUB) == set()
+    assert cat.maps_of(M_MAIN) == {MAP}                                # MAIN sigue yendo a VL fijo
+    assert "mapa m" in {i["guid"]: i["extra"] for i in cat.summary()}[M_MAIN]

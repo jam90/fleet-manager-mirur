@@ -24,6 +24,8 @@ class _FakeClient(MirClient):
         self.posted: list[dict] = []
         self.deleted: list[int] = []
         self.site_reads = 0
+        self.extra_positions: list[dict] = []
+        self.actions: dict[str, list[dict]] = {}     # missions/<guid>/actions a medida
 
     def _req(self, method, path, json=None):
         if method == "GET" and path == "status":
@@ -36,8 +38,12 @@ class _FakeClient(MirClient):
             return [{"name": "coger", "guid": "m-coger"}, {"name": "Ir a posición", "guid": "m-ir"},
                     {"name": "Carga", "guid": "m-carga"}]
         if path == "positions":
-            return [{"name": "P1", "guid": "p-1", "map": "/v2.0.0/maps/m"}]
+            return [{"name": "P1", "guid": "p-1", "map": "/v2.0.0/maps/m"}, *self.extra_positions]
+        if path == "maps":
+            return [{"guid": "m", "name": "taller"}, {"guid": "m-otro", "name": "almacén"}]
         if path.startswith("missions/") and path.endswith("/actions"):
+            if path in self.actions:
+                return self.actions[path]
             return [{"parameters": [{"input_name": "target_pos"}]}] if "m-ir" in path else []
         if method == "POST" and path == "mission_queue":
             self.posted.append(json)
@@ -218,3 +224,37 @@ def test_poll_dice_el_site_del_mapa_activo_y_lo_pregunta_una_vez():
     c.status["map_id"] = "otro"                     # mapa que el robot no sabe describir
     t = d.poll()
     assert t is not None and t.site_id is None      # no se sabe: no se compara
+
+
+def test_mission_con_positions_fijas_solo_en_su_mapa():
+    # Decisión 131: `coger` va a una position fija del mapa «almacén»; con
+    # otro mapa activo se rechaza (y la flota prueba otro robot). Un input
+    # (target_pos) no ata a ningún mapa: se resuelve en el activo.
+    d, c = _driver()
+    c.extra_positions = [{"name": "Muelle", "guid": "p-muelle", "map": "/v2.0.0/maps/m-otro"}]
+    c.actions["missions/m-coger/actions"] = [
+        {"parameters": [{"id": "position", "value": "p-muelle", "input_name": None}]}]
+    c.actions["missions/m-ir/actions"] = [
+        {"parameters": [{"id": "position", "value": "p-muelle", "input_name": "target_pos"}]}]
+    d.poll()
+    assert d.connect()
+    assert d.mission_maps == {"m-coger": {"m-otro"}, "m-ir": set(), "m-carga": set()}
+    with pytest.raises(OrderRejected, match="mapa «almacén» y el robot está en «taller»") as e:
+        d.translate(Action("coger", "a1"))
+    assert e.value.error_type == "NO_ROUTE_TO_TARGET"
+    d.translate(Action("ir_a", "a2", actionParameters=[ActionParameter("target_pos", "P1")]))
+    c.status["map_id"] = "m-otro"
+    d.poll()
+    assert d.translate(Action("coger", "a3")).label == "mission 'coger'"
+
+
+def test_las_positions_fijas_de_una_sub_mission_tambien_atan():
+    d, c = _driver()
+    c.extra_positions = [{"name": "Muelle", "guid": "p-muelle", "map": "/v2.0.0/maps/m-otro"}]
+    c.actions["missions/m-coger/actions"] = [
+        {"parameters": [{"id": "mission_id", "value": "m-sub", "input_name": None}]}]
+    c.actions["missions/m-sub/actions"] = [
+        {"parameters": [{"id": "position", "value": "p-muelle", "input_name": None}]},
+        {"parameters": [{"id": "mission_id", "value": "m-coger", "input_name": None}]}]   # ciclo
+    d.poll()
+    assert d.connect() and d.mission_maps["m-coger"] == {"m-otro"}
