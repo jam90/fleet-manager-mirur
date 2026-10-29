@@ -873,3 +873,81 @@ marcador y el robot pasa por su entry él solo; la entry no es un destino.
     `position_inputs` son nombres de position y los `required_inputs` se
     reenvían tal cual; el tipo real lo decide la mission de Blockly y el FM
     no lo conoce. Si algún día hace falta, `ParamInfo.kind` puede crecer.
+
+## 2026-10-07 — docker-compose con Mosquitto
+
+El FM no arranca sin broker (`MqttBus.start()` falla con TimeoutError;
+también lo usan la web y `scripts/*`), y hasta ahora Mosquitto se instalaba
+a mano en el host (`localhost:1883` sin auth). Se añade compose para que
+`broker + FM` arranquen juntos.
+
+### Código
+
+- `mosquitto/config/mosquitto.conf`: `listener 1883`, `allow_anonymous true`
+  (como el broker de desarrollo del README), persistencia en
+  `/mosquitto/data` para los retained (`connection`, `factsheet`).
+- `Dockerfile.fm`: `python:3.12-slim`, instala `requirements.txt`, copia
+  `run_fm.py` + `fm/` + `config/` + `schemas/`; usuario sin privilegios;
+  `STOPSIGNAL SIGTERM` (el FM publica `OFFLINE` al cerrar limpio).
+- `docker-compose.yml`: `mosquitto` (1883 publicado, healthcheck, volumen
+  `mosquitto-data`), `fleet` (robots reales, web `:8050`) y `fleet-sim`
+  (perfil `sim`, web `:8051`). `MQTT_HOST=mosquitto` en `environment:`
+  gana al `.env` porque `load_dotenv()` no pisa variables existentes;
+  el token (`AUTH_HEADER`/`MIR_AUTH…`) sigue viniendo de `.env` (fuera de git).
+  `config/` montado `:ro` para retocar missions/umbrales sin reconstruir.
+- `docker compose up --build` = flota real; `--profile sim up fleet-sim` =
+  demo sin hardware. Verificado end-to-end con sim: `state` a 1 Hz visible
+  desde el host, `POST :8051/api/fleet/order coger` → `order_response
+  ASSIGNED sim-1` → `coger:FINISHED`. `pytest`: 76 passed.
+
+### Decisiones nuevas
+
+51. **Un `Dockerfile.fm` para ambos perfiles**: `fleet` y `fleet-sim` usan
+    la misma imagen y solo cambian `command` (`--config`) y puerto. Menos
+    deriva que dos Dockerfiles.
+52. **`fleet-sim` con perfil `sim`**: `up` a secas levanta solo lo real
+    (evita publicar dos FM contra el mismo broker por despiste en clase).
+53. **Sin auth en el broker de compose**, igual que el de desarrollo. Si algún
+    día se expone a la LAN del taller, añadir usuario/clave en
+    `mosquitto.conf` y `MQTT_USERNAME/PW` (hoy `mqtt_bus.py` no los soporta).
+
+## 2026-10-09 — API REST para integración (estado, orders, seguimiento)
+
+Hasta ahora el estado de los robots y el veredicto del asignador solo
+llegaban por MQTT o por el WebSocket de la UI: un cliente HTTP simple podía
+mandar una `fleet/order` pero no saber si se asignó ni cómo iba.
+
+### Código
+
+- `fm/web/server.py`: rutas nuevas `GET /api/health`, `/api/robots`,
+  `/api/robots/<serial>` (resumen), `…/state|connection|factsheet` (mensaje
+  VDA crudo, 503 si aún no hay), `…/actions`, `POST /api/robots/<serial>/order`
+  (order dirigida), `GET /api/orders`, `/api/orders/<orderId>`. Los POST de
+  order aceptan `orderId` propio y `?wait=N` (≤ 30 s).
+- El espejo (`mirror`) retiene también `factsheet` y alimenta `orders`:
+  `order_response` → ASSIGNED/REJECTED; `state` con ese `orderId` →
+  ACCEPTED y fase por `actionStates` (RUNNING/FINISHED/FAILED); `errors[]`
+  con `errorReferences.orderId` de una order PENDING → REJECTED (así se ve el
+  rechazo de una order dirigida, que no tiene `order_response`).
+- `scripts/api.http`: chuleta de todas las rutas (REST Client de VS Code).
+- Tests: `tests/test_web.py` (+4). `pytest`: 80 passed. Probado end-to-end
+  con la flota simulada (Dispatcher y SimDriver reales, bus en memoria en
+  lugar de Mosquitto): asignada → RUNNING → FINISHED, rechazo por ocupados,
+  dirigida rechazada por `OTHER_ORDER_ACTIVE`, dirigida aceptada y
+  `cancelOrder` → FAILED.
+
+### Decisiones nuevas
+
+54. **La API lee del espejo, no de `Robot`.** Todo lo que devuelve un GET es
+    algo que el FM ya publicó por MQTT: un cliente HTTP y uno MQTT ven lo
+    mismo, y el hilo web no toca el estado del hilo principal. El historial
+    `orders` lo escribe el hilo principal y lo leen las peticiones: Lock
+    (como `HeaderCounter`).
+55. **`?wait=` con futures, no con polling.** El POST registra un future
+    antes de publicar; el espejo lo despierta (`call_soon_threadsafe`) en
+    cuanto hay veredicto. Sin espera, o si no llega a tiempo, el cliente
+    consulta `GET /api/orders/<orderId>` (202 = sigue PENDING).
+56. **Historial de orders en RAM, acotado a 200** y sin persistencia (§1).
+    Incluye las orders que llegan por MQTT, no solo las de la API.
+57. **`orderId` del cliente admitido**: el sistema aguas arriba puede usar
+    sus ids y reintentar con el mismo (idempotencia VDA, §5.4).

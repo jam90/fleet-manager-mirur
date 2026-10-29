@@ -1,0 +1,57 @@
+# Chuleta de la API REST del Fleet Manager (extensión "REST Client" de VS Code:
+# botón "Send Request" encima de cada petición). También sirve para copiar a curl.
+# Documentación interactiva (Swagger): {{host}}/api/docs
+#
+# OJO con robots reales: los POST de order MUEVEN el robot. Probar antes con
+#   run_fm.py --config config/fleet-sim.yaml   (o docker compose --profile sim → :8051)
+
+@host = http://localhost:8050
+
+### Salud: conexión con el broker y si el FM alcanza a cada robot
+GET {{host}}/api/health
+
+### Catálogo: robots, actionTypes con sus parámetros, umbrales de batería
+GET {{host}}/api/fleet
+
+### Estado resumido de todos los robots (batería, posición, order, errores…)
+GET {{host}}/api/robots
+
+### Estado resumido de uno
+GET {{host}}/api/robots/mir-1
+
+### Último state VDA 5050 crudo (el mismo JSON que va por MQTT)
+GET {{host}}/api/robots/mir-1/state
+
+### connection (ONLINE / OFFLINE / CONNECTION_BROKEN)
+GET {{host}}/api/robots/mir-1/connection
+
+### factsheet VDA del robot
+GET {{host}}/api/robots/mir-1/factsheet
+
+### Qué actionTypes acepta este robot y con qué parámetros
+GET {{host}}/api/robots/mir-1/actions
+
+### Orden a la flota: el FM elige robot. wait=5 → espera hasta 5 s el veredicto
+# 200 = veredicto (ASSIGNED / REJECTED); 202 = sigue PENDING al acabar la espera
+POST {{host}}/api/fleet/order?wait=5
+Content-Type: application/json
+
+{ "actionType": "coger", "params": {}, "orderId": "prueba-001" }
+
+### Orden dirigida a un robot concreto (se salta el asignador)
+POST {{host}}/api/robots/mir-2/order?wait=5
+Content-Type: application/json
+
+{ "actionType": "abrir_puerta", "params": { "target_pos": "H2D1-VL" } }
+
+### Seguimiento de una order: PENDING → ASSIGNED/ACCEPTED → RUNNING → FINISHED | FAILED (o REJECTED)
+GET {{host}}/api/orders/prueba-001
+
+### Últimas orders vistas (la más nueva primero)
+GET {{host}}/api/orders?limit=10
+
+### Pausar / reanudar / cancelar la order activa / pedir un state ya
+POST {{host}}/api/robots/mir-1/instant
+Content-Type: application/json
+
+{ "actionType": "startPause" }
