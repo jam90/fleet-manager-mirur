@@ -1,6 +1,8 @@
-# Mission Manager
+# Pasarela de voz (`clientes/voz`)
 
-Pasarela FastAPI: voz del navegador (MediaRecorder) → servidor whisper.cpp → decisión → cliente.
+Pasarela FastAPI: voz del navegador (MediaRecorder) → servidor whisper.cpp → decisión → Fleet Manager.
+Antes era el repo `mission-manager`. Es un cliente del FM por su API REST; los modelos se sirven desde el
+repo `inferencia`. Cómo funciona, cómo reproducirlo y cifras: [`docs/PROPUESTA_DETECCION_VOZ.md`](docs/PROPUESTA_DETECCION_VOZ.md).
 
 Necesita un `whisper-server` de **whisper.cpp** externo, arrancado con `--convert`
 (para que acepte webm/ogg/mp3 directamente).
@@ -59,6 +61,15 @@ Cada entrada dice también qué misión del Fleet Manager se ejecuta:
 ```
 
 La lógica de decisión está en `app/logic.py`.
+
+## Evaluación (`eval/`)
+
+```bash
+uv sync --extra eval
+uv run python -m eval.bench_correction      # texto con errores de Whisper (necesita el LLM en :8001)
+uv run python -m eval.make_audio            # genera el audio de prueba (descarga voces Piper la 1.ª vez)
+uv run python -m eval.bench_audio           # audio → whisper → decisión
+```
 
 ## Manos libres (palabra de activación)
 

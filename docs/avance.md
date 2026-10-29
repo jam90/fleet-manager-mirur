@@ -951,3 +951,32 @@ mandar una `fleet/order` pero no saber si se asignó ni cómo iba.
     Incluye las orders que llegan por MQTT, no solo las de la API.
 57. **`orderId` del cliente admitido**: el sistema aguas arriba puede usar
     sus ids y reintentar con el mismo (idempotencia VDA, §5.4).
+
+## 2026-10-29 — Pasarela de voz en `clientes/` y modelos en un repo aparte
+
+La voz (antes `../mission-manager`, sin commits) entra en este repo como
+`clientes/voz/`, copiada primero tal cual y luego traducida al castellano.
+Trae su intérprete experimental y sus benchmarks (`clientes/voz/eval/`, antes
+`../llms`). Servicio `voz` en el compose, con perfil propio.
+
+### Decisiones nuevas
+
+58. **Mismo repo, distinto servicio.** La voz es un cliente del FM por la API
+    REST, como un MES: proceso y contenedor propios. En el mismo proceso, un
+    fallo o reinicio de la voz pararía la flota y borraría el historial de
+    orders (RAM, decisión 56). Un solo repo evita tener la config de acciones y
+    la documentación repartidas.
+59. **`fm/` nunca importa `clientes/`** (`tests/test_independencia.py`), por el
+    mismo motivo que el core no importa drivers: el FM debe poder desplegarse
+    solo y seguir siendo un servicio VDA 5050 genérico.
+60. **Modelos fuera: repo `inferencia`.** Whisper y el LLM (provisión,
+    descarga, carga y servicio) viven en otro repo y exponen APIs genéricas
+    (whisper `/inference`, OpenAI `/v1`). La lógica de dominio (palabra de
+    activación, `missions.json`, prompts, vetos) se queda en la pasarela, así
+    cambiar de modelo no toca el FM ni la pasarela.
+61. **La voz va con perfil `voz`**: `docker compose up` a secas sigue
+    levantando solo mosquitto + flota real, como antes.
+62. **Mismas convenciones que el FM**: castellano en comentarios, docs, logs y
+    tests; identificadores en inglés. El contrato HTTP de la voz (`/api/voice`,
+    campos JSON) no cambia.
+

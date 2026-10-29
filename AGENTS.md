@@ -20,6 +20,11 @@ comentarios que explican el *porqué*.
 - `config/fleet.yaml` (real) / `config/fleet-sim.yaml` (demo sin hardware)
 - `scripts/` — `read_status`, `list_missions`, `send_order`, `send_fleet_order`,
   `send_instant_action`, `read_vda_state` (usan el mismo header que el servicio)
+- `clientes/` — pasarelas de IA hacia el FM, cada una un servicio aparte con su
+  propio `AGENTS.md`, venv (uv) y tests. Hoy `clientes/voz/` (navegador → whisper
+  → `POST /api/fleet/order`); en el futuro visión. **`fm/` nunca importa
+  `clientes/`** (`tests/test_independencia.py`): son clientes del FM por REST/MQTT,
+  como un MES. Los modelos (whisper, LLM) no viven aquí sino en el repo `inferencia`.
 
 ## Entorno y ejecución
 
@@ -28,11 +33,14 @@ comentarios que explican el *porqué*.
 - Venv: `env -u PYTHONPATH .venv/bin/python …` (el WSL mete ROS Jazzy en el
   site-packages del sistema; sin esto peta).
 - Tests: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
-  (76 tests, sin red). Contrato de drivers: `tests/adapters/test_contract.py`.
+  (81 tests, sin red; no incluyen `clientes/`). Contrato de drivers: `tests/adapters/test_contract.py`.
 - Local clásico: Mosquitto en `localhost:1883` sin auth + `run_fm.py`
   (web `:8050`); `--config config/fleet-sim.yaml` sin robots.
 - Compose: `docker compose up --build` (mosquitto + flota real, web `:8050`);
   `docker compose --profile sim up --build fleet-sim` (demo, web `:8051`).
+  Voz: `docker compose --profile sim --profile voz up --build fleet-sim voz`
+  (pasarela en `:8000`; necesita el whisper del repo `inferencia` en el host `:8080`).
+  Tests de la voz aparte: `cd clientes/voz && uv run pytest` (16).
   Dentro de compose el broker es `MQTT_HOST=mosquitto` (gana al `.env`
   porque `load_dotenv()` no pisa variables existentes); desde el host todo
   sigue en `localhost:1883`. Ver `docker-compose.yml`, `Dockerfile.fm`,

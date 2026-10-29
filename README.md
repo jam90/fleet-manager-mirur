@@ -263,6 +263,25 @@ cada driver (`sim` y `mir` con cliente falso): es lo que debe pasar un driver
 nuevo. (La variable evita que pytest cargue plugins de ROS presentes en el
 entorno.)
 
+## Clientes (`clientes/`)
+
+Pasarelas que traducen interacción humana en orders para el FM. Cada una es un
+servicio aparte que habla con el FM por la [API REST](docs/api-rest.md) (o por
+MQTT), igual que lo haría un MES: el FM se despliega y se prueba sin ellas, y
+`fm/` nunca las importa (`tests/test_independencia.py`).
+
+| Cliente | Qué hace | Docs |
+|---|---|---|
+| `clientes/voz/` | Micro del navegador → whisper.cpp → orden con palabra de activación y confirmación → `POST /api/fleet/order` | [`clientes/voz/README.md`](clientes/voz/README.md), [propuesta y benchmarks](clientes/voz/docs/PROPUESTA_DETECCION_VOZ.md) |
+
+Los modelos (whisper.cpp, LLM) no viven en este repo: se provisionan y sirven
+desde el repo `inferencia`. La pasarela solo conoce sus URLs (`WHISPER_URL`).
+
+```bash
+docker compose --profile sim --profile voz up --build fleet-sim voz   # flota simulada + voz en :8000
+(cd clientes/voz && uv sync && uv run pytest)                          # tests de la voz (16)
+```
+
 ## Smoke de integración
 
 1. `mosquitto_sub -t 'vda5050/v3/MiR/+/state' -v` → un mensaje/robot/s, `headerId` creciente.
@@ -452,4 +471,5 @@ fm/mir_client.py        shim: re-exporta fm/adapters/mir/client.py (lo usan scri
 fm/vda5050/             header.py (topic≡header), state.py, state_builder.py, order.py, schemas.py
 schemas/                JSON Schemas oficiales v3.0.0 (con parches, ver schemas/README.md)
 scripts/, tests/, docs/avance.md
+clientes/voz/           pasarela de voz (servicio aparte, ver clientes/voz/README.md)
 ```
