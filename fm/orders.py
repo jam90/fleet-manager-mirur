@@ -19,6 +19,11 @@ from fm.vda5050.state_builder import StateOverlay
 
 log = logging.getLogger("fm.orders")
 
+# Rechazos de order que se guardan para el `state` (decisión 121). Solo se
+# vacían al aceptar otra order: un emisor que reintenta contra un robot
+# ocupado, cada vez con otro orderId, haría crecer el `state` sin límite.
+MAX_ORDER_ERRORS = 10
+
 
 class IgnoreOrder(Exception):
     """Order repetida (mismo orderId/orderUpdateId): se descarta en silencio."""
@@ -57,7 +62,7 @@ class OrderTracker:
     def __init__(self, serial: str):
         self.serial = serial
         self.active: ActiveOrder | None = None
-        self.order_errors: list[Error] = []       # rechazos de order; se vacían al aceptar otra
+        self.order_errors: list[Error] = []       # rechazos de order (sin repetir, ≤ MAX_ORDER_ERRORS); se vacían al aceptar otra
         self.exec_errors: list[Error] = []        # fallo de ejecución de la order activa
         self.instant_errors: list[Error] = []     # (H5) rechazos de instantActions
         self.instant_states: list[ActionState] = []
@@ -120,7 +125,12 @@ class OrderTracker:
 
     def reject(self, order_id: str | None, err: OrderRejected) -> Error:
         e = error_for_order(err.error_type, err.description, order_id, level="WARNING")
+        # Un rechazo idéntico (misma order, mismo motivo) no se repite: pasa
+        # al final, como el más reciente. De los distintos, los últimos N.
+        if e in self.order_errors:
+            self.order_errors.remove(e)
         self.order_errors.append(e)
+        del self.order_errors[:-MAX_ORDER_ERRORS]
         log.warning("[%s] order %s rechazada: %s", self.serial, order_id, err)
         return e
 

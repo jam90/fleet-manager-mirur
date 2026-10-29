@@ -204,6 +204,8 @@ Reglas (§6.1.4 de la norma):
 
 Los rechazos de `<serial>/order` van a `state.errors[]` (`errorLevel:
 WARNING`, `errorReferences: [{orderId}]`) hasta que se acepte otra order.
+Un rechazo repetido (misma order, mismo motivo) aparece una sola vez, y se
+conservan como mucho los 10 últimos distintos.
 
 ### `fleet/order_response`
 

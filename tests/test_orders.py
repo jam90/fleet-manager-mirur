@@ -203,3 +203,22 @@ def test_rechazo_se_limpia_al_aceptar():
     assert t.overlay().errors[0].errorReferences[0].referenceValue == "o0"
     _accept(t, order())
     assert t.overlay().errors == []
+
+
+def test_rechazos_sin_repetir_y_acotados():
+    from fm.orders import MAX_ORDER_ERRORS
+    t = OrderTracker("mir-1")
+    busy = OrderRejected("MOBILE_ROBOT_NOT_AVAILABLE", "ocupado")
+    # El mismo rechazo repetido (un emisor que reintenta) queda una sola vez.
+    for _ in range(5):
+        t.reject("o0", busy)
+    assert len(t.order_errors) == 1
+    # Reintentos con orderId nuevo cada vez: solo los últimos N, el último al final.
+    for i in range(1, 3 * MAX_ORDER_ERRORS):
+        t.reject(f"o{i}", busy)
+    refs = [e.errorReferences[0].referenceValue for e in t.overlay().errors]
+    assert len(refs) == MAX_ORDER_ERRORS and refs[-1] == f"o{3 * MAX_ORDER_ERRORS - 1}"
+    # Repetir uno antiguo lo mueve al final, sin duplicarlo.
+    t.reject(refs[0], busy)
+    refs2 = [e.errorReferences[0].referenceValue for e in t.order_errors]
+    assert refs2 == [*refs[1:], refs[0]]

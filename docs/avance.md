@@ -2058,6 +2058,20 @@ le llegaba.
      `ASSIGNED`. Con el código anterior, la misma prueba se queda sin
      `order_response`.
 
+## 2026-10-29 — Acotar los rechazos de order en el `state` (punto #32)
+
+Cada rechazo de una `<serial>/order` se añadía a `OrderTracker.order_errors`,
+que solo se vacía al aceptar otra order. Un emisor que reintenta contra un
+robot ocupado hacía crecer `state.errors[]` sin límite.
+
+121. **Rechazos sin repetir y acotados.** Un rechazo idéntico a uno ya
+     guardado (misma order y mismo motivo) no se duplica: pasa al final como
+     el más reciente. Se conservan los `MAX_ORDER_ERRORS = 10` últimos
+     (`fm/orders.py`). Se sigue vaciando todo al aceptar otra order
+     (decisión 2). No afecta a `fleet/order`: sus rechazos van en
+     `order_response`, no al `state`. Test nuevo en `tests/test_orders.py`;
+     README actualizado.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2066,7 +2080,8 @@ cerrado se quita (su historia está en la entrada de su fecha). Cerrados el
 2026-10-14: #4 (GUIDs comunes), #17 (descartar robot sin la mission), #20
 (mapa activo: ya es `suberri_mirur`), #21 (un solo FM por broker, decisión 107)
 y #16 (configurador completo: v3, decisión 108).
-Cerrado el 2026-10-29: #30 (resuscribir al reconectar, decisión 120).
+Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120) y #32
+(rechazos acotados, decisión 121).
 
 **En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
 
@@ -2083,11 +2098,6 @@ Cerrado el 2026-10-29: #30 (resuscribir al reconectar, decisión 120).
     Node-RED. Los rechazos no se guardan (la decisión 20 sigue: un
     reintento tras `REJECTED` se acepta). Solo en memoria; la persistencia
     sigue fuera de alcance.
-- **#32** **Acotar `OrderTracker.order_errors`**: cada rechazo de una
-    `<serial>/order` añade una entrada y solo se vacía al aceptar otra
-    order. Un emisor que reintenta contra un robot ocupado la hace crecer
-    sin límite en el `state`. Agrupar rechazos idénticos o quedarse con los
-    últimos N.
 
 **Aguas arriba (a cargo de otro compañero, sobre este FM)**
 
