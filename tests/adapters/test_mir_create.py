@@ -50,9 +50,10 @@ def test_crear_mission_errores(sync):
         sync.create_mission("  ", GRP)
     with pytest.raises(CreateError, match="ya hay una mission 'principal'"):
         sync.create_mission("principal", GRP)                 # está en el catálogo
+    # Un grupo del catálogo que el robot aún no tiene se crea en él con la mission.
     del sync.client.db["mission_groups"][GRP]
-    with pytest.raises(CreateError, match="despliégalo antes"):
-        sync.create_mission("x", GRP)
+    sync.create_mission("x", GRP)
+    assert sync.client.db["mission_groups"][GRP]["name"] == "g"
 
 
 def test_crear_position_donde_esta_el_robot(sync, tmp_path):
@@ -373,6 +374,34 @@ def test_crear_site_y_su_primer_mapa(sync, tmp_path):
     sync.forget(m["guid"])
     assert sync.delete_blockers(r["guid"], {}, []) == []
 
+
+
+# -------------------------------------------------------------------- grupo
+def test_crear_grupo_y_su_primera_mission(sync, tmp_path):
+    r = sync.create_group("pruebas")
+    g = std_guid("missiongrp", 1, 0, 2)
+    assert r == {"kind": "missiongrp", "guid": g, "name": "pruebas"} and sync.client.writes == []  # solo el catálogo
+    with pytest.raises(CreateError, match="ya hay un grupo 'pruebas'"):
+        sync.create_group("pruebas")
+    # La primera mission no tiene de quién copiar la session: va al site de la flota.
+    with pytest.raises(CreateError, match="no hay site de la flota"):
+        sync.create_mission("primera", g)
+    m = sync.create_mission("primera", g, site=SES)["guid"]
+    assert sync.client.db["mission_groups"][g]["name"] == "pruebas"            # llega al robot con ella
+    assert sync.client.db["missions"][m]["session_id"] == SES
+    assert sync.client.db["missions"][sync.create_mission("segunda", g)["guid"]]["session_id"] == SES
+    assert {d["kind"] for d in sync.create_choices()["created"]} >= {"missiongrp", "mission"}
+    # No se borra con missions dentro: borradores, capturadas o hechas en la web del robot.
+    assert "tiene missions en borrador: primera, segunda" in sync.delete_blockers(g, {}, [])[0]
+    sync.capture(m)
+    assert "la usan otros recursos del catálogo: primera" in " ".join(sync.delete_blockers(g, {}, []))
+    assert "primera, segunda" in sync.in_use_here(g)[0]
+    for x in [x for x, d in sync.client.db["missions"].items() if d["group_id"] == g]:
+        sync.delete(x)
+        sync.forget(x)
+    assert sync.delete_blockers(g, {}, []) == [] and sync.in_use_here(g) == []
+    sync.delete(g)
+    assert sync.forget(g) == [g] and sync.create_group("otro")["guid"] == g    # era el más alto: queda libre
 
 
 # ------------------------------------------------------- capturar un mapa

@@ -298,8 +298,8 @@ def test_crear_y_capturar(tmp_path):
     sync.web_url = lambda g, m=None: f"http://robot/setup/missions/{g}"
     sync.std_guids = lambda kind, parent=None: set()
 
-    def create_mission(name, parent, others):
-        calls.append((name, parent, others))
+    def create_mission(name, parent, others, site=None):
+        calls.append((name, parent, others, site))
         if name == "repetida":
             raise ValueError("ya hay una mission 'repetida'")
         return {"kind": "mission", "guid": "M2", "name": name, "url": "http://robot/setup/missions/M2"}
@@ -314,7 +314,7 @@ def test_crear_y_capturar(tmp_path):
     assert c.post("/api/create/sim-1/mission", json=body).status_code == 409      # sin telemetría
     srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
     r = c.post("/api/create/sim-1/mission", json=body)
-    assert r.status_code == 200 and r.json()["guid"] == "M2" and calls[-1] == ("nueva", "G", set())
+    assert r.status_code == 200 and r.json()["guid"] == "M2" and calls[-1] == ("nueva", "G", set(), srv.cfg.site)
     bad = c.post("/api/create/sim-1/mission", json={"name": "repetida", "parent": "G"})
     assert bad.status_code == 400 and "repetida" in bad.json()["detail"]
     assert c.post("/api/create/sim-1/position", json={"name": "Mesa", "parent": "MAP"}).json()["guid"] == "P1"
@@ -368,6 +368,23 @@ def test_borrar_desde_la_web():
     srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
     out = c.post("/api/create/delete", json={"guid": "M1"}).json()
     assert out["robots"] == ["sim-1"] and out["files"] == 1 and not store
+
+
+def test_crear_grupo_y_no_borrarlo_con_missions_en_el_robot():
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
+    sync.std_guids = lambda kind, parent=None: set()
+    sync.create_group = lambda name, others: {"kind": "missiongrp", "guid": "G2", "name": name}
+    c = TestClient(srv.app)
+    assert c.post("/api/create/group", json={"name": "pruebas"}).json()["guid"] == "G2"
+    # Sin catálogo que lo vea, el robot tiene una mission hecha en su web dentro.
+    sync.describe = lambda g: {"guid": g, "kind": "missiongrp", "name": "pruebas"}
+    sync.delete_blockers = lambda g, defs, wanted: []
+    sync.exists = lambda g: True
+    sync.in_use_here = lambda g: ["el grupo tiene missions: a mano"]
+    assert c.post("/api/create/delete/preview", json={"guid": "G2"}).json()["blockers"] == \
+        ["sim-1: el grupo tiene missions: a mano"]
 
 
 def test_retirar_y_quitar_desde_la_web():

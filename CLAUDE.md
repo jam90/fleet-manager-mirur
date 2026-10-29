@@ -54,7 +54,8 @@
   mission vacía, position (en la pose del robot) o zona del mapa
   (decisión 124) con GUID estándar, borrador en `catalog/`, Capturar y
   Borrar, probada por el usuario con mir-1; y subir un mapa (PNG) con su
-  site al catálogo (decisión 126). Site de la flota (`site:` en
+  site al catálogo (decisión 126); y un grupo de missions, solo en el
+  catálogo, que llega al robot con su primera mission (decisión 134). Site de la flota (`site:` en
   `fleet.yaml`, selector en la cabecera, decisión 129): un robot cuyo mapa
   activo es de otro site no recibe orders. En Sincronización, sobrantes y «Retirar de la flota» con el número
   reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Un solo FM

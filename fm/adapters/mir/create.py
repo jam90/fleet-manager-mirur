@@ -15,7 +15,13 @@ la adoptada sigue con el suyo: se despliega la del catálogo (Sincronización)
 y la copia se borra en la web del MiR.
 
 - **Mission:** vacía, en un grupo del catálogo. Se sigue en
-  `http://<ip>/missions/<guid>` (Blockly).
+  `http://<ip>/missions/<guid>` (Blockly). Si el grupo aún no está en ese
+  robot, se crea en él (decisión 134). La session de la mission es la de
+  las demás de su grupo o, en un grupo sin missions, el site de la flota.
+- **Grupo de missions** (decisión 134): solo un nombre, común a toda la
+  flota (no es de ningún site). Como el site, se escribe solo en el
+  catálogo; llega a un robot al crear en él su primera mission o desde
+  Sincronización.
 - **Position:** en la posición ACTUAL del robot, sobre un mapa del
   catálogo que tiene que ser su mapa activo: quien no sabe dónde está el
   (0, 0) del mapa la encuentra donde está el robot. Se ajusta en el editor
@@ -67,7 +73,8 @@ from typing import Iterable
 from fm.adapters.mir.client import MirApiError
 from fm.adapters.mir.remove import retired, usage_blockers
 from fm.adapters.mir.sync import (AUTO_CHILD_TYPES, FACTORY, FOLDERS, GUIDISH, Catalog, is_std,
-                                  normalized_actions, normalized_zone, parse_std, std_guid)
+                                  mission_group_body, normalized_actions, normalized_zone, parse_std,
+                                  std_guid)
 
 POSITION_NORMAL = 0
 MARKER_TYPES = (11, 20)          # marcador VL y cargador: el MiR les crea una entrada (12, 21)
@@ -138,7 +145,7 @@ def next_guid(kind: str, inst: int, parent: int, taken: Iterable[str], per_paren
 
 def robot_std_guids(client, kind: str, map_guid: str | None = None) -> set[str]:
     """GUIDs estándar que ya hay en un robot (para no repetir número)."""
-    if kind in ("mission", "map", "session"):        # se numeran en toda la instalación
+    if kind in ("mission", "map", "session", "missiongrp"):     # se numeran en toda la instalación
         rows = client._req("GET", FOLDERS[kind])
     else:                              # position o zona: van por mapa
         rows = client._req("GET", f"maps/{map_guid}/{FOLDERS[kind]}")
@@ -171,9 +178,25 @@ def _get_or(client, path: str, msg: str):
 
 
 # ------------------------------------------------------------------- crear
-def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = ()) -> dict:
+def group_session(cat: Catalog, group_guid: str, site: str | None) -> str:
+    """Session para una mission nueva del grupo: la de las que ya tiene (la
+    más repetida) o, si aún no tiene ninguna, el site de la flota `site`."""
+    every = {**cat.items, **cat.drafts}
+    sessions = [d["session_id"] for g, d in every.items()
+                if cat.kind(g) == "mission" and d.get("group_id") == group_guid and d.get("session_id")]
+    if sessions:
+        return max(set(sessions), key=sessions.count)
+    if site and cat.kind(site) == "session" and site in cat.items:
+        return site
+    raise CreateError(f"el grupo {cat.items[group_guid]['name']!r} aún no tiene missions y no hay site de la "
+                      "flota: elígelo en la cabecera («Site») para saber en qué site va la mission")
+
+
+def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = (),
+                   site: str | None = None) -> dict:
     """Mission vacía `name` en el grupo `group_guid` del catálogo, en el robot
-    de `sync`. `others`: GUIDs estándar de los demás robots."""
+    de `sync`. `others`: GUIDs estándar de los demás robots; `site`: el de la
+    flota, para la primera mission de un grupo."""
     name = (name or "").strip()
     if not name:
         raise CreateError("falta el nombre")
@@ -183,15 +206,17 @@ def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = ())
         raise CreateError(f"el grupo {group_guid} no está en el catálogo")
     every = {**cat.items, **cat.drafts}
     same_group = [d for g, d in every.items() if cat.kind(g) == "mission" and d.get("group_id") == group_guid]
-    sessions = [d["session_id"] for d in same_group if d.get("session_id")]
-    if not sessions:
-        raise CreateError(f"no se sabe la session del grupo {group['name']!r}: no hay missions suyas en el catálogo")
-    session = max(set(sessions), key=sessions.count)
+    session = group_session(cat, group_guid, site)
     _, inst, _, group_num = parse_std(group_guid)
     with sync.lock:
         c = sync.client
-        _get_or(c, f"mission_groups/{group_guid}",
-                f"el grupo {group['name']!r} no está en {sync.serial}: despliégalo antes en Sincronización")
+        try:
+            c._req("GET", f"mission_groups/{group_guid}")
+        except MirApiError as e:
+            if e.status != 404:
+                raise
+            # Un grupo es solo un nombre: no hace falta pasar por Sincronización.
+            c._req("POST", "mission_groups", json=mission_group_body(group))
         names = {m["name"] for m in c._req("GET", f"mission_groups/{group_guid}/missions")}
         names |= {d["name"] for d in same_group}
         if name in names:
@@ -338,6 +363,23 @@ def create_session(sync, name: str, description: str = "", others: Iterable[str]
            "_origen": {"guid": guid, "capturado": date.today().isoformat()}}
     write_doc(sync.catalog_dir, "session", doc)
     return {"kind": "session", "guid": guid, "name": name}
+
+
+def create_group(sync, name: str, others: Iterable[str] = ()) -> dict:
+    """Grupo de missions `name` en el catálogo. No escribe en ningún robot.
+    `others`: GUIDs estándar de grupos de los robots."""
+    name = (name or "").strip()
+    if not name:
+        raise CreateError("falta el nombre del grupo")
+    cat = sync.catalog()
+    every = {**cat.items, **cat.drafts}
+    if any(cat.kind(g) == "missiongrp" and d["name"] == name for g, d in every.items()):
+        raise CreateError(f"ya hay un grupo {name!r} en el catálogo")
+    inst = parse_std(next(iter(every)))[1] if every else 1
+    guid = next_guid("missiongrp", inst, 0, set(every) | _retired(sync) | set(others), per_parent=False)
+    doc = {"guid": guid, "name": name, "_origen": {"guid": guid, "capturado": date.today().isoformat()}}
+    write_doc(sync.catalog_dir, "missiongrp", doc)
+    return {"kind": "missiongrp", "guid": guid, "name": name}
 
 
 def create_map(sync, name: str, png: bytes, resolution: float, origin_x: float, origin_y: float,
@@ -685,7 +727,8 @@ def adoptable(sync) -> list[dict]:
     return out
 
 
-def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = ()) -> dict:
+def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = (),
+          site: str | None = None) -> dict:
     """Lleva al catálogo la mission `source` del robot (sin GUID de la flota)
     con el GUID `target` de una mission que ya está en el catálogo o, si no
     se da, con uno nuevo de su grupo. `others`: GUIDs estándar de los demás
@@ -706,15 +749,12 @@ def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = 
                 raise CreateError(f"{m['name']!r} está en un grupo que no es del catálogo: "
                                   "muévela en la web del MiR a uno que sí lo sea")
             every = {**cat.items, **cat.drafts}
-            sessions = [d["session_id"] for g, d in every.items()
-                        if cat.kind(g) == "mission" and d.get("group_id") == m["group_id"] and d.get("session_id")]
-            if not sessions:
-                raise CreateError(f"no se sabe la session del grupo {group['name']!r}")
+            session = group_session(cat, m["group_id"], site)
             _, inst, _, group_num = parse_std(m["group_id"])
             taken = set(every) | _retired(sync) | robot_std_guids(c, "mission") | set(others)
             guid = next_guid("mission", inst, group_num, taken, per_parent=False)
             old = {"guid": guid, "name": m["name"], "description": "", "group_id": m["group_id"],
-                   "session_id": max(set(sessions), key=sessions.count), "hidden": False}
+                   "session_id": session, "hidden": False}
         kind, doc = _capture_mission(sync, cat, old, source=source)
     write_doc(sync.catalog_dir, kind, doc)
     return {"kind": kind, "guid": doc["guid"], "name": doc["name"], "source": source,
@@ -727,7 +767,8 @@ def created_here(cat: Catalog, guid: str) -> dict | None:
     pestaña Crear (borrador o ya capturada). Se reconoce porque su GUID en el robot
     es el nuestro: lo capturado con el script trae el GUID propio del robot."""
     d = cat.drafts.get(guid) or cat.items.get(guid)
-    if d is None or not is_std(guid) or cat.kind(guid) not in ("mission", "position", "zone", "map", "session"):
+    if d is None or not is_std(guid) or cat.kind(guid) not in ("mission", "position", "zone", "map", "session",
+                                                               "missiongrp"):
         return None
     return d if d.get("_origen", {}).get("guid") == guid else None
 

@@ -99,6 +99,10 @@ class SessionIn(BaseModel):
     description: str = ""
 
 
+class GroupIn(BaseModel):
+    name: str
+
+
 class CaptureMapIn(BaseModel):
     source: str                  # GUID del mapa en el robot
     name: str = ""               # en el catálogo; por defecto, el del robot
@@ -305,6 +309,7 @@ class WebServer:
             try:
                 if y.exists(guid):
                     where.append(s)
+                    blockers += [f"{s}: {b}" for b in (y.in_use_here(guid) if hasattr(y, "in_use_here") else [])]
                     if self.robots[s].last_telemetry.map_id == guid:
                         blockers.append(f"es el mapa activo de {s}: cámbialo antes en su web")
                     if self.robots[s].busy:
@@ -397,8 +402,8 @@ class WebServer:
         with self._create_lock:
             try:
                 others = self._others_guids(serial, kind, parent)
-                if kind == "mission":
-                    out = y.create_mission(name, parent, others)
+                if kind == "mission":            # el site de la flota: para la primera de un grupo
+                    out = y.create_mission(name, parent, others, self.cfg.site)
                 elif kind == "zone":
                     out = y.create_zone(name, parent, others, type_id)
                 else:
@@ -421,6 +426,20 @@ class WebServer:
             except ValueError as e:
                 raise HTTPException(400, str(e))
         log.info("[web] site %r creado en el catálogo (%s)", out["name"], out["guid"])
+        return out
+
+    def create_group(self, body: GroupIn) -> dict:
+        """Crear un grupo de missions (decisión 134): como un site, solo en el
+        catálogo; llega al robot con su primera mission."""
+        y = self._first_creator("create_group")
+        if y is None:
+            raise HTTPException(400, "ningún robot ofrece el catálogo")
+        with self._create_lock:
+            try:
+                out = y.create_group(body.name, self._others_guids("", "missiongrp", ""))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        log.info("[web] grupo %r creado en el catálogo (%s)", out["name"], out["guid"])
         return out
 
     def capturable_maps(self, serial: str) -> list[dict]:
@@ -492,7 +511,7 @@ class WebServer:
         with self._create_lock:          # un número nuevo no se puede dar dos veces
             try:
                 others = self._others_guids(serial, "mission", "") if not target else set()
-                out = y.adopt(source, target or None, others)
+                out = y.adopt(source, target or None, others, self.cfg.site)
             except ValueError as e:
                 raise HTTPException(400, str(e))
             except Exception as e:
@@ -644,6 +663,10 @@ class WebServer:
         @app.post("/api/create/session")
         def create_session(body: SessionIn):    # `def`: escribe en catalog/
             return self.create_session(body)
+
+        @app.post("/api/create/group")
+        def create_group(body: GroupIn):        # `def`: escribe en catalog/
+            return self.create_group(body)
 
         @app.get("/api/create/{serial}/maps")
         def capturable_maps(serial: str):    # `def`: REST bloqueante

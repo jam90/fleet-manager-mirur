@@ -842,13 +842,26 @@
             <option v-for="m in siteMaps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
         <div class="acts"><button class="btn primary" id="new-zone" :disabled="!canCreate('zone')" @click="createRes('zone')">Crear zona aquí</button></div>
       </template>
+      <template v-else-if="createWhat === 'missiongrp'">
+        <h3>Nuevo grupo de missions</h3>
+        <!-- Crear un grupo (decisión 134): solo al catálogo, sin robot. -->
+        <p class="hint">Un <b>grupo</b> reúne missions en la web del MiR (como una carpeta). Es de toda la flota, no de un site.
+          No necesita robot: se guarda en el catálogo y llega a cada robot al crear en él su primera mission (o desde
+          <a href="#sincronizacion">Sincronización</a>).</p>
+        <label class="field">Nombre<input id="new-group-name" v-model="groupForm.name" autocomplete="off"></label>
+        <div class="acts"><button class="btn primary" id="new-group" :disabled="!groupForm.name.trim() || !!createState.busy"
+                                  @click="createGroup">Crear grupo</button></div>
+      </template>
       <template v-else>
         <h3>Nueva mission</h3>
-        <p class="hint">Se crea vacía en el grupo elegido y se programa en el Blockly del MiR.</p>
+        <p class="hint">Se crea vacía en el grupo elegido y se programa en el Blockly del MiR. Si el grupo aún no está en el
+          robot, se crea en él.</p>
         <label class="field">Nombre<input id="new-mission-name" v-model="createState.mission.name" autocomplete="off"></label>
-        <label class="field">Grupo
+        <label class="field" v-if="createState.groups.length">Grupo
           <select id="new-mission-group" v-model="createState.mission.parent">
             <option v-for="g in createState.groups" :key="g.guid" :value="g.guid">{{ g.name }}</option></select></label>
+        <p class="hint" v-else>Todavía no hay ningún grupo de missions en el catálogo: una mission vive dentro de uno.
+          <button class="link-btn" type="button" @click="setCreateWhat('missiongrp')">Crear el grupo primero</button></p>
         <div class="acts"><button class="btn primary" id="new-mission" :disabled="!canCreate('mission')" @click="createRes('mission')">Crear mission</button></div>
       </template>
     </div>
@@ -869,6 +882,10 @@
       <template v-else-if="createState.result.kind === 'session'">
         <b>Site «{{ createState.result.name }}» creado en el catálogo</b> <code class="guid">{{ createState.result.guid }}</code>.
         Ahora sube su primer mapa: <button class="link-btn" type="button" @click="setCreateWhat('map')">Nuevo mapa</button>.
+      </template>
+      <template v-else-if="createState.result.kind === 'missiongrp'">
+        <b>Grupo «{{ createState.result.name }}» creado en el catálogo</b> <code class="guid">{{ createState.result.guid }}</code>.
+        Ahora crea su primera mission: <button class="link-btn" type="button" @click="setCreateWhat('mission')">Nueva mission</button>.
       </template>
       <template v-else-if="createState.result.kind === 'map' && createState.result.source">
         <b>Mapa «{{ createState.result.source }}» de {{ createState.result.robot }}
@@ -927,12 +944,12 @@
       <ul class="drafts" v-if="createdShown.length">
         <li v-for="d in createdShown" :key="d.guid">
           <span><span class="muted">{{ KIND_LABEL[d.kind] }}</span> <b>{{ d.name }}</b>
-            <span class="chip">{{ d.draft ? 'borrador' : ['map', 'session'].includes(d.kind) ? 'en el catálogo' : 'capturada' }}</span>
+            <span class="chip">{{ d.draft ? 'borrador' : CATALOG_ONLY.includes(d.kind) ? 'en el catálogo' : 'capturada' }}</span>
             <span class="muted">· {{ d.robot ? 'de ' + d.robot : 'en el catálogo' }} · {{ d.date }}</span>
             <code class="guid">{{ d.guid }}</code></span>
           <span class="acts">
             <a class="btn" v-if="d.url" :href="d.url" target="_blank" rel="noopener">Abrir en el MiR ↗</a>
-            <button class="btn" v-if="d.kind !== 'map' && d.kind !== 'session'" :class="{ primary: d.draft }" @click="captureRes(d)" :disabled="!!createState.busy">
+            <button class="btn" v-if="!CATALOG_ONLY.includes(d.kind)" :class="{ primary: d.draft }" @click="captureRes(d)" :disabled="!!createState.busy">
               {{ d.draft ? 'Capturar' : 'Volver a capturar' }}</button>
             <button class="btn danger" @click="deleteRes(d)" :disabled="!!createState.busy">Borrar</button>
           </span>
@@ -1372,8 +1389,9 @@
             <p>Los puntos a los que irán los robots y las zonas del mapa (ver «Añadir una position nueva» y «Añadir una
               zona»). Captúralas y llévalas a los demás robots.</p></li>
           <li><b>Missions</b><a class="where" href="#crear">→ Crear</a>
-            <p>Las tareas, programadas en el Blockly del MiR (ver «Añadir una mission nueva»). Necesitan un grupo de missions
-              del catálogo: hoy no se crea desde el FM.</p></li>
+            <p>Las tareas, programadas en el Blockly del MiR (ver «Añadir una mission nueva»). Viven en un grupo de missions:
+              si no hay ninguno, arriba, «Grupo», con su nombre. La primera mission del grupo lo lleva al robot y va al site
+              de la flota.</p></li>
           <li><b>Actions</b><a class="where" href="#configurador">→ Configurador</a>
             <p>Lo que piden las orders: una action por mission, con sus parámetros, habilitada en los robots que la
               tienen.</p></li>
@@ -1394,6 +1412,8 @@
           <dt>Mission</dt><dd>Programa del MiR (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.
             Si lleva positions fijas, solo vale en el mapa de esas positions (el Configurador lo dice: «mapa …»); si recibe la
             position como parámetro, vale en cualquier mapa que tenga una con ese nombre.</dd>
+          <dt>Grupo</dt><dd>Carpeta de missions en la web del MiR (p. ej. <code>mirur-tknika</code>). Es de toda la flota, no de
+            un site; toda mission está en uno.</dd>
           <dt>Position</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
           <dt>Action</dt><dd>Lo que pide una order (<code>actionType</code>): una mission + qué parámetros lleva. Se define en
             <code>config/fleet.yaml</code> y se habilita robot a robot.</dd>
@@ -1410,7 +1430,9 @@
         <ol class="steps">
           <li><b>Crearla vacía</b><a class="where" href="#crear">→ Crear</a>
             <p>Arriba, «Mission». Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
-              «Crear mission». El nombre no puede repetirse en el grupo.</p></li>
+              «Crear mission». El nombre no puede repetirse en el grupo. Para un grupo nuevo, antes «Grupo»: se guarda en el
+              catálogo y se crea en el robot junto con su primera mission, que va al site de la flota (elígelo en la
+              cabecera).</p></li>
           <li><b>Programarla en la web del MiR</b><span class="where">web del MiR</span>
             <p>«Abrir en la web del MiR ↗» lleva directo a su editor Blockly. Lo que la order vaya a mandar (una position,
               un número de piezas…) se declara como <b>variable</b> de la mission: el nombre de esa variable es el
@@ -1670,7 +1692,10 @@ function alsoText(plan) {
     + `(${[...new Set(names)].join(', ')})`);
   return parts.length ? `\nSe va también, con él: ${parts.join(' y ')}.` : '';
 }
-const CREATED_LABEL = { mission: 'Mission', position: 'Position', zone: 'Zona', map: 'Mapa', session: 'Site' };
+const CREATED_LABEL = { mission: 'Mission', position: 'Position', zone: 'Zona', map: 'Mapa', session: 'Site',
+                        missiongrp: 'Grupo' };
+// Lo que se crea solo en el catálogo: no hay nada que capturar del robot.
+const CATALOG_ONLY = ['map', 'session', 'missiongrp'];
 
 function hhmmss(iso) {
   const d = iso ? new Date(iso) : new Date();
@@ -2188,6 +2213,9 @@ createApp({
         hint: 'Una zona del mapa (prohibida, preferida, de velocidad…), creada delante del robot.',
         flow: ['<b>Crear</b> aquí', 'Darle forma en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
                `Llevarla a otros robots en ${SYNC_LINK}`] },
+      { kind: 'missiongrp', label: 'Grupo', robot: false,
+        hint: 'Un grupo de missions (como una carpeta en la web del MiR). Va al catálogo, no a un robot.',
+        flow: ['<b>Crear</b> aquí el grupo', '<b>Crear</b> su primera mission (botón «Mission»): el grupo llega con ella al robot'] },
       { kind: 'mission', label: 'Mission', robot: true,
         hint: 'Una mission vacía que se programa en el Blockly del MiR.',
         flow: ['<b>Crear</b> aquí', 'Programarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
@@ -2278,6 +2306,19 @@ createApp({
       await loadCreate();
       if (out) mapForm.session = out.guid;            // el mapa que se suba a continuación, en este site
     }
+    // Nuevo grupo de missions (decisión 134).
+    const groupForm = reactive({ name: '' });
+    async function createGroup() {
+      const body = { name: groupForm.name.trim() };
+      const out = await postCreate('/api/create/group', body, `creando el grupo «${body.name}»…`);
+      if (out) {
+        createState.result = out;
+        groupForm.name = '';
+        addEvent('catálogo', `creado el grupo «${out.name}» (${out.guid})`);
+      }
+      await loadCreate();
+      if (out) createState.mission.parent = out.guid;    // la mission que se cree a continuación, en este grupo
+    }
     const canUploadMap = computed(() => !createState.busy && !!mapForm.name.trim() && !!mapForm.png
       && mapForm.resolution > 0 && !!mapForm.session);
     async function uploadMap() {
@@ -2294,7 +2335,8 @@ createApp({
     }
     const zoneHelp = computed(() => (createState.zone_types.find(z => z.type_id === createState.zone.type_id) || {}).help || '');
     // «Creado desde aquí»: un filtro por tipo, con los que haya y cuántos.
-    const CREATED_PLURAL = { session: 'Sites', map: 'Mapas', mission: 'Missions', position: 'Positions', zone: 'Zonas' };
+    const CREATED_PLURAL = { session: 'Sites', map: 'Mapas', missiongrp: 'Grupos', mission: 'Missions', position: 'Positions',
+                             zone: 'Zonas' };
     const createdInSite = computed(() => createState.created.filter(d => inSite(d.site)));
     const createdKinds = computed(() => Object.keys(CREATED_PLURAL)
       .map(kind => ({ kind, label: CREATED_PLURAL[kind], n: createdInSite.value.filter(d => d.kind === kind).length }))
@@ -2712,7 +2754,7 @@ createApp({
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
-             capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
+             capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,

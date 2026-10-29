@@ -92,6 +92,12 @@ def is_std(value) -> bool:
     return isinstance(value, str) and value.startswith(PREFIX + "-") and len(value) == 36
 
 
+def mission_group_body(d: dict) -> dict:
+    """Lo que se manda al MiR para crear un grupo del catálogo: solo el nombre
+    es nuestro; prioridad, `feature` e icono, los de un grupo hecho en su web."""
+    return {"guid": d["guid"], "name": d["name"], "priority": 0, "feature": "default", "icon": ""}
+
+
 def guess_input_kind(param: dict) -> str:
     """Tipo de un input de Blockly por su parámetro en la mission capturada:
     el de un bloque de movimiento (`id: position`) o con un GUID de position
@@ -532,8 +538,7 @@ def _apply_one(client: MirClient, cat: Catalog, op: Op) -> None:
         if zone_diff(normalized_zone(client._req("GET", f"zones/{g}")), {**body, "map_id": d["map_id"]}):
             raise RuntimeError("escrita, pero al releerla no coincide con el catálogo")
     elif op.kind == "missiongrp":
-        client._req("POST", "mission_groups", json={"guid": g, "name": d["name"], "priority": 0,
-                                                    "feature": "default", "icon": ""})
+        client._req("POST", "mission_groups", json=mission_group_body(d))
     elif op.kind == "mission":
         if op.verb == "sustituir":
             # El MiR no deja cambiar el GUID ni reemplazar las actions de golpe:
@@ -650,9 +655,9 @@ class MirSync:
         with self.lock:
             return robot_std_guids(self.client, kind, map_guid)
 
-    def create_mission(self, name: str, group_guid: str, others=()) -> dict:
+    def create_mission(self, name: str, group_guid: str, others=(), site: str | None = None) -> dict:
         from fm.adapters.mir.create import create_mission
-        return create_mission(self, name, group_guid, others)
+        return create_mission(self, name, group_guid, others, site)
 
     def create_position(self, name: str, map_guid: str, others=(), type_id: int = 0) -> dict:
         from fm.adapters.mir.create import create_position
@@ -670,6 +675,10 @@ class MirSync:
     def create_session(self, name: str, description: str = "", others=()) -> dict:
         from fm.adapters.mir.create import create_session
         return create_session(self, name, description, others)
+
+    def create_group(self, name: str, others=()) -> dict:
+        from fm.adapters.mir.create import create_group
+        return create_group(self, name, others)
 
     def create_map(self, name: str, png: bytes, resolution: float, origin_x: float, origin_y: float,
                    session_guid: str | None = None, new_session: str = "", others=(), filename: str = "") -> dict:
@@ -689,9 +698,9 @@ class MirSync:
         from fm.adapters.mir.create import adoptable
         return adoptable(self)
 
-    def adopt(self, source: str, target: str | None = None, others=()) -> dict:
+    def adopt(self, source: str, target: str | None = None, others=(), site: str | None = None) -> dict:
         from fm.adapters.mir.create import adopt
-        return adopt(self, source, target, others)
+        return adopt(self, source, target, others, site)
 
     def create_choices(self) -> dict:
         """Para la pestaña Crear (sin red): grupos y mapas del catálogo, y lo
@@ -719,6 +728,13 @@ class MirSync:
     def delete_blockers(self, guid: str, definitions: dict, wanted) -> list[str]:
         from fm.adapters.mir.create import delete_blockers
         return delete_blockers(self, guid, definitions, wanted)
+
+    def in_use_here(self, guid: str) -> list[str]:
+        """Lo que impide borrar `guid` de ESTE robot aunque el catálogo no lo
+        vea (vacío = nada): un grupo con missions hechas en su web."""
+        from fm.adapters.mir.remove import in_use_on
+        with self.lock:
+            return in_use_on(self.client, guid)
 
     def exists(self, guid: str) -> bool:
         from fm.adapters.mir.remove import exists_on

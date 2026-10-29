@@ -2401,6 +2401,30 @@ Los ficheros de la prueba se quitaron del catálogo (nunca se commitearon).
      flota) no se toca. Tests en `test_mir_remove.py`; `FakeMir` borra ya
      las positions y zonas con su mapa, como el robot.
 
+## 2026-10-29 — Crear un grupo de missions
+
+Cierra el #34: sin esto, una flota nueva no podía crear su primera mission
+(no había ningún grupo en el catálogo).
+
+134. **«Grupo» en la pestaña Crear** (`create.create_group`,
+     `POST /api/create/group`): un grupo es solo un nombre y es de toda la
+     flota (no de un site), así que, como el site, **se escribe solo en el
+     catálogo** (`…-missiongrp-01-0000-NNN`, numerado en la instalación) y
+     no necesita robot. **Llega a un robot con su primera mission:** al
+     crear una mission en un grupo del catálogo que el robot aún no tiene,
+     se crea en él con su GUID (antes había que desplegarlo antes en
+     Sincronización; para un registro con solo un nombre era un paso de
+     más). **La session de la mission** sale de las demás missions del
+     grupo, como antes; en un grupo sin missions, del **site de la flota**
+     (`site:` en `fleet.yaml`); sin él, error que pide elegirlo en la
+     cabecera. Lo mismo al adoptar una mission en un grupo vacío.
+     **Borrar** un grupo creado aquí (libera el número) no se deja si tiene
+     missions: en borrador, capturadas o hechas en la web de algún robot
+     (`remove.in_use_on`; no se sabe si el MiR las borraría con él). Retirar
+     de la flota sigue sin admitir grupos. Guía: «Acabo de llegar»,
+     «Añadir una mission nueva» y «Las piezas». Tests en
+     `test_mir_create.py` y `test_web.py`.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2414,7 +2438,7 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
 (zonas del mapa desde la pestaña Crear, decisión 124). Hechos el mismo día
 sin número: subir un mapa, crear un site, site de la flota, missions
 atadas a su mapa, capturar un mapa de un robot y retirar mapas
-(decisiones 126–133).
+(decisiones 126–133). Y #34 (crear grupos de missions, decisión 134).
 
 **En curso / siguiente** (al cerrar el 2026-10-29)
 
@@ -2436,9 +2460,6 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
     deja libre su número). Decidir qué pasa con las missions de positions
     fijas (decisión 131): copiarlas apuntando a las positions copiadas o
     pasarlas a recibir la position como input.
-- **#34** **Crear grupos de missions desde el FM**: sin eso, una flota
-    nueva no puede crear su primera mission (la Guía lo avisa en «Acabo de
-    llegar»).
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 

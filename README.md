@@ -436,6 +436,9 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
   **Capturar de un robot** (`POST /api/create/<serial>/capture-map`) trae al
   catálogo un mapa hecho en la web de un MiR, con sus positions y zonas;
   solo lee el robot, y volver a capturarlo actualiza la copia.
+  **Nuevo grupo** (`POST /api/create/group`) da de alta un grupo de
+  missions en el catálogo; llega a cada robot al crear en él su primera
+  mission, que va al site de la flota.
   En **Sincronización**, con el robot ocupado solo se despliega lo que hay
   que crear; corregir lo que ya tiene espera a que quede libre. El estado
   de la flota marca las missions **sobrantes** de cada robot (su

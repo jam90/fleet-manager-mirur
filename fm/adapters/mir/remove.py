@@ -83,6 +83,13 @@ def usage_blockers(sync, cat: Catalog, guid: str, definitions: dict, wanted: Ite
                  if a and set(a.get("positions_allowlist") or []) & (here - elsewhere)}
         if names:
             out.append(f"tiene positions de la allowlist de fleet.yaml (actions: {', '.join(sorted(names))})")
+    elif cat.kind(guid) == "missiongrp":
+        # Las capturadas salen abajo (dependen del grupo); los borradores no
+        # tienen dependencias calculadas, pero viven en el grupo igual.
+        drafts = sorted(x["name"] for g, x in cat.drafts.items()
+                        if cat.kind(g) == "mission" and x.get("group_id") == guid)
+        if drafts:
+            out.append(f"tiene missions en borrador: {', '.join(drafts)}")
     users = sorted(cat.items[g]["name"] for g in cat.items if g not in going and going & cat.deps(g))
     if users:
         out.append(f"la usan otros recursos del catálogo: {', '.join(users)}")
@@ -126,6 +133,21 @@ def exists_on(client, guid: str) -> bool:
         if e.status == 404:
             return False
         raise
+
+
+def in_use_on(client, guid: str) -> list[str]:
+    """Lo que el robot tiene colgando de `guid` y el catálogo no conoce: las
+    missions de un grupo hechas en su web. Un grupo no se borra con missions
+    dentro (no se sabe si el MiR las borraría con él)."""
+    if Catalog.kind(guid) != "missiongrp":
+        return []
+    try:
+        names = sorted(m["name"] for m in client._req("GET", f"mission_groups/{guid}/missions"))
+    except MirApiError as e:
+        if e.status == 404:
+            return []
+        raise
+    return [f"el grupo tiene missions: {', '.join(names)} (bórralas o muévelas antes en su web)"] if names else []
 
 
 def delete_on(client, guid: str) -> None:
