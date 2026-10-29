@@ -12,3 +12,7 @@ wheels/
 
 # Voice log (transcriptions + audio recordings)
 logs/
+
+# Evaluación: audio generado, voces Piper y resultados (se regeneran)
+eval/audio_cases/
+eval/resultados/

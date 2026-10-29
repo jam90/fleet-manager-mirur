@@ -11,6 +11,17 @@ dependencies = [
     "uvicorn[standard]>=0.54.0",
 ]
 
+[project.optional-dependencies]
+# Solo para eval/ (benchmarks e intérprete experimental); el servicio no las necesita.
+eval = [
+    "jiwer>=4.0.0",
+    "numpy>=2.3.5",
+    "openai>=3.37.0",
+    "piper-tts>=1.8.0",
+    "scipy>=1.18.1",
+    "soundfile>=0.14.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",

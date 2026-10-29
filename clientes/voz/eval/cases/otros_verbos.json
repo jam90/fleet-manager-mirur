@@ -1,0 +1,12 @@
+[
+  {"id": "N1", "whisper": "lleva la caja a la mesa", "expected": "lleva la caja a la mesa", "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado (suena parecido a deja)"},
+  {"id": "N2", "whisper": "busca la pieza",          "expected": "busca la pieza",          "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado"},
+  {"id": "N3", "whisper": "mira la caja",            "expected": "mira la caja",            "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado"},
+  {"id": "N4", "whisper": "abre la caja",            "expected": "abre la caja",            "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado"},
+  {"id": "N5", "whisper": "limpia la mesa",          "expected": "limpia la mesa",          "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado"},
+  {"id": "N6", "whisper": "sube la caja",            "expected": "sube la caja",            "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado"},
+  {"id": "N7", "whisper": "deshaz la caja",          "expected": "deshaz la caja",          "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado (empieza como deja)"},
+  {"id": "N8", "whisper": "trabaja en la mesa",      "expected": "trabaja en la mesa",      "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado (empieza como trae)"},
+  {"id": "N9", "whisper": "pasa la caja",            "expected": "pasa la caja",            "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "verbo no soportado (suena parecido a para)"},
+  {"id": "N10", "whisper": "gracias",                "expected": "gracias",                 "mission": "none", "object": null, "quantity": null, "zone": null, "origin": "control", "error": "no es una orden"}
+]
