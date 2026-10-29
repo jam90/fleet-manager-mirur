@@ -8,9 +8,9 @@ class WhisperError(Exception):
 
 
 async def transcribe(audio: bytes, filename: str, content_type: str) -> str:
-    """Send audio to the whisper.cpp server (/inference) and return the text.
+    """Envía el audio al servidor whisper.cpp (/inference) y devuelve el texto.
 
-    The server must run with --convert so it accepts webm/ogg/mp3 directly.
+    El servidor debe arrancar con --convert para aceptar webm/ogg/mp3 directamente.
     """
     files = {"file": (filename, audio, content_type)}
     data = {

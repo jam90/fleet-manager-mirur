@@ -23,13 +23,13 @@ def levenshtein(a: str, b: str) -> int:
 
 
 def is_word(word: str, target: str, variants: list[str] = ()) -> bool:
-    """Tolerant match: Whisper sometimes misspells the wake/confirm words."""
+    """Coincidencia tolerante: Whisper a veces escribe mal las palabras de activación/confirmación."""
     target = normalize(target)
     return levenshtein(word, target) <= 1 or word in {normalize(v) for v in variants}
 
 
 def load_missions() -> dict[str, dict]:
-    """Read the missions table on each call so edits apply without a restart."""
+    """Lee la tabla de misiones en cada llamada para que los cambios se apliquen sin reiniciar."""
     raw = json.loads(Path(settings.missions_file).read_text(encoding="utf-8"))
     for mission in raw.values():
         mission["words"] = {normalize(w) for w in mission["words"]}
@@ -38,7 +38,7 @@ def load_missions() -> dict[str, dict]:
 
 
 def match_mission(words: list[str], missions: dict[str, dict]) -> tuple[str, str] | tuple[None, None]:
-    """Return (mission, word) for the first word in the transcription that triggers a mission."""
+    """Devuelve (misión, palabra) para la primera palabra de la transcripción que dispara una misión."""
     for word in words:
         for name, mission in missions.items():
             if word in mission["words"]:

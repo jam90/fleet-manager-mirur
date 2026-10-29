@@ -1,20 +1,21 @@
-## Done
+## Hecho
 
-- Server health on page (whisper badge, polls `/health` every 5 s)
-- Hands-free wake word "tonto" + voice confirmation "adelante"
-- Confirmation/ARMADO windows 10 s / 8 s, paused while speaking and while whisper transcribes
-- Voice log `logs/voice.jsonl` + `logs/audio/` (phrases, orders, cancels) to build real test cases
+- Salud del servidor en la página (indicador de whisper, consulta `/health` cada 5 s)
+- Manos libres con palabra de activación "tonto" + confirmación por voz "adelante"
+- Ventanas de confirmación/ARMADO de 10 s / 8 s, en pausa mientras se habla y mientras whisper transcribe
+- Registro de voz `logs/voice.jsonl` + `logs/audio/` (frases, orders, cancelaciones) para construir casos de prueba reales
 
-## Pending
+## Pendiente
 
-1. **Whisper prompt with the commands** — done: word list in `.env` (148 → 164/197 right in
-   `../llms/bench_audio.py`, same wrong actions). Pending: build it from `missions.json` automatically;
-   "adelante" left out on purpose (whisper can copy prompt words into noisy audio → false confirm).
-2. **Order matching** — "traes" does not match "trae". Either add variants to `missions.json`
-   or match command words with edit distance ≤ 1 (watch out for false positives on short words).
-3. **More commands?** — e.g. "muévete" is "no entendido"; decide which mission it maps to.
-4. **Test "tonto, para"** (cancelOrder on the robot of the last order) on the simulated fleet.
-5. **Whisper latency** — measured 3.6 s for a 1 s WAV vs ~200 ms documented; check with the whisper owner.
-6. **Beep** — silent on the user's Windows machine while its audio output is blocked.
-7. **Debug logs** — turn off `DEBUG` in `app/static/index.html` once stable.
-8. **Cleanup** — unused Docker image `mission-manager-test`; repo has no commits yet; add `.pytest_cache/` to `.gitignore`.
+1. **Prompt de Whisper con los comandos**: hecho, con una lista de palabras en `.env` (148 → 164/197 aciertos en
+   `../llms/bench_audio.py`, mismas acciones erróneas). Falta generarlo automáticamente desde `missions.json`.
+   "adelante" se deja fuera a propósito: whisper puede copiar palabras del prompt en audio con ruido y eso
+   daría confirmaciones falsas.
+2. **Coincidencia de órdenes**: "traes" no coincide con "trae". O se añaden variantes a `missions.json`,
+   o se comparan las palabras de la orden con distancia de edición ≤ 1 (ojo con los falsos positivos en palabras cortas).
+3. **¿Más comandos?**: p. ej. "muévete" da "no entendido"; decidir a qué misión corresponde.
+4. **Probar "tonto, para"** (cancelOrder en el robot de la última order) en la flota simulada.
+5. **Latencia de Whisper**: se midieron 3,6 s para un WAV de 1 s frente a los ~200 ms documentados; revisarlo con quien lleva whisper.
+6. **Pitido**: no suena en el Windows del usuario mientras su salida de audio está bloqueada.
+7. **Logs de depuración**: quitar `DEBUG` en `app/static/index.html` cuando esté estable.
+8. **Limpieza**: imagen Docker sin usar `mission-manager-test`; el repo aún no tiene commits; añadir `.pytest_cache/` a `.gitignore`.

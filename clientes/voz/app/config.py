@@ -12,18 +12,18 @@ class Settings(BaseSettings):
     whisper_language: str = "es"
     whisper_prompt: str = "tonto"
     missions_file: str = "missions.json"
-    fm_url: str = "http://localhost:8050"  # real fleet
-    fm_sim_url: str = "http://localhost:8051"  # simulated fleet
+    fm_url: str = "http://localhost:8050"  # flota real
+    fm_sim_url: str = "http://localhost:8051"  # flota simulada
     fm_wait: float = 5.0
 
-    # Hands-free voice: wake word, confirmation word and time windows
+    # Manos libres: palabra de activación, palabra de confirmación y ventanas de tiempo
     wake_word: str = "tonto"
     wake_variants: Annotated[list[str], NoDecode] = ["tonta", "tanto", "tono"]
     confirm_word: str = "adelante"
     arm_window_s: float = 8.0
     confirm_window_s: float = 10.0
 
-    # Voice log: every phrase, order and cancel in <dir>/voice.jsonl (empty dir = off), audio in <dir>/audio
+    # Registro de voz: cada frase, order y cancelación en <dir>/voice.jsonl (dir vacío = apagado), audio en <dir>/audio
     voice_log_dir: str = "logs"
     voice_log_audio: bool = True
 
