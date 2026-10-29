@@ -222,3 +222,52 @@ def test_rechazos_sin_repetir_y_acotados():
     t.reject(refs[0], busy)
     refs2 = [e.errorReferences[0].referenceValue for e in t.order_errors]
     assert refs2 == [*refs[1:], refs[0]]
+
+
+# ------------------------------------- aviso por tiempo anómalo (decisión 123)
+def _slow(t):
+    return [e for e in t.overlay().errors if e.errorType == "ORDER_DURATION_EXCEEDED"]
+
+
+def test_aviso_al_superar_expected_s_y_se_va_al_terminar():
+    t = OrderTracker("mir-1")
+    _accept(t, order())
+    t.active.job_status = "RUNNING"
+    limits = {"coger": 60.0}
+    for now in range(0, 61, 10):            # 60 s justos: aún no
+        t.watch_duration(float(now), False, limits)
+    assert _slow(t) == []
+    for now in range(70, 200, 10):          # pasa de 60: un solo aviso, aunque siga
+        t.watch_duration(float(now), False, limits)
+    [e] = _slow(t)
+    assert e.errorLevel == "WARNING" and "más de 1 min" in e.errorDescription
+    assert {(r.referenceKey, r.referenceValue) for r in e.errorReferences} == {("orderId", "o1"), ("actionId", "a1")}
+    t.active.job_status = "FINISHED"        # termina: el aviso desaparece
+    assert _slow(t) == []
+
+
+def test_no_cuenta_la_cola_ni_la_pausa():
+    t = OrderTracker("mir-1")
+    _accept(t, order())
+    limits = {"coger": 30.0}
+    t.active.job_status = "WAITING"         # encolada detrás de una carga: 100 s
+    for now in range(0, 101, 10):
+        t.watch_duration(float(now), False, limits)
+    t.active.job_status = "RUNNING"
+    for now in range(100, 121, 10):         # 20 s en marcha
+        t.watch_duration(float(now), False, limits)
+    for now in range(130, 300, 10):         # pausada (state_id 4)
+        t.watch_duration(float(now), True, limits)
+    assert t.active.run_s == 20.0 and _slow(t) == []
+    for now in range(300, 321, 10):         # sigue: 20 + 20 = 40 > 30
+        t.watch_duration(float(now), False, limits)
+    assert len(_slow(t)) == 1
+
+
+def test_sin_expected_s_no_hay_aviso():
+    t = OrderTracker("mir-1")
+    _accept(t, order())
+    t.active.job_status = "RUNNING"
+    for now in range(0, 10_000, 100):
+        t.watch_duration(float(now), False, {"dejar": 5.0})
+    assert _slow(t) == [] and t.active.run_s == 9900.0

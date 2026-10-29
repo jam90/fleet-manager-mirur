@@ -1018,6 +1018,9 @@
             <label v-for="p in allowOptions" :key="p"><input type="checkbox" :value="p" v-model="actForm.allow"> {{ p }}</label>
           </div>
         </div>
+        <label class="field">Tiempo normal en ejecución, en segundos (opcional)
+          <input id="act-expected" class="num-in" type="number" min="1" step="1" v-model.number="actForm.expected" placeholder="sin aviso"></label>
+        <p class="hint">Si una order de esta action pasa más tiempo en ejecución (sin contar la espera en cola ni las pausas), su robot muestra un aviso. <code>scripts/mission_durations.py</code> propone un valor a partir de la historia del robot.</p>
         <p class="err" v-if="actForm.error">{{ actForm.error }}</p>
         <div class="acts">
           <button class="btn primary" id="act-ok" @click="acceptActForm">Aceptar</button>
@@ -1212,7 +1215,10 @@
           <li><b>Darla de alta como action</b><a class="where" href="#configurador">→ Configurador</a>
             <p>«Editar» → «Nueva action»: nombre (el <code>actionType</code>, no se puede renombrar después), la mission y qué
               es cada input (position, número con rango, texto). Marca la casilla de los robots que la harán y «Guardar»:
-              se aplica en caliente, sin reiniciar.</p></li>
+              se aplica en caliente, sin reiniciar.</p>
+            <p>Opcional: el <b>tiempo normal en ejecución</b>. Si una order de esta action lo supera, su robot muestra un
+              aviso (sigue trabajando; no es un fallo). Al principio pon uno aproximado, y cuando la mission tenga
+              historia en el robot, <code>scripts/mission_durations.py</code> te propone uno.</p></li>
           <li><b>Probarla</b><a class="where" href="#operacion">→ Operación</a>
             <p>En «Enviar a la flota» elige la action y sus parámetros. <b>El robot se va a mover:</b> mira antes que el
               camino esté libre.</p></li>
@@ -1947,8 +1953,8 @@ createApp({
       return out;
     });
     const actForm = reactive({ open: false, isNew: false, name: '', mission: '', missionOther: '', inputs: [],
-                               allow: [], newInput: '', error: '', extra: {} });
-    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist'];
+                               allow: [], newInput: '', error: '', extra: {}, expected: '' });
+    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist', 'expected_s'];
     const catInputs = guid => (cfgChoices.value.missions.find(m => m.guid === guid) || { inputs: [] }).inputs;
     // Definición (claves del driver MiR) → filas del formulario, y al revés.
     function openActForm(a) {
@@ -1964,7 +1970,7 @@ createApp({
       if (!inCat) rows.forEach(r => { r.manual = true; });
       Object.assign(actForm, { open: true, isNew: !a, name: a ? a.name : '', error: '', newInput: '',
         mission: !a ? '' : inCat ? def.mission : '__otra__', missionOther: inCat ? '' : (def.mission || ''),
-        inputs: rows, allow: [...(def.positions_allowlist || [])],
+        inputs: rows, allow: [...(def.positions_allowlist || [])], expected: def.expected_s ?? '',
         extra: Object.fromEntries(Object.entries(def).filter(([k]) => !KNOWN.includes(k))) });
     }
     function onMissionChange() {
@@ -1991,6 +1997,7 @@ createApp({
       const num = f.inputs.filter(i => i.kind === 'number');
       const bad = num.find(i => i.min !== '' && i.max !== '' && i.min > i.max);
       if (!f.error && bad) f.error = `${bad.name}: el mínimo es mayor que el máximo.`;
+      if (!f.error && f.expected !== '' && !(f.expected > 0)) f.error = 'El tiempo normal debe ser un número de segundos mayor que 0.';
       if (f.error) return;
       const def = { mission, ...f.extra };
       const pos = f.inputs.filter(i => i.kind === 'position').map(i => i.name);
@@ -2003,6 +2010,7 @@ createApp({
       const req = f.inputs.filter(i => i.kind === 'text').map(i => i.name);
       if (req.length) def.required_inputs = req;
       if (pos.length && f.allow.length) def.positions_allowlist = [...f.allow];
+      if (f.expected !== '') def.expected_s = f.expected;
       const m = cfgChoices.value.missions.find(x => x.guid === mission);
       cfgEdit.draft.actions[name] = { definition: def, comments: m ? { mission: m.name } : {} };
       f.open = false;

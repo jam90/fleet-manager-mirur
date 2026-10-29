@@ -95,6 +95,7 @@ class Robot:
             if not self.connect():       # reintento tras un arranque sin red
                 self.next_connect_at = now + CONNECT_RETRY_S
         self.orders.poll(self.driver)
+        self.orders.watch_duration(now, self.last_telemetry.paused, self.cfg.expected_s)
         self.charge.tick(self.driver, self.last_telemetry)
         return self.last_telemetry
 

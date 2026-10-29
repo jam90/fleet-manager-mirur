@@ -25,6 +25,7 @@ drivers:
 actions:                       # catálogo; el driver sim no necesita definición
   coger:
   dejar:
+    expected_s: 5                # dura duration_s (8 s): para ver el aviso ORDER_DURATION_EXCEEDED
 
 robots:
   sim-1:

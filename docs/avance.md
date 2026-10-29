@@ -2095,6 +2095,36 @@ action sin `blockingType`. Se comprobó que lo que mandan la web y
      VALIDATION_FAILURE` con `nodes/0/actions/0: 'blockingType' is a
      required property`.
 
+## 2026-10-29 — Avisos por tiempo anómalo, paso 1 (punto #5)
+
+Los datos de la historia de los robots (en el #5, "Hecho con robot") dicen
+que lo normal se repite mucho y lo raro es mucho más largo. Paso 1 y la
+herramienta del paso 2.
+
+123. **`expected_s` por action del catálogo, genérico.** Es la única clave
+     de una definición que lee el core (`fm/config.py` la valida: número
+     > 0; cada `RobotConfig` lleva el de sus actions). `Robot.poll` llama a
+     `OrderTracker.watch_duration` cada tick: suma el tiempo de la order
+     activa en `RUNNING` sin pausa (`Telemetry.paused`), así que la espera
+     en cola detrás de una carga no cuenta; un hueco sin respuesta del
+     robot sí cuenta, porque lo último que se sabía es que trabajaba. Al
+     superar el umbral, un solo aviso `ORDER_DURATION_EXCEEDED` (propio,
+     `errorLevel: WARNING`, referencias a la order y la action) que va en
+     `state.errors[]` solo mientras la order está viva: se va al terminar o
+     cancelarse, sin limpiarlo a mano. La web ya resalta los WARNING en la
+     tarjeta del robot y en Operación. El log del cambio de estado al
+     terminar dice cuántos segundos estuvo en ejecución. Se cambia en
+     caliente desde el Configurador (campo nuevo en el formulario de la
+     action; Guía actualizada). Herramienta del paso 2:
+     `scripts/mission_durations.py <serial>`, solo lectura, propone
+     p90 × 1,5 redondeado a 10 s con al menos 5 ejecuciones terminadas
+     bien (con los datos de hoy ninguna action del FM llega: `coger` 2 en
+     mir-1). `config/fleet-sim.yaml` pone `expected_s: 5` en `dejar` para
+     ver el aviso en la simulación. Probado con la flota simulada en un
+     Mosquitto aparte: aviso a los 5 s, sin repetirse, y fuera al terminar
+     (7 s en ejecución). En `config/fleet.yaml` no se pone ninguno: el
+     valor lo decide el usuario.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2165,6 +2195,10 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
      FM (mismo mecanismo que `n_piezas_pedidas`). Las dos se basan en el
      mismo aviso del `state`, así que hacerlo primero en la UI no obliga a
      rehacer nada.
+   - **Hecho el 2026-10-29: paso 1 y herramienta del paso 2** (decisión 123).
+     Queda: poner `expected_s` a las actions reales (a mano al principio;
+     con `scripts/mission_durations.py` cuando tengan historia), el paso 3
+     (por fases) y el sonido.
    - **Paso 1 — tiempo total por `actionType`.** Umbral en `fleet.yaml`
      (p. ej. `expected_s: 180`). Si se supera: entrada en `state.errors[]`
      con `errorLevel: WARNING` (en v3, "el robot puede seguir") y
@@ -2189,9 +2223,24 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
      detrás de una carga) ni en pausa (`state_id 4`); el aviso se retira
      solo al avanzar la fase o terminar la mission, sin repetirse en cada
      tick; un WARNING no es un FAILED.
-   - **Primer paso con robot:** leer `GET /mission_queue/<id>/actions` de
-     una entrada ya terminada (solo lectura) para ver si da fases y tiempos.
-     De eso depende si el paso 3 es viable o hay que usar `mission_text`.
+   - **Hecho con robot (2026-10-29, solo lectura).** (a) Fases: la pestaña
+     Robot ya lee `GET /mission_queue/<id>/actions` (decisión 113) y cada
+     paso trae tipo (`action_type`), estado y horas de inicio y fin: el
+     paso 3 es viable sin depender de `mission_text`. (b) Duraciones: las
+     300 últimas entradas terminadas de cada robot (junio–octubre; mir-1
+     tiene 1.559 en la cola, mir-2 588) dan, para las missions con
+     historia, distribuciones estrechas con colas largas, justo lo que el
+     aviso debe detectar: `Apertura Puerta H2DX` (mir-2, 42 Done) mediana
+     50 s, p90 61 s, máx. 71 s; `Move` (mir-2, 82) mediana 24 s, p90 50 s,
+     pero máx. 447 s; `Cambiar a VGC10` (mir-2, 46) p90 153 s y máx.
+     2.295 s. La espera en `Pending` es casi siempre 0. **Consecuencias:**
+     el paso 2 no necesita que el FM registre nada, porque la historia del
+     propio MiR ya da las duraciones (un script puede proponer el
+     `expected_s` de cada action a partir de ella); las missions del FM
+     (`coger`, `Ir a zona de espera MIRUR`, las de prueba) tienen aún 1–3
+     ejecuciones, así que su primer umbral se pone a mano y se ajusta
+     cuando haya historia. Las de carga (20–30 min, muy variables) quedan
+     fuera del aviso.
 - **#23** **Áreas del mapa desde el FM** (idea del usuario, 2026-10-23, sin
    diseñar): crear y quitar zonas del mapa del MiR desde la web del FM.
    Cuando se haga, su paso a paso va a la pestaña Guía (decisión 109).

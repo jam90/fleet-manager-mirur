@@ -158,3 +158,19 @@ def test_ficheros_del_repo_cargan(tmp_path):
         for r in cfg.robots.values():
             if r.driver == "mir":
                 assert set(parse_config(r.serial, r.raw, cfg.driver_defaults("mir"), env).actions) == r.action_types
+
+
+# ------------------------------------------- expected_s por action (decisión 123)
+def test_expected_s_por_robot_solo_de_sus_actions(tmp_path):
+    catalog = "actions: { coger: { mission: coger, expected_s: 90 }, dejar: { mission: dejar } }"
+    cfg = load_config(_write(tmp_path, _robots("[coger, dejar]", catalog)), env_path=tmp_path / "no.env")
+    assert cfg.robots["mir-1"].expected_s == {"coger": 90.0}
+    cfg = load_config(_write(tmp_path, _robots("[dejar]", catalog)), env_path=tmp_path / "no.env")
+    assert cfg.robots["mir-1"].expected_s == {}
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "rapido", "true"])
+def test_expected_s_invalido(tmp_path, bad):
+    catalog = f"actions: {{ coger: {{ mission: coger, expected_s: {bad} }} }}"
+    with pytest.raises(ConfigError, match="actions.coger.expected_s"):
+        load_config(_write(tmp_path, _robots("[coger]", catalog)), env_path=tmp_path / "no.env")

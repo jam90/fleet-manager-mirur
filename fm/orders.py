@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from fm.adapters.base import JOB_ALIVE, Job, JobStatus, RobotDriver, Telemetry, job_result
 from fm.vda5050.order import Action, Order, OrderRejected
-from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
+from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_DURATION_EXCEEDED, E_ORDER_EXECUTION_FAILED,
                               E_OTHER_ORDER_ACTIVE, E_OUTDATED_ORDER_UPDATE, E_VALIDATION_FAILURE,
                               ActionState, Error, error_for_order)
 from fm.vda5050.state_builder import StateOverlay
@@ -52,6 +52,11 @@ class ActiveOrder:
     job_status: JobStatus = "WAITING"     # = actionStatus VDA de la action ejecutada
     result: str | None = None             # = actionResult VDA: motivo legible al terminar
     finished_action_ids: set[str] = field(default_factory=set)
+    # Tiempo en ejecución (decisión 123): solo cuenta RUNNING sin pausa, no la
+    # espera en la cola del robot (p. ej. detrás de una carga).
+    run_s: float = 0.0
+    counted_at: float | None = None        # última observación que contaba
+    slow_error: Error | None = None        # aviso de `expected_s` superado
 
     @property
     def alive(self) -> bool:
@@ -143,8 +148,9 @@ class OrderTracker:
         status = driver.job_status(a.job_id)
         if status is None or status == a.job_status:
             return
-        log.info("[%s] order %s: %s job=%s %s → %s", self.serial, a.order.orderId,
-                 a.job.label, a.job_id, a.job_status, status)
+        took = f" ({a.run_s:.0f} s en ejecución)" if status in ("FINISHED", "FAILED") else ""
+        log.info("[%s] order %s: %s job=%s %s → %s%s", self.serial, a.order.orderId,
+                 a.job.label, a.job_id, a.job_status, status, took)
         a.job_status = status
         if status in ("FINISHED", "FAILED"):
             a.result = job_result(driver, a.job_id)
@@ -156,6 +162,32 @@ class OrderTracker:
             self.exec_errors.append(error_for_order(
                 E_ORDER_EXECUTION_FAILED, f"{a.job.label} terminó FAILED{why}",
                 a.order.orderId, level="WARNING", action_id=a.job.action.actionId))
+
+    def watch_duration(self, now: float, paused: bool, expected_s: dict[str, float]) -> None:
+        """Cada tick, tras `poll`: suma el tiempo en ejecución de la order
+        activa y, si supera el `expected_s` de su action, deja UN aviso
+        WARNING (el robot puede seguir; no es un FAILED). El aviso se va solo
+        cuando la order termina: `overlay` solo lo enseña mientras está viva.
+
+        Mide entre observaciones: si el robot no respondió un rato, ese hueco
+        cuenta como ejecución (lo último que se supo es que trabajaba)."""
+        a = self.active
+        if a is None or not a.alive:
+            return
+        counting = a.job_status == "RUNNING" and not paused
+        if counting and a.counted_at is not None:
+            a.run_s += now - a.counted_at
+        a.counted_at = now if counting else None
+        limit = expected_s.get(a.job.action.actionType)
+        if limit is None or a.run_s <= limit or a.slow_error is not None:
+            return
+        log.warning("[%s] order %s: %s lleva %.0f s en ejecución (expected_s %.0f)",
+                    self.serial, a.order.orderId, a.job.label, a.run_s, limit)
+        a.slow_error = error_for_order(
+            E_ORDER_DURATION_EXCEEDED,
+            f"{a.job.label} tarda más de lo normal: más de {_human_s(limit)} en ejecución "
+            f"(expected_s de '{a.job.action.actionType}'); el robot sigue con ella",
+            a.order.orderId, level="WARNING", action_id=a.job.action.actionId)
 
     # -------------------------------------------------------------- salida
     def overlay(self) -> StateOverlay:
@@ -173,6 +205,13 @@ class OrderTracker:
                 else:
                     st = "FINISHED" if act.actionId in a.finished_action_ids else "WAITING"
                 ov.action_states.append(ActionState(act.actionId, st, act.actionType, actionResult=result))
-        ov.errors = [*self.order_errors, *self.exec_errors, *self.instant_errors]
+        slow = [a.slow_error] if a is not None and a.alive and a.slow_error is not None else []
+        ov.errors = [*self.order_errors, *self.exec_errors, *slow, *self.instant_errors]
         ov.instant_action_states = list(self.instant_states)
         return ov
+
+
+def _human_s(s: float) -> str:
+    """90 → "1 min 30 s"; 45 → "45 s". Para los avisos que lee un operario."""
+    m, r = divmod(round(s), 60)
+    return f"{r} s" if not m else f"{m} min" if not r else f"{m} min {r} s"

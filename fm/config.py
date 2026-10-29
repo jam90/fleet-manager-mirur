@@ -12,6 +12,9 @@ robot lista las que tiene habilitadas (decisiones 65 y 92): con N robots no
 se puede repetir cada definición en cada robot, ni pintarla en la UI. El
 core no interpreta las definiciones; solo copia la de cada action habilitada
 en `raw["actions"]`, así que el driver recibe el mismo dict de siempre.
+La excepción es `expected_s` (decisión 123): tiempo normal de ejecución de
+la action, genérico para cualquier marca; el core lo usa para avisar cuando
+una order tarda más (`OrderTracker.watch_duration`).
 """
 from __future__ import annotations
 
@@ -48,6 +51,7 @@ class RobotConfig:
     manufacturer: str | None = None               # None = el que declare el driver
     battery_min: float = 25.0                     # % mínimo para aceptar orders
     action_types: frozenset[str] = frozenset()    # actions habilitadas (lista `robots.<serial>.actions`)
+    expected_s: dict[str, float] = field(default_factory=dict)   # actionType → s normales en ejecución
     raw: dict = field(default_factory=dict)       # con `actions` ya expandido: actionType → definición
 
 
@@ -110,6 +114,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
             manufacturer=r.get("manufacturer"),
             battery_min=float(r.get("battery_min", 25)),
             action_types=frozenset(enabled),
+            expected_s={a: float(catalog[a]["expected_s"]) for a in enabled if "expected_s" in catalog[a]},
             # Copia profunda: cada driver recibe su propia definición y no
             # puede alterar la de otro robot ni el catálogo.
             raw={**r, "actions": {a: copy.deepcopy(catalog[a]) for a in enabled}},
@@ -163,6 +168,10 @@ def _parse_catalog(raw) -> dict[str, dict]:
         spec = {} if spec is None else spec          # `coger:` sin nada = `coger: {}`
         if not isinstance(spec, dict):
             raise ConfigError(f"actions.{name}: la definición debe ser un mapping (p.ej. {{mission: ...}})")
+        if "expected_s" in spec:
+            v = spec["expected_s"]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not v > 0:
+                raise ConfigError(f"actions.{name}.expected_s: debe ser un número de segundos > 0 (hay {v!r})")
         catalog[str(name)] = spec
     return catalog
 

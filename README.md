@@ -61,6 +61,7 @@ actions:                            # catálogo: cada actionType se define UNA v
   abrir_puerta:
     mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
     position_inputs: [target_pos]   # la order trae {"key": "target_pos", "value": "H2D2"}
+    expected_s: 90                  # opcional: más de 90 s en ejecución → aviso
 robots:
   mir-1:
     driver: mir                     # por defecto "mir"
@@ -75,7 +76,8 @@ robots:
 
 El core solo lee `driver`, `manufacturer` (opcional; por defecto el del
 driver), `battery_min` y la lista `actions` de cada robot (qué actionTypes
-puede hacer), que tienen que estar en el catálogo `actions:`. Cada robot
+puede hacer), que tienen que estar en el catálogo `actions:`, y de cada
+action del catálogo, `expected_s` (ver más abajo). Cada robot
 recibe la definición del catálogo de las actions que tiene habilitadas; esa
 definición, y el resto del bloque del robot, van crudos al driver, que los
 valida al arrancar (`fm/adapters/mir/config.py`). No hay forma de cambiar una
@@ -94,6 +96,16 @@ Por `action` (driver `mir`):
 | `required_inputs` | parámetros obligatorios que se reenvían tal cual (ausente → `VALIDATION_FAILURE`) |
 | `number_inputs` | parámetros obligatorios **numéricos**: `5`, `5.0`, `"5"` o `"2,5"` se mandan al MiR como número (`5`, `2.5`); ausente o no numérico → `VALIDATION_FAILURE`. P.ej. `n_piezas_pedidas` (registro PLC 22). Lista de nombres, o mapping con rango `{n_piezas_pedidas: {min: 1, max: 10, step: 1}}`: fuera de rango → `VALIDATION_FAILURE`, y la UI pinta un deslizador |
 | `positions_allowlist` | (por action) positions admitidas en los `position_inputs` de **esa** action; se suma a la del robot. Fuera de ella → `NO_ROUTE_TO_TARGET`; la UI solo ofrece estas |
+
+**`expected_s`** (cualquier driver, opcional): segundos normales en
+ejecución de la action. Si una order la supera, su robot lleva en
+`state.errors[]` un `ORDER_DURATION_EXCEEDED` con `errorLevel: WARNING` y
+`errorReferences` a la order y la action; el robot sigue con ella y el aviso
+se va cuando termina. Solo cuenta el tiempo `RUNNING` sin pausa: no la
+espera en la cola del robot (p. ej. detrás de una carga). Para elegir el
+valor, `scripts/mission_durations.py <serial>` lo propone a partir de la
+historia del robot. El log dice cuánto estuvo en ejecución cada order al
+terminar.
 
 El resto de `actionParameters` se reenvían solo si la mission expone ese
 `input_name`; si no, se ignoran. En el `POST /mission_queue` cada parámetro va
@@ -277,7 +289,8 @@ Predefinidos v3: `VALIDATION_FAILURE`, `INVALID_ORDER_ACTION`,
 `MOBILE_ROBOT_NOT_AVAILABLE`. Propios (mismo estilo):
 `NO_MOBILE_ROBOT_AVAILABLE` (asignador sin candidatos),
 `ORDER_EXECUTION_FAILED` (mission Aborted/Cancelled), `MIR_<code>` (errores
-del MiR), `ROBOT_UNREACHABLE`.
+del MiR), `ROBOT_UNREACHABLE`, `ORDER_DURATION_EXCEEDED` (WARNING: la order
+supera el `expected_s` de su action).
 
 ## Scripts (`scripts/`)
 
@@ -293,6 +306,7 @@ header con la misma función que el servicio.
 | `send_fleet_order.py <actionType> [k=v…]` | publica `fleet/order` y espera `order_response` |
 | `send_instant_action.py <serial> <actionType>…` | publica `instantActions` y muestra `instantActionStates` (**`stopPause` mueve el robot**) |
 | `read_vda_state.py [serial]` | resume `state`/`connection` por línea y valida contra el schema |
+| `mission_durations.py <serial> [--last N]` | solo lectura: duración real de cada action en la historia del robot y `expected_s` propuesto |
 
 ## Tests
 
