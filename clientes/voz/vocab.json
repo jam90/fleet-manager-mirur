@@ -1,0 +1,10 @@
+{
+  "_note": "Vocabulario del robot (inventado, sustituir por el real). Objetos en singular. 'articles' da el género para construir la frase del dashboard; 'plurals' solo hace falta si el plural no es regular (+s / +es).",
+  "objects": ["caja", "pieza", "diferencial", "rueda", "motor", "tornillo"],
+  "zones": ["estantería", "mesa", "almacén", "zona de carga", "banco de trabajo"],
+  "articles": {
+    "caja": "la", "pieza": "la", "diferencial": "el", "rueda": "la", "motor": "el", "tornillo": "el",
+    "estantería": "la", "mesa": "la", "almacén": "el", "zona de carga": "la", "banco de trabajo": "el"
+  },
+  "plurals": {}
+}
