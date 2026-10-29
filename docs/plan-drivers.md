@@ -165,7 +165,7 @@ El FM no impone un manufacturer único.
 alcance); como `fleet` no es un robot, el segmento `manufacturer` es un
 nombre de flota propio: **`imperial_fleet`** →
 `vda5050/v3/imperial_fleet/fleet/order` y `…/fleet/order_response`. El
-emisor (Node-RED) debe actualizar el topic y el header (`manufacturer:
+emisor (el sistema aguas arriba) debe actualizar el topic y el header (`manufacturer:
 "imperial_fleet", serialNumber: "fleet"`).
 
 - `MqttBus` recibe `{serial: manufacturer}` en vez de un string; el Last Will
@@ -200,7 +200,7 @@ Cada fase deja `pytest` en verde y el FM funcionando con los MiR igual que hoy.
 | 1 | **Tipos y frontera.** Crear `adapters/base.py` (`Telemetry`, `Job`, `RobotDriver`). Mover `StateOverlay` a `vda5050/`, `pick_action` a `orders.py`. `to_vda_state(header, telemetry, overlay)` en el core. | base.py, vda5050/state.py, adapters/mir.py, tests | bajo |
 | 2 | **`MirDriver`.** Reorganizar en `adapters/mir/`; el driver envuelve `MirClient` + índices + `mission_queue`. `mir_client.py` queda como shim. `Robot` y `OrderTracker` pasan a usar el driver. `run_fm.py` deja de importar nada de MiR. | robot.py, orders.py, run_fm.py, adapters/mir/* | medio (es donde vive la lógica probada con robots) |
 | 3 | **Config y registro.** `robots.<s>.driver`, bloque `drivers:`, `make_driver()`; nuevo `fleet.yaml`. | config.py, adapters/__init__.py, config/fleet.yaml, README | bajo |
-| 4 | **Manufacturer por robot.** `MqttBus` y `Dispatcher` con `+/+/`, `imperial_fleet`; actualizar `scripts/send_fleet_order.py` y el flujo Node-RED. | mqtt_bus.py, fleet.py, header.py, scripts | bajo |
+| 4 | **Manufacturer por robot.** `MqttBus` y `Dispatcher` con `+/+/`, `imperial_fleet`; actualizar `scripts/send_fleet_order.py` y el emisor aguas arriba. | mqtt_bus.py, fleet.py, header.py, scripts | bajo |
 | 5 | **Driver `sim` + tests de contrato.** `tests/adapters/contract.py` parametrizado con cada driver (`sim` y `mir` con `_FakeClient`): connect → poll → translate → execute → job_status. | adapters/sim/*, tests | bajo |
 | 6 | **Validación con robots** (misma prueba que el 2026-09-16 13:25) y docs: `docs/avance.md` (decisiones 22+), README sección "Añadir una marca", `CLAUDE.md` §arquitectura. | docs | — |
 

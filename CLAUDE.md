@@ -98,11 +98,12 @@
   `http://<IP-Windows>:8050/`; si es NAT hay que hacer `netsh interface
   portproxy add v4tov4 listenport=8050 listenaddress=0.0.0.0 connectport=8050
   connectaddress=<IP-WSL>` + regla de firewall en PowerShell (admin).
-- **Node-RED:** no hay flujo aún; el emisor de `fleet/order` debe usar el
-  topic `vda5050/v3/imperial_fleet/fleet/order` y header
-  `manufacturer: "imperial_fleet", serialNumber: "fleet"`. `MIR-UR-Node-red/`
-  en el directorio padre es material de otro proyecto (UR + cámara), no de
-  este repo.
+- **Emisor de `fleet/order`:** es el sistema aguas arriba (no hay ningún
+  otro componente entre él y el FM). Debe usar el topic
+  `vda5050/v3/imperial_fleet/fleet/order` y el header
+  `manufacturer: "imperial_fleet", serialNumber: "fleet"`. La carpeta
+  `MIR-UR-Node-red/` del directorio padre es material de otro proyecto
+  (UR + cámara), no de este repo.
 
 ---
 

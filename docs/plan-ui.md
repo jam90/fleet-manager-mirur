@@ -22,12 +22,12 @@ El FM ya publica todo lo que la UI necesita (`state`, `connection`,
 
 - **Salida**: cada mensaje que el FM publica por MQTT se **replica** a los
   navegadores conectados por WebSocket, tal cual (`{topic, payload}`). La UI
-  ve exactamente lo que ve un sistema aguas arriba (Node-RED, un ERP…).
+  ve exactamente lo que ve un sistema aguas arriba (un ERP, un MES…).
 - **Entrada**: lo que la UI envía, el servidor web lo **publica en el
   broker** con el header VDA correcto (`fleet/order`,
   `<serial>/instantActions`). El FM lo recibe por su suscripción normal y
   lo procesa por el mismo camino que cualquier otro emisor. Aparece en
-  `mosquitto_sub`, lo puede ver Node-RED, y no hay un segundo camino de
+  `mosquitto_sub`, lo puede ver el sistema aguas arriba, y no hay un segundo camino de
   entrada que mantener.
 
 Ventajas: cero lógica duplicada, la UI sirve como demostración viva del

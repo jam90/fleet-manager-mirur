@@ -187,7 +187,7 @@ def to_number(key: str, value) -> int | float:
 
     VDA 5050 no fija el tipo de `actionParameters.value` y cada emisor manda
     lo que le parece: la UI y `send_fleet_order.py` mandan texto (`"5"`),
-    Node-RED puede mandar `5` o `5.0`. El MiR guarda el input de Blockly como
+    otro emisor puede mandar `5` o `5.0`. El MiR guarda el input de Blockly como
     número (p.ej. el `value` de *Set PLC register*), así que lo normalizamos
     aquí y rechazamos lo que no lo sea antes de que llegue al robot.
     Enteros como int: los registros PLC 1–100 del MiR son enteros.
@@ -256,7 +256,7 @@ def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, st
         if key not in given:
             raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (número)")
         value = to_number(key, given[key])
-        # El rango de la UI no basta: la order puede venir de Node-RED o de un script.
+        # El rango de la UI no basta: la order puede venir del sistema aguas arriba o de un script.
         r = acfg.number_ranges.get(key)
         if r is not None and ((r.min is not None and value < r.min) or (r.max is not None and value > r.max)):
             raise OrderRejected(E_VALIDATION_FAILURE,

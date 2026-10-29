@@ -436,7 +436,7 @@ construye los dos `MirDriver` por el registro.
 
 `pytest`: 50 en verde. Contrato MQTT: cambia el topic y el header de
 `fleet/*`; los de los MiR no cambian (`vda5050/v3/MiR/<serial>/…`). No había
-ningún flujo Node-RED que actualizar (confirmado con el usuario).
+ningún emisor aguas arriba que actualizar (confirmado con el usuario).
 
 ### Código
 
@@ -920,7 +920,7 @@ valor en el registro 22.
     deducirlo del valor por defecto de la mission (`1.0`): se ve en la
     config qué espera cada action y el FM no depende de un detalle de
     Blockly. VDA no fija el tipo de `actionParameters.value` y cada emisor
-    manda lo suyo (la UI y los scripts, texto; Node-RED, número), así que
+    manda lo suyo (la UI y los scripts, texto; otro emisor, número), así que
     el FM normaliza a int si es entero (los registros PLC 1–100 del MiR son
     enteros) o a float; acepta coma decimal; rechaza bool, NaN e infinito.
 52. **Matiza la decisión 50**: los parámetros `number` se anuncian en el
@@ -975,7 +975,7 @@ web en mir-2 (cola 381, 2026-10-07 10:15 UTC): el MiR recibió `target_pos`
 ### Decisiones nuevas
 
 54. **La allowlist de la action es del FM, no solo de la UI**: el FM la
-    valida en `from_vda_order`, así que una order de Node-RED a otra
+    valida en `from_vda_order`, así que una order del sistema aguas arriba a otra
     position también se rechaza (`NO_ROUTE_TO_TARGET`). Se suma a la del
     robot (hay que pasar las dos); la UI ofrece la intersección.
 55. **El rango de un número se declara en `fleet.yaml`** y también lo valida
@@ -1662,7 +1662,7 @@ del catálogo y la línea de mir-1.
     uno se puede dejar "sin declarar". Una mission fuera del catálogo se
     escribe por nombre, con sus inputs a mano.
 99. **Reglas del catálogo:** no se renombra una action (el `actionType` es
-    el contrato con Node-RED: se crea la nueva y se borra la vieja); solo
+    el contrato con el sistema aguas arriba: se crea la nueva y se borra la vieja); solo
     se borra si ningún robot la tiene marcada (la UI lo impide y, si llega
     igual, el cargador lo rechaza al validar); una action nueva se puede
     crear y habilitar en los robots en el mismo "Guardar" (el editor
@@ -2087,8 +2087,8 @@ action sin `blockingType`. Se comprobó que lo que mandan la web y
      rechazo `VALIDATION_FAILURE` de siempre (`order_response`,
      `state.errors[]` o error de instantActions), con los 3 primeros
      fallos y su ruta en el motivo. Por defecto queda apagado para no
-     cambiar lo que hoy se acepta; activarlo al integrar Node-RED (#2) dice
-     si su emisor cumple la norma, y se podría dejar siempre activo
+     cambiar lo que hoy se acepta; activarlo al integrar el emisor de
+     `fleet/order` (#2) dice si cumple la norma, y se podría dejar siempre activo
      después. Tests nuevos en `tests/test_fleet.py`. Prueba con Mosquitto
      en el puerto 18830 y `fleet-sim.yaml`: `send_fleet_order.py` →
      `ASSIGNED`; la misma order sin `blockingType` → `REJECTED
@@ -2374,7 +2374,7 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
     aceptadas con su `assignedSerial` y, ante un reenvío, **repetir el
     `order_response` ASSIGNED** en vez de callar. Cambia la decisión 19
     (idempotencia = silencio): acordarlo con quien hace el emisor de
-    Node-RED. Los rechazos no se guardan (la decisión 20 sigue: un
+    `fleet/order`. Los rechazos no se guardan (la decisión 20 sigue: un
     reintento tras `REJECTED` se acepta). Solo en memoria; la persistencia
     sigue fuera de alcance.
 
@@ -2384,7 +2384,7 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
    crearlas (pestaña Crear → web del MiR → Capturar → Sincronización →
    Configurador) con sus `number_inputs` / `position_inputs` /
    `required_inputs`.
-- **#2** **Flujo Node-RED emisor de `fleet/order`**: topic
+- **#2** **Emisor de `fleet/order` en el sistema aguas arriba**: topic
    `vda5050/v3/imperial_fleet/fleet/order`, header
    `imperial_fleet`/`fleet`. Los números pueden ir como número o texto.
 

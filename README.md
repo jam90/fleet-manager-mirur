@@ -141,7 +141,7 @@ topic, ids, nodos, una action…). Con ella, además, valida el mensaje entero
 contra `schemas/` (VDA 5050 v3.0.0) y rechaza con `VALIDATION_FAILURE` lo que
 no cumpla, p. ej. una action sin `blockingType`. El motivo lleva los tres
 primeros fallos con su ruta (`nodes/0/actions/0: 'blockingType' is a
-required property`). Útil al integrar un emisor nuevo (Node-RED): lo que
+required property`). Útil al integrar un emisor nuevo (el sistema aguas arriba): lo que
 pase con `--validate` cumple la norma, no solo lo que este FM tolera. La
 web y los `scripts/` ya mandan mensajes válidos.
 

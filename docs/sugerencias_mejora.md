@@ -43,7 +43,7 @@ Referencias: `fm/mqtt_bus.py`, `fm/fleet.py::Dispatcher.subscribe()` y
 Actualmente solo se recuerda la última `fleet/order` aceptada. Si llega A,
 después B y luego se reenvía A, A podría ejecutarse otra vez en un robot
 disponible. La limitación está documentada como decisión: esta sugerencia
-propone revisarla antes de integrar Node-RED, no tratarla como una función
+propone revisarla antes de integrar el sistema aguas arriba, no tratarla como una función
 olvidada.
 
 Propuesta: mantener un registro acotado de órdenes aceptadas, identificado
@@ -115,7 +115,7 @@ No se proponen como novedades:
 - Mejoras de sincronización: pendiente #19.
 - Pruebas reales de recuperación de robots y recarga de configuración:
   pendientes #11 y #22, entre otras comprobaciones de hardware.
-- Integración del emisor Node-RED: pendiente #2, a cargo de otro compañero.
+- Integración del emisor de `fleet/order` (sistema aguas arriba): pendiente #2, a cargo de otro compañero.
 
 No añadiría ahora cola interna de órdenes ni coordinación de tráfico:
 ambas están fuera del alcance actual. La autenticación de administración
@@ -126,7 +126,7 @@ también está mencionada en `docs/plan-admin.md`; no es una sugerencia nueva.
 1. Corregir la recuperación de suscripciones MQTT.
 2. Revisar la protección frente a duplicados.
 3. Cerrar las pruebas reales pendientes de recuperación y recarga.
-4. Integrar con Node-RED.
+4. Integrar el sistema aguas arriba.
 
 El presupuesto de recepción por tick puede abordarse junto con los dos
 primeros puntos. El modo mantenimiento, el indicador de antigüedad y el
