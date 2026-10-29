@@ -83,6 +83,7 @@ robots:
     host: 192.168.15.15
     battery_min: 22
     actions: [coger, dejar, ir_a_espera, abrir_puerta, recoger_pieza, prueba_parametros, prueba_parametros_v2]                # la mission de recoger_pieza solo existe en mir-2
+site: imperialfleet-session000-01-0000-001   # suberri_mirur
 
 # Un robot simulado puede convivir con los reales (útil en clase; ojo: el
 # asignador lo tratará como uno más). Flota solo simulada: config/fleet-sim.yaml.

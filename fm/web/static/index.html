@@ -80,6 +80,9 @@
     border-bottom: 1px solid var(--line); padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--navy); }
   header .sub { color: var(--ink-3); font-size: 13px; }
+  .site-scope { margin: -6px 0 0; font-size: 13px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 12px;
+    align-items: center; }
+  .site-scope label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-3); }
   .site-sel { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
   .site-sel select { font: inherit; font-weight: 400; padding: 4px 8px; border: 1px solid var(--line-strong);
     border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); max-width: 180px; }
@@ -708,6 +711,8 @@
     <h2 class="page-title">Crear</h2>
     <p class="page-sub">Dar de alta con GUID de la flota un mapa en el catálogo, o una position, una zona o una mission
       vacía en un MiR para terminarla en su web.</p>
+    <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
+      <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
     <!-- Una sola sección cada vez (decisión 127): elegir qué se crea. Un tipo
          nuevo es una entrada más en CREATE_KINDS y un <template v-if>. -->
     <div class="panel">
@@ -776,7 +781,7 @@
             <option v-for="pt in createState.position_types" :key="pt.type_id" :value="pt.type_id">{{ pt.label }}</option></select></label>
         <label class="field">Mapa
           <select id="new-position-map" v-model="createState.position.parent">
-            <option v-for="m in createState.maps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
+            <option v-for="m in siteMaps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
         <div class="acts"><button class="btn primary" id="new-position" :disabled="!canCreate('position')" @click="createRes('position')">Crear position aquí</button></div>
       </template>
       <template v-else-if="createWhat === 'zone'">
@@ -792,7 +797,7 @@
         <p class="hint" id="new-zone-help" v-if="zoneHelp">{{ zoneHelp }}</p>
         <label class="field">Mapa
           <select id="new-zone-map" v-model="createState.zone.parent">
-            <option v-for="m in createState.maps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
+            <option v-for="m in siteMaps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
         <div class="acts"><button class="btn primary" id="new-zone" :disabled="!canCreate('zone')" @click="createRes('zone')">Crear zona aquí</button></div>
       </template>
       <template v-else>
@@ -856,10 +861,10 @@
       <p class="hint">Los <b>borradores</b> aún no se han capturado: su GUID está reservado en <code>catalog/</code>, pero no se
         despliegan. <b>Capturar</b> lee del robot lo que se ha hecho en su web y lo guarda en el catálogo (se puede repetir).
         <b>Borrar</b> lo quita de los robots que lo tengan y del catálogo; si era el número más alto, queda libre.</p>
-      <div class="row" v-if="createState.created.length">
+      <div class="row" v-if="createdInSite.length">
         <label class="field" style="max-width: 320px">Mostrar
           <select id="created-filter" v-model="createState.filter">
-            <option value="">Todo ({{ createState.created.length }})</option>
+            <option value="">Todo ({{ createdInSite.length }})</option>
             <option v-for="k in createdKinds" :key="k.kind" :value="k.kind">{{ k.label }} ({{ k.n }})</option></select></label>
       </div>
       <ul class="drafts" v-if="createdShown.length">
@@ -876,7 +881,7 @@
           </span>
         </li>
       </ul>
-      <p class="empty" v-else>{{ createState.created.length ? "No hay nada de ese tipo." : "No hay nada creado desde aquí." }}</p>
+      <p class="empty" v-else>{{ createdInSite.length ? "No hay nada de ese tipo." : "No hay nada creado desde aquí." }}</p>
     </div>
     <!-- Adoptar (decisión 116): missions hechas o "guardadas como" en la web
          del MiR, sin GUID de la flota. Solo escribe en el catálogo. -->
@@ -918,6 +923,8 @@
   <main v-show="tab === 'configurador'">
     <h2 class="page-title">Configurador</h2>
     <p class="page-sub">Lo que hoy se edita a mano en <code>config/fleet.yaml</code>. Pensado para el profesor, no para el operario.</p>
+    <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
+      <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
     <div class="panel cfg-bar">
       <template v-if="!cfgState.editable">
         <span class="tag">solo lectura</span>
@@ -1077,7 +1084,8 @@
         <label class="field">Mission
           <select id="act-mission" v-model="actForm.mission" @change="onMissionChange">
             <option value="">— elige —</option>
-            <option v-for="m in cfgChoices.missions" :key="m.guid" :value="m.guid">{{ m.name }}</option>
+            <option v-for="m in cfgChoices.missions.filter(x => inSite(x.site) || x.guid === actForm.mission)" :key="m.guid"
+                    :value="m.guid">{{ m.name }}</option>
             <option value="__otra__">Otra (nombre exacto en la web del MiR)…</option>
           </select></label>
         <label class="field" v-if="actForm.mission === '__otra__'">Nombre de la mission en la web del MiR
@@ -1157,6 +1165,8 @@
   <main v-show="tab === 'sincronizacion'">
     <h2 class="page-title">Sincronización</h2>
     <p class="page-sub">Llevar a un robot lo que hay en el catálogo (<code>catalog/</code>), con los mismos GUIDs en toda la flota.</p>
+    <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
+      <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
     <div class="panel">
       <h3>Estado de la flota</h3>
       <p class="hint">Qué le falta a cada robot de lo que necesita según <code>fleet.yaml</code>: sus missions y todo lo que usan.
@@ -1295,7 +1305,8 @@
               crean donde está el robot, así que este paso va antes.</p></li>
           <li><b>Elegir el site de la flota</b><span class="where">cabecera, «Site»</span>
             <p>Solo trabajan los robots cuyo mapa activo es de ese site: los demás salen avisados y no reciben orders hasta
-              que se cambie su mapa en su web.</p></li>
+              que se cambie su mapa en su web. Crear, Sincronización y Configurador enseñan solo lo de ese site (con «Ver
+              todo el catálogo», todo).</p></li>
           <li><b>Positions y zonas</b><a class="where" href="#crear">→ Crear</a>
             <p>Los puntos a los que irán los robots y las zonas del mapa (ver «Añadir una position nueva» y «Añadir una
               zona»). Captúralas y llévalas a los demás robots.</p></li>
@@ -1561,7 +1572,12 @@ createApp({
   setup() {
     const fleet = reactive({ robots: [], fleet_manufacturer: '', auto_charge: { battery_floor: 20 }, instant_actions: [] });
     const live = reactive({});        // serial → { state, connection, feedback }
-    const ui = reactive({ wsOk: false, sending: false });
+    const ui = reactive({ wsOk: false, sending: false, allSites: false });
+    // Site de la flota (decisión 129, fase 2): Crear, Sincronización y
+    // Configurador enseñan lo de ese site y lo que no tiene site (grupos,
+    // sonidos). `ui.allSites` lo enseña todo.
+    const siteName = computed(() => ((fleet.sites || []).find(x => x.guid === fleet.site) || {}).name || fleet.site || '');
+    const inSite = site => !fleet.site || ui.allSites || !site || site === fleet.site;
     const form = reactive({ actionType: '', params: {} });
     const fleetOrders = reactive([]); // los enviados desde aquí, con su order_response
     const events = reactive([]);
@@ -1771,7 +1787,7 @@ createApp({
     // Secciones del catálogo: positions por mapa y missions por grupo. Las
     // entradas de marcadores/cargadores no se eligen: van con su marcador.
     const catSections = computed(() => {
-      const items = syncState.catalog;
+      const items = syncState.catalog.filter(i => inSite(i.site));
       const secs = [], add = (key, label, list, open = false) => {
         if (!list.length) return;
         const n = list.filter(i => syncState.sel[i.guid]).length;
@@ -2025,7 +2041,8 @@ createApp({
         if (!createState.position.parent && info.maps.length) createState.position.parent = info.maps[0].guid;
         if (!createState.zone.parent && info.maps.length) createState.zone.parent = info.maps[0].guid;
         if (!(info.sessions || []).some(x => x.guid === mapForm.session))
-          mapForm.session = (info.sessions || []).length ? info.sessions[0].guid : '';
+          mapForm.session = (info.sessions || []).some(x => x.guid === fleet.site) ? fleet.site
+            : (info.sessions || []).length ? info.sessions[0].guid : '';
         if (!savedWhat && !(info.sessions || []).length) createWhat.value = 'session';   // flota nueva
       } catch (e) { createState.error = 'no se pudo leer el catálogo'; }
       loadAdoptable();
@@ -2112,10 +2129,18 @@ createApp({
     const zoneHelp = computed(() => (createState.zone_types.find(z => z.type_id === createState.zone.type_id) || {}).help || '');
     // «Creado desde aquí»: un filtro por tipo, con los que haya y cuántos.
     const CREATED_PLURAL = { session: 'Sites', map: 'Mapas', mission: 'Missions', position: 'Positions', zone: 'Zonas' };
+    const createdInSite = computed(() => createState.created.filter(d => inSite(d.site)));
     const createdKinds = computed(() => Object.keys(CREATED_PLURAL)
-      .map(kind => ({ kind, label: CREATED_PLURAL[kind], n: createState.created.filter(d => d.kind === kind).length }))
+      .map(kind => ({ kind, label: CREATED_PLURAL[kind], n: createdInSite.value.filter(d => d.kind === kind).length }))
       .filter(k => k.n));
-    const createdShown = computed(() => createState.created.filter(d => !createState.filter || d.kind === createState.filter));
+    const createdShown = computed(() => createdInSite.value.filter(d => !createState.filter || d.kind === createState.filter));
+    // Mapas donde crear positions y zonas: los del site. Si el elegido deja de
+    // estar (cambia el site), se pasa al primero que quede.
+    const siteMaps = computed(() => createState.maps.filter(m => inSite(m.site)));
+    watch(siteMaps, maps => {
+      for (const f of [createState.position, createState.zone])
+        if (!maps.some(m => m.guid === f.parent)) f.parent = maps.length ? maps[0].guid : '';
+    });
     const canCreate = kind => !!createState.robot && !createState.busy
       && !!createState[kind].name.trim() && !!createState[kind].parent;
     async function postCreate(url, body, busy) {
@@ -2251,7 +2276,8 @@ createApp({
       if (orig && orig.definition.mission === def.mission) return orig.needs;
       const m = cfgChoices.value.missions.find(x => x.guid === def.mission || x.name === def.mission);
       // Aproximación hasta guardar: la mission (sin sus dependencias).
-      return m ? { mission_guid: m.guid, mission_name: m.name, required: [m.guid] } : { mission_guid: null, required: [] };
+      return m ? { mission_guid: m.guid, mission_name: m.name, site: m.site, required: [m.guid] }
+               : { mission_guid: null, required: [] };
     }
     const viewActions = computed(() => {
       const d = cfgEdit.on ? cfgEdit.draft.actions : {};
@@ -2263,7 +2289,8 @@ createApp({
       for (const [name, ch] of Object.entries(d))
         if (ch && !cfgState.actions.some(a => a.name === name))
           out.push({ name, definition: ch.definition, needs: guessNeeds(ch.definition, null), status: 'nueva' });
-      return out;
+      // Las de missions de otro site no se enseñan (una nueva, sí: se está escribiendo).
+      return out.filter(a => a.status === 'nueva' || inSite(a.needs && a.needs.site));
     });
     const actForm = reactive({ open: false, isNew: false, name: '', mission: '', missionOther: '', inputs: [],
                                allow: [], newInput: '', error: '', extra: {}, expected: '' });
@@ -2299,7 +2326,11 @@ createApp({
         actForm.inputs.push({ name: n, kind: 'text', min: '', max: '', step: '', manual: true });
       actForm.newInput = '';
     }
-    const allowOptions = computed(() => [...new Set([...cfgChoices.value.positions, ...actForm.allow])].sort());
+    const allowOptions = computed(() => {
+      const sites = cfgChoices.value.position_sites || {};
+      const here = cfgChoices.value.positions.filter(n => !(sites[n] || []).length || sites[n].some(inSite));
+      return [...new Set([...here, ...actForm.allow])].sort();
+    });
     function acceptActForm() {
       const f = actForm, name = f.name;
       const mission = f.mission === '__otra__' ? f.missionOther : f.mission;
@@ -2506,7 +2537,7 @@ createApp({
 
     loadFleet();
     connect();
-    return { fleet, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
+    return { fleet, ui, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
@@ -2514,7 +2545,7 @@ createApp({
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
-             changeSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap, siteForm, createSite, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
+             changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap, siteForm, createSite, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,

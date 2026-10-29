@@ -128,6 +128,23 @@ class Catalog:
     def kind(guid: str) -> str:
         return parse_std(guid)[0]
 
+    def site_of(self, guid: str) -> str | None:
+        """Site al que pertenece un recurso (decisión 129, fase 2): el suyo si
+        es un site, el de su mapa si es una position o una zona, y el campo
+        `session_id` en mapas y missions. Grupos y sonidos son de toda la
+        flota: None. Mira también los borradores."""
+        d = self.items.get(guid) or self.drafts.get(guid)
+        if d is None:
+            return None
+        k = self.kind(guid)
+        if k == "session":
+            return guid
+        if k in ("map", "mission"):
+            return d.get("session_id")
+        if k in ("position", "zone"):
+            return self.site_of(d["map_id"]) if d.get("map_id") else None
+        return None
+
     def entry_of(self, parent: str) -> str | None:
         """Entrada (creada por el MiR) de un marcador o cargador del catálogo."""
         return next((g for g, d in self.items.items()
@@ -201,6 +218,7 @@ class Catalog:
                 extra = f"{len(d['actions'])} actions"
             o = d.get("_origen", {})
             out.append({"guid": g, "kind": k, "name": d["name"], "parent": parent, "extra": extra,
+                        "site": self.site_of(g),
                         "auto": bool(d.get("creada_por_mir")), "parent_id": d.get("parent_id"),
                         "origin": o.get("robot", ""), "captured": o.get("capturado", ""),
                         "origin_group": o.get("grupo", "")})
@@ -574,6 +592,7 @@ class MirSync:
             g = self._resolve(cat, ref) if ref else None
             out[name] = {"mission": ref, "mission_guid": g,
                          "mission_name": cat.items[g]["name"] if g else None,
+                         "site": cat.site_of(g) if g else None,
                          "required": cat.closure([g]) if g else []}
         return out
 
@@ -643,13 +662,14 @@ class MirSync:
         creado desde la pestaña (borradores primero, luego lo ya capturado)."""
         from fm.adapters.mir.create import created_here
         cat = self.catalog()
-        pick = lambda kind: [{"guid": g, "name": d["name"]} for g, d in sorted(cat.items.items())  # noqa: E731
-                             if cat.kind(g) == kind]
+        pick = lambda kind: [{"guid": g, "name": d["name"], "site": cat.site_of(g)}  # noqa: E731
+                             for g, d in sorted(cat.items.items()) if cat.kind(g) == kind]
         created = []
         for g in sorted({*cat.drafts, *cat.items}):
             d = created_here(cat, g)
             if d is not None:
                 created.append({"guid": g, "kind": cat.kind(g), "name": d["name"], "draft": g in cat.drafts,
+                                "site": cat.site_of(g),
                                 "robot": d.get("_origen", {}).get("robot"),
                                 "date": d.get("_origen", {}).get("capturado")})
         created.sort(key=lambda x: (not x["draft"], x["guid"]))
@@ -714,11 +734,16 @@ class MirSync:
                 for p in a.get("parameters", []):
                     if p.get("input_name") and p["input_name"] not in inputs:
                         inputs[p["input_name"]] = guess_input_kind(p)
-            missions.append({"guid": g, "name": d["name"],
+            missions.append({"guid": g, "name": d["name"], "site": cat.site_of(g),
                              "inputs": [{"name": n, "kind": k} for n, k in inputs.items()]})
-        positions = sorted({d["name"] for g, d in cat.items.items()
-                            if cat.kind(g) == "position" and not d.get("creada_por_mir")})
-        return {"missions": missions, "positions": positions}
+        # Por nombre (la allowlist es de nombres), con los sites en que hay una
+        # position así: la UI enseña las del site de la flota (decisión 129).
+        position_sites: dict[str, set] = {}
+        for g, d in cat.items.items():
+            if cat.kind(g) == "position" and not d.get("creada_por_mir"):
+                position_sites.setdefault(d["name"], set()).add(cat.site_of(g))
+        return {"missions": missions, "positions": sorted(position_sites),
+                "position_sites": {n: sorted(s for s in v if s) for n, v in position_sites.items()}}
 
     def preview(self, selected: Iterable[str], replace: Iterable[str] = ()) -> tuple[Catalog, list[Op]]:
         cat = self.catalog()

@@ -2288,6 +2288,25 @@ cambio de mapa se sigue haciendo en la web del MiR.
      la flota ninguno recibiría orders hasta cambiar su mapa. Guía: paso
      «Elegir el site de la flota» en «Acabo de llegar».
 
+## 2026-10-29 — Site de la flota (fase 2: administración)
+
+130. **Crear, Sincronización y Configurador enseñan lo del site de la
+     flota.** Cada recurso del catálogo dice su site (`Catalog.site_of`):
+     el suyo un site; `session_id` un mapa o una mission; el de su mapa una
+     position o una zona. Grupos de missions y sonidos no tienen site (son
+     de toda la flota) y salen siempre. Va en lo que ya mandaba el servidor
+     (`summary`, `create_choices`, `form_choices`, `action_needs`) y filtra
+     la interfaz: en Crear, los mapas donde crear positions y zonas y
+     «Creado desde aquí» («Nuevo mapa» propone el site de la flota, pero
+     deja elegir otro); en Sincronización, las secciones del catálogo; en
+     el Configurador, las actions cuya mission es de otro site, las
+     missions del formulario y las positions de la allowlist (por nombre,
+     con `position_sites`). Una línea bajo el título de cada pestaña dice
+     qué site se enseña, con «Ver todo el catálogo». Sin site elegido se ve
+     todo, como antes. Comprobado con un Chromium sin ventana y dos sites:
+     el mapa del otro site no sale para crear zonas ni en «Creado desde
+     aquí», y sí con «Ver todo».
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2303,11 +2322,6 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
 **En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
 
 - *(nada en curso: #21 y #16 cerrados el 2026-10-14)*
-
-**Site de la flota, fase 2** (decisión 129)
-
-- Crear, Sincronización y Configurador: enseñar solo los mapas, positions,
-    zonas y missions del site de la flota.
 
 **Mapas desde el FM** (acordado el 2026-10-29, decisión 126)
 

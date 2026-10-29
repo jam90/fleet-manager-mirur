@@ -263,7 +263,8 @@ def test_action_needs_para_la_matriz_del_configurador(cat):
     assert needs["por_guid"]["mission_name"] == "principal"
     assert needs["por_nombre"]["mission_guid"] == M_SUB
     assert needs["fuera"] == {"mission": "no-catalogada", "mission_guid": None,
-                              "mission_name": None, "required": []}
+                              "mission_name": None, "site": None, "required": []}
+    assert needs["por_guid"]["site"] == SES
     assert needs["sin_mission"]["mission_guid"] is None
 
 
@@ -374,3 +375,16 @@ def test_desplegar_zona_y_sustituir_si_es_distinta(tmp_path):
     ops = apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-1", replace=[ZONE]))
     assert next(o for o in ops if o.guid == ZONE).status == "hecho"
     assert ("DELETE", f"zones/{ZONE}") in mir.writes and mir.db["zones"][ZONE]["type_id"] == 104
+
+
+def test_cada_recurso_dice_su_site(tmp_path):
+    # Decisión 129, fase 2: lo que se filtra por el site de la flota.
+    cat = _zone_catalog(tmp_path) if write_catalog(tmp_path) else None
+    assert [cat.site_of(g) for g in (SES, MAP, P_NORMAL, P_ENTRY, ZONE, M_MAIN)] == [SES] * 6
+    assert cat.site_of(GRP) is None and cat.site_of(SND) is None      # de toda la flota
+    assert {i["guid"]: i["site"] for i in cat.summary()}[ZONE] == SES
+    from fm.adapters.mir.sync import MirSync
+    s = MirSync("mir-1", "0.0.0.0", "Basic x", tmp_path)
+    ch = s.form_choices()
+    assert ch["position_sites"]["A"] == [SES] and {m["site"] for m in ch["missions"]} == {SES}
+    assert s.create_choices()["maps"] == [{"guid": MAP, "name": "m", "site": SES}]
