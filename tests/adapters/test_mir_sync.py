@@ -118,6 +118,10 @@ class FakeMir:
             if parts[0] == "positions":                    # el MiR borra la entrada con su marcador
                 for g in [g for g, p in self.db["positions"].items() if p.get("parent_id") == parts[1]]:
                     del self.db["positions"][g]
+            if parts[0] == "maps":                         # y las positions y zonas con su mapa (2026-10-29)
+                for t in ("positions", "zones"):
+                    for g in [g for g, x in self.db[t].items() if x.get("map_id") == parts[1]]:
+                        del self.db[t][g]
             return None
         if method == "PUT" and parts[0] == "positions":
             self.db["positions"][parts[1]].update(json)

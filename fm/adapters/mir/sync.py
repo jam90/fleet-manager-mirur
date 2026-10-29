@@ -730,6 +730,13 @@ class MirSync:
         with self.lock:
             delete_on(self.client, guid)
 
+    def dependents(self, guid: str) -> list[dict]:
+        """Lo que se va con `guid` al quitarlo (un mapa: sus positions y zonas)."""
+        from fm.adapters.mir.remove import dependents
+        cat = self.catalog()
+        return [{"guid": g, "kind": cat.kind(g), "name": (cat.items.get(g) or cat.drafts.get(g))["name"]}
+                for g in dependents(cat, guid)]
+
     def forget(self, guid: str, retire: bool = False, robots=()) -> list[str]:
         from fm.adapters.mir.remove import forget
         return forget(self, guid, retire, robots)

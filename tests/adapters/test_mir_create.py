@@ -6,7 +6,7 @@ import threading
 import pytest
 
 from fm.adapters.mir.create import CreateError, next_guid
-from fm.adapters.mir.sync import Catalog, MirSync, std_guid
+from fm.adapters.mir.sync import Catalog, MirSync, parse_std, std_guid
 from tests.adapters.test_mir_sync import GRP, M_MAIN, M_SUB, MAP, P_NORMAL, SES, SND, FakeMir, write_catalog, move
 
 
@@ -347,12 +347,14 @@ def test_borrar_mapa_subido_se_lleva_su_imagen(sync, tmp_path):
     assert sync.delete_blockers(g, {}, []) == []
     assert sync.forget(g) == [g]
     assert not (tmp_path / "maps" / f"{g}.png").exists() and not (tmp_path / "maps" / f"{g}.json").exists()
-    # Uno subido aquí con positions encima no se borra.
+    # Decisión 133: uno con positions se las lleva (el MiR las borra con el mapa).
     g = sync.create_map("con positions", _png(), 0.05, 0, 0, session_guid=SES)["guid"]
-    (tmp_path / "positions" / "p.json").write_text(json.dumps({
-        "guid": std_guid("position", 1, 5, 1), "name": "X", "type_id": 0, "pos_x": 0, "pos_y": 0,
+    p = std_guid("position", 1, parse_std(g)[3], 1)
+    (tmp_path / "positions" / f"{p}.json").write_text(json.dumps({
+        "guid": p, "name": "X", "type_id": 0, "pos_x": 0, "pos_y": 0,
         "orientation": 0, "map_id": g, "parent_id": None, "docking_offsets": []}))
-    assert "la usan otros recursos del catálogo: X" in sync.delete_blockers(g, {}, [])[0]
+    assert sync.delete_blockers(g, {}, []) == [] and sync.dependents(g) == [{"guid": p, "kind": "position", "name": "X"}]
+    assert sorted(sync.forget(g)) == sorted([g, p])
 
 
 # --------------------------------------------------------------------- site

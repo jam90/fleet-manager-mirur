@@ -1273,7 +1273,7 @@
                 <b>{{ it.name }}</b> <span class="muted">{{ it.extra }}</span>
                 <span class="muted" v-if="it.origin_group && it.kind === 'mission'"> · de {{ it.origin_group }}</span></label>
               <code class="guid">{{ it.guid }}</code>
-              <button class="link-btn" v-if="['mission', 'position', 'zone'].includes(it.kind) && !it.auto" @click="retire(it)"
+              <button class="link-btn" v-if="['mission', 'position', 'zone', 'map'].includes(it.kind) && !it.auto" @click="retire(it)"
                       :title="'Borrar ' + it.name + ' de todos los robots y del catálogo; su número no se reutiliza'">Retirar de la flota</button>
               <span class="where" v-if="whereIs(it).length">
                 <span v-for="w in whereIs(it)" :key="w.serial" :class="'w-' + w.state" :title="w.title">{{ w.text }}</span>
@@ -1541,8 +1541,25 @@
             <p>En «Mapas de &lt;site&gt;», márcalo (arrastra su site y marca sus positions y zonas), elige el robot, «Vista previa» y «Desplegar». Crearlo en un robot no
               lo activa: para trabajar en él, cámbialo en la web del MiR.</p></li>
           <li><b>Si te has equivocado</b><a class="where" href="#crear">→ Crear</a>
-            <p>«Borrar» en «Creado desde aquí» lo quita del catálogo y de los robots que lo tengan, salvo que tenga positions
-              o zonas, o que sea el mapa activo de algún robot.</p></li>
+            <p>«Borrar» en «Creado desde aquí» lo quita del catálogo y de los robots que lo tengan, con sus positions y zonas,
+              salvo que sea el mapa activo de algún robot o que una mission vaya a sus positions.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Quitar un mapa
+          <span class="hint">De toda la flota, con sus positions y zonas.</span></summary>
+        <ol class="steps">
+          <li><b>Que nadie lo use</b><span class="where">web del MiR y Configurador</span>
+            <p>Ningún robot puede tenerlo como mapa activo (cámbialo en su web) y ninguna mission puede ir a sus positions;
+              tampoco una position que solo esté en ese mapa puede seguir en «Positions admitidas» de una action.</p></li>
+          <li><b>Retirarlo</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>«Retirar de la flota» junto al mapa, en «Mapas de &lt;site&gt;». La confirmación dice qué positions y zonas se van
+              con él: se borran de los robots que lo tienen (el MiR las borra con el mapa) y del catálogo, y sus números quedan
+              reservados. Si era una prueba subida o creada en Crear, «Borrar» allí hace lo mismo y deja libres los números.</p></li>
+          <li><b>El original del robot</b><span class="where">web del MiR</span>
+            <p>Si era un mapa capturado de un robot, su original (sin GUID de la flota) no se toca: bórralo en su web si ya no
+              hace falta.</p></li>
         </ol>
       </details>
 
@@ -1645,6 +1662,14 @@ const VERB_LABEL = { crear: 'crear', corregir: 'corregir', igual: 'ya está igua
 const VERB_MARK = { crear: '+', corregir: '~', igual: '=', distinta: '!', sustituir: '↻' };
 const KIND_LABEL = { session: 'site', map: 'mapa', position: 'position', sound: 'sonido', zone: 'zona',
                      missiongrp: 'grupo', mission: 'mission' };
+// Lo que se va con un recurso al quitarlo (un mapa: sus positions y zonas), para la confirmación.
+function alsoText(plan) {
+  const by = {};
+  for (const d of plan.with || []) (by[d.kind] = by[d.kind] || []).push(d.name);
+  const parts = Object.entries(by).map(([k, names]) => `${names.length} ${k === 'zone' ? 'zona' : k}${names.length === 1 ? '' : 's'} `
+    + `(${[...new Set(names)].join(', ')})`);
+  return parts.length ? `\nSe va también, con él: ${parts.join(' y ')}.` : '';
+}
 const CREATED_LABEL = { mission: 'Mission', position: 'Position', zone: 'Zona', map: 'Mapa', session: 'Site' };
 
 function hhmmss(iso) {
@@ -2029,8 +2054,9 @@ createApp({
       const out = await removal('/api/retire/preview', '/api/retire', it.guid, `dónde está «${it.name}»`,
         plan => `¿Retirar ${KIND_LABEL[it.kind]} «${it.name}» de la flota?\n` +
                 (plan.robots.length ? `Se borra de ${plan.robots.join(' y ')} ` : 'No está en ningún robot; ') +
-                `y del catálogo. Su número de GUID queda reservado (no se reutiliza).\n${it.guid}\n\nEn git queda el historial del fichero.`);
-      if (out) { syncState.rm.text = `«${out.name}» retirada de la flota` + (out.robots.length ? ` (borrada de ${out.robots.join(' y ')})` : '') + '.';
+                `y del catálogo. Su número de GUID queda reservado (no se reutiliza).${alsoText(plan)}\n${it.guid}\n\n`
+                + 'En git queda el historial del fichero.');
+      if (out) { syncState.rm.text = `«${out.name}» fuera de la flota` + (out.with && out.with.length ? `, con ${out.with.length} más` : '') + (out.robots.length ? ` (borrada de ${out.robots.join(' y ')})` : '') + '.';
                  syncState.rm.cls = 'ASSIGNED'; addEvent(out.robots.join(', ') || 'catálogo', `retirada ${out.kind} «${out.name}» (${out.guid})`); }
       loadSync();
     }
@@ -2306,7 +2332,7 @@ createApp({
       if (!plan) return;
       if (plan.blockers.length) { createState.error = `No se puede borrar «${d.name}»: ` + plan.blockers.join('; ') + '.'; return; }
       const where = plan.robots.length ? `de ${plan.robots.join(' y ')} y ` : '';
-      if (!confirm(`¿Borrar ${KIND_LABEL[d.kind]} «${d.name}» ${where}del catálogo?\n${d.guid}\n\nNo se puede deshacer.`)) return;
+      if (!confirm(`¿Borrar ${KIND_LABEL[d.kind]} «${d.name}» ${where}del catálogo?${alsoText(plan)}\n${d.guid}\n\nNo se puede deshacer.`)) return;
       const out = await postCreate('/api/create/delete', { guid: d.guid }, `borrando «${d.name}»…`);
       if (out) {
         createState.result = { ...out, deleted: true };

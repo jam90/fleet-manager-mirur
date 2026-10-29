@@ -2380,6 +2380,27 @@ primera versión: con mir-2 la lista daba `KeyError: 'guid'` por el mapa
 `suberri_mirur`, capturado a mano en la fase 0 sin el GUID de origen en
 `_origen`; ahora esos no cuentan como "ya capturados".
 
+## 2026-10-29 — Retirar un mapa de la flota
+
+Tras probar la captura con `g6` (llevado a `suberri_mirur` y desplegado en
+los dos robots), el usuario lo borró a mano en la web de cada robot y se
+comprobó leyendo: **el MiR borra con el mapa sus positions y sus zonas**.
+Los ficheros de la prueba se quitaron del catálogo (nunca se commitearon).
+
+133. **«Retirar de la flota» vale también para mapas**, y se llevan sus
+     positions (con las entradas de los marcadores) y sus zonas, en los
+     robots y en el catálogo, con sus números reservados en
+     `retirados.json`; también su PNG. No se deja si es el mapa activo de
+     algún robot, si una mission va a alguna de sus positions, si una
+     position que solo está en ese mapa sigue en una allowlist de
+     `fleet.yaml`, o con un robot que lo tiene ocupado o sin conexión.
+     «Borrar» en Crear (mapas subidos allí) sigue la misma regla, en vez de
+     bloquearse por tener positions o zonas. La confirmación dice qué se va
+     con él (`with` en el plan de `POST /api/retire/preview`). Guía:
+     «Quitar un mapa». El original de un mapa capturado (sin GUID de la
+     flota) no se toca. Tests en `test_mir_remove.py`; `FakeMir` borra ya
+     las positions y zonas con su mapa, como el robot.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2390,17 +2411,34 @@ cerrado se quita (su historia está en la entrada de su fecha). Cerrados el
 y #16 (configurador completo: v3, decisión 108).
 Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
 (rechazos acotados, decisión 121), #6 (`--validate`, decisión 122) y #23
-(zonas del mapa desde la pestaña Crear, decisión 124).
+(zonas del mapa desde la pestaña Crear, decisión 124). Hechos el mismo día
+sin número: subir un mapa, crear un site, site de la flota, missions
+atadas a su mapa, capturar un mapa de un robot y retirar mapas
+(decisiones 126–133).
 
-**En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
+**En curso / siguiente** (al cerrar el 2026-10-29)
 
-- *(nada en curso: #21 y #16 cerrados el 2026-10-14)*
-
-**Mapas desde el FM** (acordado el 2026-10-29, decisión 126)
-
-- **Copiar un mapa del catálogo** con imagen, positions y zonas (GUIDs
-    nuevos de ese mapa). Primer uso: `mapa-pruebas`, copia de
-    `suberri_mirur`.
+- **Estado al cerrar:** el FM real hay que reiniciarlo para que coja la
+    retirada de mapas (decisión 133). Los dos robots están en el mapa
+    `suberri` (de otros proyectos): con el reinicio, el FM ya rechaza las
+    actions que van a positions fijas de `suberri_mirur` (decisión 131), y
+    si se elige `suberri_mirur` como site de la flota, ninguno recibe
+    orders hasta cambiar su mapa. mir-2 quedó en Error (10101) por una
+    mission de `suberri_mirur` lanzada en `suberri`: quitarlo en su web.
+- **Sin commitear en `catalog/`** (del usuario): `mapa-pruebas`
+    (`…-map0000000-01-0001-002`, subido con origen (12,5; 12,5) en vez del
+    de `suberri_mirur`, (−13,825; −3,275), y ya desplegado en los dos
+    robots), la zona «zona de carga» (`…-zone000000-01-0001-001`) y los
+    borradores `cuadro_electrico` (mission y position).
+- **#33** **Copiar un mapa del catálogo** con imagen, origen, positions y
+    zonas (GUIDs nuevos de ese mapa). Primer uso: rehacer `mapa-pruebas`
+    como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que
+    deja libre su número). Decidir qué pasa con las missions de positions
+    fijas (decisión 131): copiarlas apuntando a las positions copiadas o
+    pasarlas a recibir la position como input.
+- **#34** **Crear grupos de missions desde el FM**: sin eso, una flota
+    nueva no puede crear su primera mission (la Guía lo avisa en «Acabo de
+    llegar»).
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 

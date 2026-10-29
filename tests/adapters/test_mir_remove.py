@@ -64,3 +64,23 @@ def test_sobrantes_en_la_comprobacion(sync):
     sync._wanted = ["sub"]
     r = sync.check()
     assert r["surplus"] == [M_MAIN]                                         # solo missions, y no las pedidas
+
+
+
+def test_retirar_un_mapa_se_lleva_sus_positions_y_zonas(sync, tmp_path):
+    # Decisión 133. Mientras una mission vaya a sus positions, no.
+    assert "la usan otros recursos del catálogo: principal, sub" in sync.retire_blockers(MAP, {}, [])[0]
+    for m in (M_MAIN, M_SUB):
+        sync.delete(m)
+        sync.forget(m, retire=True)
+    allow = {"ir": {"mission": "x", "positions_allowlist": ["B"]}}
+    assert "allowlist de fleet.yaml (actions: ir)" in sync.retire_blockers(MAP, allow, [])[0]
+    assert sync.retire_blockers(MAP, {}, []) == []
+    assert {d["name"] for d in sync.dependents(MAP)} == {"A", "VL", "B"}       # VL dos veces: marcador y entrada
+    sync.delete(MAP)                                       # en el robot se van con él
+    assert not sync.client.db["positions"] and not sync.exists(MAP)
+    gone = sync.forget(MAP, retire=True, robots=["mir-2"])
+    cat = Catalog.load(tmp_path)
+    assert len(gone) == 5 and MAP not in cat.items and not any(cat.kind(g) == "position" for g in cat.items)
+    assert not (tmp_path / "maps" / f"{MAP}.png").exists()
+    assert {r["guid"] for r in json.loads((tmp_path / "retirados.json").read_text())} >= set(gone)

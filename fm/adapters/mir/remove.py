@@ -8,12 +8,16 @@ Tres alcances, de menos a más:
   su `fleet.yaml` no la necesita; el catálogo no cambia y se puede volver a
   desplegar. Las positions no: una order puede pedir cualquiera por nombre
   (`target_pos`), así que el FM no sabe si un robot "no la usa".
-- **Retirar de la flota** (missions, positions y zonas del catálogo): la borra de
+- **Retirar de la flota** (missions, positions, zonas y mapas del catálogo): la borra de
   todos los robots y del catálogo, y **su número queda reservado** en
   `catalog/retirados.json` (tiene historial en git y puede seguir en
   backups del MiR: reutilizar el GUID para otra cosa confundiría).
 - **Borrar lo creado en la pestaña Crear** (`create.py`): igual que
   retirar, pero el número queda libre (son pruebas).
+
+Un mapa se va con sus positions y sus zonas (decisión 133): el MiR las
+borra con él (comprobado en mir-1 y mir-2 el 2026-10-29), así que en el
+catálogo también.
 
 Lo que no lleva GUID `imperialfleet-…` no es del FM y no se toca nunca.
 """
@@ -28,7 +32,7 @@ from fm.adapters.mir.client import MirApiError
 from fm.adapters.mir.sync import FOLDERS, Catalog, is_std, presence
 
 RETIRED_FILE = "retirados.json"
-REMOVABLE = ("mission", "position", "zone")
+REMOVABLE = ("mission", "position", "zone", "map")
 
 
 def retired(root: Path) -> list[dict]:
@@ -42,12 +46,22 @@ def entries_of(cat: Catalog, guid: str) -> list[str]:
     return [g for g, d in cat.items.items() if d.get("parent_id") == guid and d.get("creada_por_mir")]
 
 
+def dependents(cat: Catalog, guid: str) -> list[str]:
+    """Lo que se va con `guid`: las positions (con sus entradas) y las zonas
+    de un mapa, o la entrada de un marcador. Borradores incluidos."""
+    if cat.kind(guid) == "map":
+        return sorted(g for g, d in {**cat.items, **cat.drafts}.items()
+                      if cat.kind(g) in ("position", "zone") and d.get("map_id") == guid)
+    return entries_of(cat, guid)
+
+
 def usage_blockers(sync, cat: Catalog, guid: str, definitions: dict, wanted: Iterable[str]) -> list[str]:
     """Quién usa `guid` en la flota: `fleet.yaml` (catálogo `actions:` o lo
     que piden los robots, p.ej. la mission de carga) y otros recursos del
     catálogo. Vacío = nadie."""
     d = cat.items.get(guid) or cat.drafts.get(guid)
     out = []
+    going = {guid, *dependents(cat, guid)}
     wanted = set(wanted)
     refs = wanted | {sync._resolve(cat, w) for w in wanted}       # por GUID o por nombre
     if cat.kind(guid) == "mission":
@@ -61,7 +75,14 @@ def usage_blockers(sync, cat: Catalog, guid: str, definitions: dict, wanted: Ite
                  if a and d["name"] in (a.get("positions_allowlist") or [])}
         if names:
             out.append(f"está en la allowlist de fleet.yaml (actions: {', '.join(sorted(names))})")
-    going = {guid, *entries_of(cat, guid)}
+    elif cat.kind(guid) == "map":
+        # Una position de la allowlist que solo existe en este mapa se queda sin ella.
+        here = {cat.items[g]["name"] for g in going if g in cat.items and cat.kind(g) == "position"}
+        elsewhere = {x["name"] for g, x in cat.items.items() if cat.kind(g) == "position" and g not in going}
+        names = {n for n, a in (definitions or {}).items()
+                 if a and set(a.get("positions_allowlist") or []) & (here - elsewhere)}
+        if names:
+            out.append(f"tiene positions de la allowlist de fleet.yaml (actions: {', '.join(sorted(names))})")
     users = sorted(cat.items[g]["name"] for g in cat.items if g not in going and going & cat.deps(g))
     if users:
         out.append(f"la usan otros recursos del catálogo: {', '.join(users)}")
@@ -73,7 +94,7 @@ def retire_blockers(sync, guid: str, definitions: dict, wanted: Iterable[str]) -
     if guid not in cat.items or not is_std(guid):
         return [f"{guid} no está en el catálogo"]
     if cat.kind(guid) not in REMOVABLE:
-        return ["desde aquí solo se retiran missions, positions y zonas"]
+        return ["desde aquí solo se retiran missions, positions, zonas y mapas"]
     if cat.items[guid].get("creada_por_mir"):
         return ["es la entrada de un marcador: se retira con su marcador"]
     return usage_blockers(sync, cat, guid, definitions, wanted)
@@ -116,7 +137,7 @@ def forget(sync, guid: str, retire: bool = False, robots: Iterable[str] = ()) ->
     """Quita del catálogo el recurso (y la entrada de un marcador). Con
     `retire`, apunta sus GUIDs en `retirados.json` para no reutilizarlos."""
     cat = sync.catalog()
-    gone = [guid, *entries_of(cat, guid)]
+    gone = [guid, *dependents(cat, guid)]
     if retire:
         log = retired(sync.catalog_dir)
         today = date.today().isoformat()

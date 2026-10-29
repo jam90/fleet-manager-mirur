@@ -313,7 +313,9 @@ class WebServer:
                         blockers.append(f"{s} está desplegando")
             except Exception as e:
                 blockers.append(f"no se pudo mirar {s}: {e}")
-        return {**info, "robots": where, "blockers": blockers}
+        # Lo que se va con él (un mapa: sus positions y zonas), para la confirmación.
+        also = first.dependents(guid) if hasattr(first, "dependents") else []
+        return {**info, "robots": where, "blockers": blockers, "with": also}
 
     def delete(self, guid: str, retire: bool = False) -> dict:
         """Quita `guid` de los robots que lo tienen y del catálogo. Si falla a
