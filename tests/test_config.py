@@ -150,10 +150,11 @@ def test_cada_robot_recibe_su_copia(tmp_path):
 
 
 def test_ficheros_del_repo_cargan(tmp_path):
-    # fleet.yaml y fleet-sim.yaml migrados: el driver de cada robot los acepta.
+    # Los ejemplos del repo (el fleet.yaml real es de cada instalación, fuera
+    # de git): el driver de cada robot los acepta.
     env = {"MIR_AUTH": "Basic x"}
     root = Path(__file__).resolve().parent.parent
-    for name in ("fleet.yaml", "fleet-sim.yaml"):
+    for name in ("fleet.example.yaml", "fleet-sim.yaml"):
         cfg = load_config(root / "config" / name, env_path=tmp_path / "no.env")
         for r in cfg.robots.values():
             if r.driver == "mir":
@@ -174,3 +175,14 @@ def test_expected_s_invalido(tmp_path, bad):
     catalog = f"actions: {{ coger: {{ mission: coger, expected_s: {bad} }} }}"
     with pytest.raises(ConfigError, match="actions.coger.expected_s"):
         load_config(_write(tmp_path, _robots("[coger]", catalog)), env_path=tmp_path / "no.env")
+
+
+# ------------------------------------- datos de la instalación (decisión 135)
+def test_install_paths_de_env_o_del_repo(monkeypatch, tmp_path):
+    from fm.config import ROOT, install_paths
+    monkeypatch.delenv("FM_CONFIG", raising=False)
+    monkeypatch.delenv("FM_CATALOG", raising=False)
+    assert install_paths() == (ROOT / "config" / "fleet.yaml", ROOT / "catalog")
+    monkeypatch.setenv("FM_CONFIG", "../instalacion/fleet.yaml")        # relativa: a la raíz del repo
+    monkeypatch.setenv("FM_CATALOG", str(tmp_path / "catalog"))         # absoluta: tal cual
+    assert install_paths() == (ROOT / "../instalacion/fleet.yaml", tmp_path / "catalog")

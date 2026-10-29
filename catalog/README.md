@@ -2,8 +2,13 @@
 
 Lo que el FM lleva a los robots (sessions, mapas, positions y, más adelante,
 missions), con **GUIDs comunes en toda la flota**. Es configuración, como
-`config/fleet.yaml`: se versiona en git y no es estado de ejecución. Diseño
-completo en `docs/plan-admin.md` (§3.1 catálogo, §4 formato del GUID).
+`config/fleet.yaml`, y no estado de ejecución. Diseño completo en
+`docs/plan-admin.md` (§3.1 catálogo, §4 formato del GUID).
+
+**Es de cada instalación** (decisión 135): en el repo del FM, que es
+público, esta carpeta va vacía (solo este README). El catálogo de verdad
+vive aparte, con su propio git (p. ej. un repo privado al lado del FM), y
+`.env` dice dónde con `FM_CATALOG`; sin ella, el FM usa esta carpeta.
 
 ```
 catalog/

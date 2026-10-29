@@ -2425,6 +2425,26 @@ Cierra el #34: sin esto, una flota nueva no podía crear su primera mission
      «Añadir una mission nueva» y «Las piezas». Tests en
      `test_mir_create.py` y `test_web.py`.
 
+## 2026-10-29 — Los datos de la instalación salen del repo
+
+El repo del FM es público y quien lo clone no tiene nuestros robots ni
+nuestras positions: `catalog/` y `config/fleet.yaml` no le sirven.
+
+135. **`fleet.yaml` y `catalog/` son de cada instalación y viven fuera del
+     repo del FM.** Los nuestros pasan al repo privado
+     `mirur-instalacion` (al lado de `fleet-manager-mirur`, en GitHub
+     `jam90/mirur-instalacion`) con su historial, filtrado del de este
+     repo; allí `fleet.yaml` va en la raíz. El FM los encuentra con
+     `FM_CONFIG` y `FM_CATALOG` en `.env` (`fm.config.install_paths`,
+     rutas relativas a la raíz del FM; `--config`/`--catalog` mandan); sin
+     ellas, `config/fleet.yaml` y `catalog/` del repo, ahora en el
+     `.gitignore`. Para quien empieza: `config/fleet.example.yaml`, con
+     nombres inventados, que es también lo que leen los tests que antes
+     leían el `fleet.yaml` real. Sin `fleet.yaml`, `run_fm.py` sale con un
+     mensaje que dice qué copiar. Lo publicado antes sigue en la historia
+     del repo público: no se reescribe (IPs privadas y poses de un taller;
+     no compensa un force push).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2449,7 +2469,7 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
     si se elige `suberri_mirur` como site de la flota, ninguno recibe
     orders hasta cambiar su mapa. mir-2 quedó en Error (10101) por una
     mission de `suberri_mirur` lanzada en `suberri`: quitarlo en su web.
-- **Sin commitear en `catalog/`** (del usuario): `mapa-pruebas`
+- **Sin commitear en el catálogo** (`mirur-instalacion/catalog/`, del usuario): `mapa-pruebas`
     (`…-map0000000-01-0001-002`, subido con origen (12,5; 12,5) en vez del
     de `suberri_mirur`, (−13,825; −3,275), y ya desplegado en los dos
     robots), la zona «zona de carga» (`…-zone000000-01-0001-001`) y los

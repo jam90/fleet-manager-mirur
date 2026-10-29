@@ -1,4 +1,9 @@
-# Configuración de la flota.
+# Configuración de la flota: ejemplo para empezar.
+#
+# Cópialo como `config/fleet.yaml` (fuera de git) o a la carpeta de datos de
+# tu instalación, junto a su `catalog/`, y di en `.env` dónde está
+# (`FM_CONFIG`, `FM_CATALOG`; ver `.env.example`). Los nombres de missions y
+# positions de abajo son inventados: pon los de la web de tus MiR.
 #
 # El core del FM solo lee las claves genéricas: `driver`, `manufacturer`,
 # `battery_min` y la lista `actions` de cada robot, más `auto_charge`,
@@ -28,62 +33,49 @@ drivers:
   mir:
     # Grupo de missions (web del MiR) del que se leen las missions: reduce
     # ruido y peticiones. Se resuelve a GUID por robot con GET /mission_groups.
-    mission_group: "mirur-tknika"
+    mission_group: "mi-grupo"
     # Mission de auto-carga (sin inputs): GUID del catálogo o nombre EXACTO en el grupo.
-    charge_mission: imperialfleet-mission000-01-0001-002   # Carga en estación MIRUR
+    # Que termine sola (cargar hasta un %), o el robot no saldrá nunca del dock.
+    charge_mission: "Carga en estación"
     # Opcional. Si se omite, vale cualquier position que exista en el robot.
     # positions_allowlist:
-    #   - H2D1-VL
-    #   - H2D2-VL
+    #   - Almacen
+    #   - Montaje
 
 # Histéresis: battery_min (aceptar trabajo) > battery_floor (ir a cargar).
 # Así un robot que acaba de salir del suelo no recibe trabajo y vuelve a caer.
 #
 # Catálogo de actions: cada actionType se define UNA vez para toda la flota
-# (decisión 92) y cada robot lista abajo las que tiene habilitadas.
+# y cada robot lista abajo las que tiene habilitadas.
 #
-# Las missions se nombran por su GUID del catálogo (catalog/missions/), que es
-# el mismo en todos los robots sincronizados (decisión 87); el comentario dice
-# su nombre en la web del MiR. También vale el nombre exacto, para missions
-# que no están en el catálogo. Las positions se nombran como en la web del MiR
-# y el driver las resuelve a GUID por robot al arrancar.
+# Las missions se nombran por su GUID del catálogo (catalog/missions/), el
+# mismo en todos los robots sincronizados, o por su nombre exacto en la web
+# del MiR. Las positions se nombran como en la web del MiR y el driver las
+# resuelve a GUID por robot al arrancar.
 actions:
-  coger:
-    mission: imperialfleet-mission000-01-0001-001   # coger — sin parámetros
-  dejar:
-    mission: imperialfleet-mission000-01-0001-003   # dejar
-  ir_a_espera:
-    mission: imperialfleet-mission000-01-0001-004   # Ir a zona de espera MIRUR
-  abrir_puerta:            # prueba de parámetros: target_pos = nombre de position
-    mission: imperialfleet-mission000-01-0001-006   # Simular Apertura Puerta H2DX MIRUR
+  ir_a:                    # target_pos = nombre de una position
+    mission: "Ir a posición"
     position_inputs: [target_pos]
-  recoger_pieza:
-    mission: imperialfleet-mission000-01-0001-005   # Simulacion Recogida pieza H2DX MIRUR
+  transporte:              # recoger n piezas y llevarlas a un puesto
+    mission: "Transporte"
     position_inputs: [target_pos]
-  prueba_parametros:       # escribe n_piezas_pedidas en el registro PLC 22 del MiR
-    mission: imperialfleet-mission000-01-0001-008   # MIRUR-prueba-parámetros
-    number_inputs: [n_piezas_pedidas]   # número; "5" → 5 antes de postear
-  prueba_parametros_v2:    # los dos parámetros de la mission final; MUEVE el robot
-    mission: imperialfleet-mission000-01-0001-009   # MIRUR-prueba-parámetros-v2
-    position_inputs: [target_pos]
-    positions_allowlist: [Deshecho, Montaje, Area_calidad]   # solo estas en ESTA action
+    positions_allowlist: [Almacen, Montaje, Calidad]   # solo estas en ESTA action
     number_inputs:
-      n_piezas_pedidas: { min: 1, max: 10, step: 1 }        # rango → deslizador en la UI
+      n_piezas: { min: 1, max: 10, step: 1 }           # rango → deslizador en la UI
 
 # Qué actions puede hacer cada robot: nombres del catálogo de arriba. El
 # asignador solo le manda las que tiene en su lista.
 robots:
   mir-1:
     driver: mir                # por defecto "mir"; el manufacturer lo pone el driver ("MiR")
-    host: 192.168.15.5         # o MIR_HOST_MIR_1 en .env
-    battery_min: 22
-    actions: [coger, dejar, ir_a_espera, abrir_puerta, prueba_parametros, prueba_parametros_v2]
+    host: 192.168.1.11         # o MIR_HOST_MIR_1 en .env
+    battery_min: 25
+    actions: [ir_a, transporte]
   mir-2:
     driver: mir
-    host: 192.168.15.15
-    battery_min: 22
-    actions: [coger, dejar, ir_a_espera, abrir_puerta, recoger_pieza, prueba_parametros, prueba_parametros_v2]                # la mission de recoger_pieza solo existe en mir-2
-site: imperialfleet-session000-01-0000-001   # suberri_mirur
+    host: 192.168.1.12
+    battery_min: 25
+    actions: [ir_a]
 
 # Un robot simulado puede convivir con los reales (útil en clase; ojo: el
 # asignador lo tratará como uno más). Flota solo simulada: config/fleet-sim.yaml.
@@ -91,4 +83,4 @@ site: imperialfleet-session000-01-0000-001   # suberri_mirur
 #    driver: sim
 #    battery: 90
 #    battery_min: 25
-#    actions: [coger, dejar]
+#    actions: [ir_a]

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Fleet Manager MiR250 — punto de entrada.
 
-    python run_fm.py [--period 1.0] [--robot mir-1 --robot mir-2] [--config config/fleet.yaml]
+    python run_fm.py [--period 1.0] [--robot mir-1 --robot mir-2] [--config <fleet.yaml>] [--catalog <dir>]
+
+Por defecto, `fleet.yaml` y `catalog/` son los que dice `.env` (FM_CONFIG,
+FM_CATALOG) o, sin ellas, `config/fleet.yaml` y `catalog/` del repo.
 
 Bucle principal: cada `period` segundos, `Robot.poll()` de todos los robots en
 paralelo (solo red), y después, en el hilo principal, por robot: Telemetry →
@@ -22,7 +25,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fm.adapters import make_driver  # noqa: E402
-from fm.config import ConfigError, load_config  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+
+from fm.config import ConfigError, install_paths, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus, running_fm  # noqa: E402
 from fm.reload import Reloader  # noqa: E402
@@ -37,7 +42,8 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--period", type=float, default=1.0, help="segundos entre ticks (por defecto 1)")
     p.add_argument("--robot", action="append", help="limitar a estos serials (repetible)")
-    p.add_argument("--config", default="config/fleet.yaml")
+    p.add_argument("--config", help="fleet.yaml (por defecto FM_CONFIG de .env o config/fleet.yaml)")
+    p.add_argument("--catalog", help="carpeta del catálogo (por defecto FM_CATALOG de .env o catalog/)")
     p.add_argument("--env", default=".env")
     p.add_argument("--web-port", type=int, default=8050, help="puerto de la interfaz web (0 = sin web)")
     p.add_argument("--force", action="store_true",
@@ -52,8 +58,16 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(message)s")
+    load_dotenv(args.env)
+    config, catalog = install_paths()
+    config, catalog = Path(args.config or config), Path(args.catalog or catalog)
+    if not config.exists():
+        log.error("no está %s: copia ahí config/fleet.example.yaml y ponle tus robots, o di en .env "
+                  "dónde está con FM_CONFIG", config)
+        return 2
+    log.info("configuración %s, catálogo %s", config, catalog)
     try:
-        cfg = load_config(args.config, args.env)
+        cfg = load_config(config, args.env)
     except ConfigError as e:
         log.error("configuración inválida: %s", e)
         return 2
@@ -86,7 +100,7 @@ def main(argv=None) -> int:
     if args.web_port:
         from fm.web.server import WebServer   # import tardío: fastapi solo si se usa
         web = WebServer(cfg, robots, bus,     # instala el espejo antes de conectar al broker
-                        config_path=args.config, env_path=args.env)
+                        catalog_dir=catalog, config_path=config, env_path=args.env)
     bus.start()
 
     stop = False

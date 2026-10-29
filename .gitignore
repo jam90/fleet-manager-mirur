@@ -9,3 +9,10 @@ config/*.tmp
 
 # Capturas y planos de referencia: material local, no va al repo
 img_referencia/
+
+# Datos de cada instalación (decisión 135): sus robots y su catálogo no van en
+# este repo, que es público. Se guardan aparte y .env dice dónde (FM_CONFIG,
+# FM_CATALOG); para empezar, copia config/fleet.example.yaml a config/fleet.yaml.
+config/fleet.yaml
+catalog/*
+!catalog/README.md

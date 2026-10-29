@@ -66,6 +66,14 @@
   `state.information[]` con los `I_*` de `fm/vda5050/state.py`; los robots
   siguen siendo `mir-1`/`mir-2` y la UI enseña su nombre (Dejavu, Toretto). Lo abierto, ordenado, al final de
   `docs/avance.md` ("Pendiente"; los `#N` son identificadores fijos).
+- **Datos de la instalación fuera de este repo** (decisión 135, el repo es
+  público): `fleet.yaml` y `catalog/` viven en el repo privado
+  `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los
+  señala con `FM_CONFIG` y `FM_CATALOG` (`fm.config.install_paths`). Donde
+  este brief dice `config/fleet.yaml` o `catalog/`, son esos. Lo que el FM
+  escribe ahí (Configurador, Crear, Sincronización) se commitea en ese
+  repo. Aquí solo quedan `config/fleet.example.yaml` (lo usan los tests),
+  `config/fleet-sim.yaml` y `catalog/README.md`.
 - **Tests:** `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q`
   (el WSL tiene ROS Jazzy en el site-packages del sistema y sin la variable
   pytest peta al importar `lark`). Ejecutar Python siempre con

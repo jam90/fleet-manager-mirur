@@ -15,7 +15,13 @@ import os  # noqa: E402
 from fm.adapters import make_driver  # noqa: E402
 from fm.adapters.mir.client import MirClient  # noqa: E402
 from fm.adapters.mir.config import MirRobotConfig, parse_config  # noqa: E402
-from fm.config import FleetConfig, load_config  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+
+from fm.config import FleetConfig, install_paths, load_config  # noqa: E402
+
+load_dotenv(ROOT / ".env")
+# Los datos de la instalación, donde diga .env (decisión 135).
+CONFIG, CATALOG = install_paths()
 
 
 def setup_logging(level: int = logging.INFO) -> None:
@@ -23,7 +29,7 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 
 def load() -> FleetConfig:
-    return load_config(ROOT / "config" / "fleet.yaml", ROOT / ".env")
+    return load_config(CONFIG, ROOT / ".env")
 
 
 def robot_or_exit(cfg: FleetConfig, serial: str) -> MirRobotConfig:

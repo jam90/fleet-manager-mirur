@@ -96,8 +96,8 @@ def test_save_invalido_no_toca_el_fichero(tmp_path):
     assert not list(tmp_path.glob("*.bak")) and not list(tmp_path.glob("*.tmp"))
 
 
-def test_fleet_yaml_del_repo_se_edita_sin_tocar_nada_mas():
-    text = (Path(__file__).resolve().parent.parent / "config" / "fleet.yaml").read_text(encoding="utf-8")
+def test_fleet_yaml_de_ejemplo_se_edita_sin_tocar_nada_mas():
+    text = (Path(__file__).resolve().parent.parent / "config" / "fleet.example.yaml").read_text(encoding="utf-8")
     new = apply_edits(text, {"robots": {"mir-1": {"battery_min": 31}}})
     assert len(_lines_changed(text, new)) == 1 and len(new) == len(text)
 
@@ -191,12 +191,12 @@ def test_borrar_una_action_habilitada_no_se_guarda(tmp_path):
     assert p.read_text(encoding="utf-8") == CAT
 
 
-def test_catalogo_del_repo_editar_una_action_toca_una_linea():
-    text = (Path(__file__).resolve().parent.parent / "config" / "fleet.yaml").read_text(encoding="utf-8")
+def test_catalogo_de_ejemplo_editar_una_action_toca_una_linea():
+    text = (Path(__file__).resolve().parent.parent / "config" / "fleet.example.yaml").read_text(encoding="utf-8")
     import yaml
-    d = yaml.safe_load(text)["actions"]["prueba_parametros_v2"]
-    d = {**d, "positions_allowlist": ["Deshecho", "Montaje"]}
-    new = apply_edits(text, {"actions": {"prueba_parametros_v2": _act(d)}})
+    d = yaml.safe_load(text)["actions"]["transporte"]
+    d = {**d, "positions_allowlist": ["Almacen", "Montaje"]}
+    new = apply_edits(text, {"actions": {"transporte": _act(d)}})
     assert len(_lines_changed(text, new)) == 1
 
 

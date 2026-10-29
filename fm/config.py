@@ -28,6 +28,7 @@ import yaml
 from dotenv import load_dotenv
 
 log = logging.getLogger("fm.config")
+ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_DRIVER = "mir"
 
@@ -101,6 +102,19 @@ def _site(value) -> str | None:
 def env_key(serial: str) -> str:
     """`mir-2` → `MIR_2`, para variables tipo MIR_AUTH_MIR_2."""
     return serial.upper().replace("-", "_").replace(".", "_")
+
+
+def install_paths() -> tuple[Path, Path]:
+    """`fleet.yaml` y `catalog/` de la instalación (decisión 135). Son los
+    datos de UNA fábrica o un centro (sus robots, sus positions, sus
+    missions) y no van en el repo del FM, que es público: `.env` dice dónde
+    están con `FM_CONFIG` y `FM_CATALOG` (relativas, a la raíz del repo).
+    Sin ellas, `config/fleet.yaml` y `catalog/` del propio repo, fuera de
+    git. Llamar después de `load_dotenv`."""
+    def at(var: str, default: str) -> Path:
+        p = Path(os.environ.get(var) or default)
+        return p if p.is_absolute() else ROOT / p
+    return at("FM_CONFIG", "config/fleet.yaml"), at("FM_CATALOG", "catalog")
 
 
 def load_config(yaml_path: str | Path = "config/fleet.yaml",

@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from _common import ROOT, load, robot_or_exit
+from _common import CATALOG, load, robot_or_exit
 
 from fm.adapters.mir.sync import Catalog, MirSync
 
@@ -44,8 +44,8 @@ def main() -> None:
         sys.exit("indica GUIDs del catálogo o --todo")
 
     r = robot_or_exit(load(), a.serial)
-    sync = MirSync(a.serial, r.host, r.auth, ROOT / "catalog")
-    selected = list(Catalog.load(ROOT / "catalog").items) if a.todo else a.guids
+    sync = MirSync(a.serial, r.host, r.auth, CATALOG)
+    selected = list(Catalog.load(CATALOG).items) if a.todo else a.guids
     if a.escribir:
         ops = sync.deploy(selected, progress=show)
     else:

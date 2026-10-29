@@ -32,11 +32,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from _common import ROOT, client_for, load, robot_or_exit
+from _common import CATALOG, client_for, load, robot_or_exit
 
 from fm.adapters.mir.sync import AUTO_CHILD_TYPES, FACTORY, GUIDISH, parse_std, std_guid  # noqa: E402
 
-CATALOG = ROOT / "catalog"
 # Cabeceras de audio → extensión del fichero del catálogo.
 AUDIO_MAGIC = {b"RIFF": "wav", b"ID3": "mp3", b"\xff\xfb": "mp3", b"OggS": "ogg"}
 

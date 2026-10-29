@@ -48,6 +48,14 @@ del MiR (Help → API → Authorize). Broker de desarrollo: Mosquitto en
 
 ## Configuración (`config/fleet.yaml`)
 
+`fleet.yaml` y `catalog/` son **los datos de una instalación** (sus robots,
+sus positions, sus missions) y no van en este repo: para empezar, copia
+`config/fleet.example.yaml` como `config/fleet.yaml` (fuera de git) y usa
+el `catalog/` vacío del repo. Para guardarlos con historial, ponlos en un
+repo aparte y di en `.env` dónde están (`FM_CONFIG`, `FM_CATALOG`, rutas
+relativas a la raíz del FM); `--config` y `--catalog` de `run_fm.py`
+mandan sobre `.env`. Ejemplo:
+
 ```yaml
 mqtt: { fleet_manufacturer: imperial_fleet }   # segmento <manufacturer> de fleet/*
 auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo pone el driver
