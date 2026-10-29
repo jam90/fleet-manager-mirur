@@ -537,6 +537,8 @@ robots:
 - **No ocupa al robot:** el asignador lo puede elegir mientras va, y al
   lanzarle una order el FM cancela antes la vuelta. Mientras va,
   `state.information[]` lleva `IDLE_RETURN` y la web lo enseña «a la espera».
+  Mientras cuenta, lleva `IDLE_RETURN_IN` con los segundos que faltan, y la
+  web lo pinta como contador en la pestaña Robot y en Operación.
 - La action tiene que estar habilitada en el robot. Si la de la flota no lo
   está en alguno, ese robot no vuelve (aviso al arrancar); si la de un robot
   no lo está, la config no carga.

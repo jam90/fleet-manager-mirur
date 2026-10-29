@@ -465,6 +465,8 @@
             <dt>Estado</dt><dd>{{ rd.info.ROBOT_STATE || '—' }}<span v-if="rd.state.paused"> · en pausa</span></dd>
             <dt>Modo VDA</dt><dd><code>{{ rd.state.operatingMode }}</code></dd>
             <dt>Misión</dt><dd>{{ rd.info.MISSION || '—' }}</dd>
+            <!-- Vuelta a la espera (decisión 136): contador mientras está parado. -->
+            <dt>A la espera</dt><dd :class="{ num: rd.idleIn != null }">{{ idleLabel(rd) }}</dd>
             <dt>Al destino</dt><dd class="num">{{ rd.info.DISTANCE_TO_TARGET != null ? Number(rd.info.DISTANCE_TO_TARGET).toFixed(1) + ' m' : '—' }}</dd>
             <dt>Velocidad</dt>
             <dd class="num" v-if="rd.state.velocity">{{ fixed(rd.state.velocity.vx, 2) }} m/s · {{ fixed(deg(rd.state.velocity.omega), 0) }} °/s</dd>
@@ -616,6 +618,9 @@
         <p class="empty" v-else>Sin telemetría todavía.</p>
 
         <dl class="kv" v-if="r.state">
+          <template v-if="r.idleIn != null || r.idleGoing">
+            <dt>A la espera</dt><dd :class="{ num: r.idleIn != null }">{{ idleLabel(r) }}</dd>
+          </template>
           <dt>Order</dt>
           <dd>
             <template v-if="r.state.orderId"><code>{{ r.state.orderId }}</code>/{{ r.state.orderUpdateId }}</template>
@@ -1718,7 +1723,8 @@
             <p>En «Por robot»: «como la flota», «otra action» (con sus segundos y parámetros, p. ej. su propio punto de espera)
               o «desactivada».</p></li>
           <li><b>Verlo funcionar</b><a class="where" href="#operacion">→ Operación</a>
-            <p>Al acabar una order, el robot espera esos segundos y sale «a la espera». Solo cuenta si está en automático, sin
+            <p>Al acabar una order, el robot espera esos segundos (la cuenta atrás se ve en su tarjeta, «A la espera: en 12 s»,
+              y en su pestaña) y sale «a la espera». Solo cuenta si está en automático, sin
               pausa, en el site de la flota y sin nada que hacer; y va <b>una vez</b>: no repite hasta hacer otra cosa. Una order
               que llegue mientras va lo cancela y la hace él.</p></li>
         </ol>
@@ -1964,6 +1970,7 @@ createApp({
       const reachable = s && !(s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE');
       const mission = s && (s.information || []).find(i => i.infoType === 'MISSION');
       const name = s && (s.information || []).find(i => i.infoType === 'ROBOT_NAME');
+      const idleIn = s && (s.information || []).find(i => i.infoType === 'IDLE_RETURN_IN');
       return {
         serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
         name: name ? name.infoDescriptor : '',   // el de la web del robot ("Dejavu"), si el driver lo da
@@ -1973,6 +1980,9 @@ createApp({
         charging: s ? s.powerSupply.charging : false,
         pose: s && s.mobileRobotPosition ? s.mobileRobotPosition : null,
         missionText: mission ? mission.infoDescriptor : '',
+        // Vuelta a la espera (decisión 136): segundos que faltan, o que ya va.
+        idleIn: idleIn ? Number(idleIn.infoDescriptor) : null,
+        idleGoing: !!s && (s.information || []).some(i => i.infoType === 'IDLE_RETURN'),
         errors: s ? (s.errors || []).slice(-3) : [],
         canPause: reachable && !s.paused, canResume: reachable && s.paused, canCancel: reachable && alive,
       };
@@ -2822,6 +2832,8 @@ createApp({
       loadMissions();
       misTimer = setInterval(loadMissions, MIS_EVERY_MS);
     }, { immediate: true });
+    // «A la espera»: el contador, que ya va, o nada.
+    const idleLabel = r => r.idleGoing ? 'yendo ahora' : r.idleIn != null ? `en ${r.idleIn} s si sigue parado` : '—';
     // infoType propios que no se pintan en su sitio sino como aviso.
     const ALERTS = ['MANUAL_DRIVE', 'SAFETY_MUTED', 'MAP_UNSAVED'];
     const rd = computed(() => {
@@ -2869,7 +2881,7 @@ createApp({
              canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
-             cfgEdit, THRESHOLDS, IDLE_MODES, idleParamKeys, idleText, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, idleParamKeys, idleText, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
              capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,

@@ -50,6 +50,7 @@ I_SAFETY_MUTED = "SAFETY_MUTED"           # sistema de seguridad silenciado
 I_MAP_UNSAVED = "MAP_UNSAVED"             # cambios de mapa sin guardar en el robot
 # Del core, no de un driver (como AUTO_CHARGE): el FM lo manda a la espera (decisión 136).
 I_IDLE_RETURN = "IDLE_RETURN"
+I_IDLE_RETURN_IN = "IDLE_RETURN_IN"       # s que faltan para mandarlo a la espera, como texto
 
 
 def drop_none(d: Any) -> Any:

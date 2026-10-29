@@ -2474,6 +2474,15 @@ mande a los robots a la espera, con el tiempo y la mission configurables.
      flota clave a clave y el del robot en una línea). Guía: «Que un robot
      parado no estorbe». Sin probar con robot (#35).
 
+137. **El contador de la vuelta a la espera se ve en la web** (pedido por
+     el usuario): mientras cuenta, el `state` lleva `information`
+     `IDLE_RETURN_IN` con los segundos que faltan (enteros, como texto,
+     igual que `DISTANCE_TO_TARGET`), y la pestaña Robot («Ahora») y la
+     tarjeta de Operación enseñan «A la espera: en 12 s si sigue parado»
+     o «yendo ahora». Va en el `state` y no en una API aparte para que lo
+     vea también cualquier cliente MQTT. En Operación la fila solo sale
+     mientras cuenta o va.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se

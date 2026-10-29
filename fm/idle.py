@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -35,7 +36,7 @@ from typing import Callable
 from fm.adapters.base import JOB_ALIVE, Job, JobStatus, RobotDriver, job_result
 from fm.config import IdleReturnConfig
 from fm.vda5050.order import Action, ActionParameter
-from fm.vda5050.state import I_IDLE_RETURN, Info
+from fm.vda5050.state import I_IDLE_RETURN, I_IDLE_RETURN_IN, Info
 from fm.vda5050.state_builder import StateOverlay
 
 log = logging.getLogger("fm.idle")
@@ -123,7 +124,11 @@ class IdleGuard:
 
     # ---------------------------------------------------------------- salida
     def decorate(self, ov: StateOverlay) -> StateOverlay:
+        """Va a la espera (`IDLE_RETURN`) o cuánto le falta para ir
+        (`IDLE_RETURN_IN`, segundos enteros): la web lo enseña como contador."""
         if self.active:
             ov.information.append(Info(I_IDLE_RETURN, "INFO",
                                        f"a la espera: {self.job.label if self.job else self.cfg.action} ({self.status})"))
+        elif (left := self.remaining()) is not None:
+            ov.information.append(Info(I_IDLE_RETURN_IN, "INFO", str(math.ceil(left))))
         return ov

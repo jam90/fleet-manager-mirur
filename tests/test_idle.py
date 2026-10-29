@@ -41,6 +41,8 @@ def test_tras_la_order_espera_30s_y_va_una_sola_vez():
     assert not r.orders.busy and _parks(d) == [] and r.idle.remaining() == pytest.approx(30)
     _run(r, t, 29)
     assert _parks(d) == [] and r.idle.remaining() == pytest.approx(1)
+    # El contador va en el state, para la web.
+    assert [(i.infoType, i.infoDescriptor) for i in r.overlay().information] == [("IDLE_RETURN_IN", "1")]
     _run(r, t, 2)                                    # 30 s parado: a la espera
     assert len(_parks(d)) == 1 and r.idle.active
     park = _parks(d)[0]
