@@ -1,0 +1,34 @@
+# Imagen del Fleet Manager MiR250 (VDA 5050).
+#
+# El FM necesita un broker MQTT (ver fm/mqtt_bus.py: MqttBus.start()): en
+# compose es el servicio `mosquitto` y se alcanza con MQTT_HOST=mosquitto.
+# Sin broker el FM no arranca (TimeoutError a los 10 s).
+#
+# Construir:  docker compose build fleet
+# Probar sin robots: docker compose --profile sim up fleet-sim
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Dependencias primero para aprovechar la caché de capas.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Código, ejemplos de config (fleet-sim.yaml, fleet.example.yaml) y schemas VDA.
+# Los datos de la instalación (config/fleet.yaml, catalog/) se montan: decisión 135.
+COPY run_fm.py .
+COPY fm/ fm/
+COPY config/ config/
+COPY schemas/ schemas/
+
+# El FM gestiona SIGTERM (publica `connection: OFFLINE` al cerrar limpio).
+STOPSIGNAL SIGTERM
+
+# Usuario sin privilegios: el FM solo necesita red saliente (REST a los MiR,
+# MQTT al broker) y el puerto de la web entrante.
+RUN useradd --create-home --uid 10001 fm && chown -R fm:fm /app
+USER fm
+
+EXPOSE 8050
+
+CMD ["python", "run_fm.py", "--config", "config/fleet.yaml"]

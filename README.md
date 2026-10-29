@@ -142,6 +142,21 @@ y `MIR_HOST_<SERIAL>` como override por robot, `MQTT_HOST`, `MQTT_PORT`.
 .venv/bin/python run_fm.py --config config/fleet-sim.yaml   # flota simulada, sin robots
 .venv/bin/python run_fm.py --validate           # orders entrantes contra el JSON Schema oficial
 ```
+## Ejecución con docker-compose (broker incluido)
+
+El FM no arranca sin broker MQTT, así que el compose trae un Mosquitto sin
+auth (como el de desarrollo) junto al FM:
+
+```bash
+docker compose up --build                       # Mosquitto + robots reales, web :8050
+docker compose --profile sim up --build fleet-sim   # demo sin robots, web :8051
+docker compose run --rm fleet python run_fm.py --robot mir-1  # un solo robot
+```
+
+El token sigue en `.env` (fuera de git); dentro de compose el FM usa
+`MQTT_HOST=mosquitto` y desde el host todo sigue en `localhost:1883`
+(`mosquitto_sub`, `scripts/*`, Node-RED). `config/` está montado en modo
+lectura: se retoca en el host sin reconstruir.
 
 **`--validate`.** Sin la opción, el FM comprueba de cada `order`,
 `fleet/order` e `instantActions` lo que necesita para ejecutarla (header ≡
@@ -475,6 +490,42 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
 - **Sincronización**: lleva a cada robot lo que hay en `catalog/` (missions,
   positions, mapas…) con los mismos GUIDs en toda la flota
   (`docs/plan-admin.md` §3).
+
+### API REST
+
+El mismo servidor ofrece una API HTTP para quien no quiera hablar MQTT
+(scripts, Node-RED con `http request`, un MES). Sigue el mismo principio: lo
+que se envía se **publica en el broker** y lo que se lee sale de lo que el FM
+**ha publicado** (no hay un segundo camino). Swagger en `/api/docs`; chuleta
+lista para usar en `scripts/api.http`.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `GET` | `/api/health` | `ok` + por robot: `connection` y si el FM lo alcanza (`reachable`) |
+| `GET` | `/api/fleet` | catálogo: robots, actionTypes y parámetros, umbrales |
+| `GET` | `/api/robots` · `/api/robots/<serial>` | resumen: batería, carga, posición, order, `actionStates`, errores |
+| `GET` | `/api/robots/<serial>/state` · `/connection` · `/factsheet` | último mensaje VDA tal cual (503 si aún no hay) |
+| `GET` | `/api/robots/<serial>/actions` | actionTypes que acepta ese robot |
+| `POST` | `/api/fleet/order?wait=N` | `{actionType, params, orderId?}` → `fleet/order`; el FM elige robot |
+| `POST` | `/api/robots/<serial>/order?wait=N` | igual, pero `<serial>/order` (sin asignador) |
+| `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest` |
+| `GET` | `/api/orders?limit=` · `/api/orders/<orderId>` | seguimiento de orders (últimas 200, en RAM) |
+
+`status` de una order: `PENDING` (enviada, sin veredicto) → `ASSIGNED`
+(fleet) / `ACCEPTED` (dirigida) → `RUNNING` → `FINISHED` | `FAILED`; o
+`REJECTED` con `errorType` y `description`. Con `?wait=N` (máx. 30 s) el POST
+espera al veredicto y devuelve el seguimiento (200); si no llega a tiempo,
+202 con `PENDING` y se consulta después `GET /api/orders/<orderId>`. Sin
+`wait` responde al momento con `PENDING`. `orderId` es opcional: si el
+sistema que envía usa sus propios ids, los conserva (y repetir el mismo id se
+ignora, como manda VDA). Se siguen también las orders que llegan por MQTT.
+
+```bash
+curl -X POST 'http://localhost:8050/api/fleet/order?wait=5' \
+     -H 'Content-Type: application/json' -d '{"actionType": "coger"}'
+curl http://localhost:8050/api/orders/<orderId>
+curl http://localhost:8050/api/robots
+```
 
 ### `factsheet` (FM → bus, retained)
 
