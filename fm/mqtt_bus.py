@@ -9,6 +9,15 @@ cola en su tick. Así toda la lógica del FM corre en un único hilo, sin locks.
 (retained, QoS 1); `ONLINE` al conectar; `OFFLINE` al cerrar limpio. Refleja
 FM ↔ broker, no FM ↔ MiR.
 
+**Suscripciones al reconectar** (decisión 120): con `clean_session=True` el
+broker olvida las suscripciones al cortarse la conexión, y paho reconecta
+solo pero no las rehace. Por eso `subscribe()` las apunta y `_on_connect`
+las renueva en cada conexión; sin esto, tras reiniciar Mosquitto el FM
+volvería a publicar `ONLINE` y `state` pero no recibiría ninguna order.
+No se usa sesión persistente (`clean_session=False`): al reconectar, el
+broker entregaría las orders recibidas durante el corte, ya sin ACK para
+quien las mandó y quizá reenviadas por él.
+
 Un cliente MQTT solo admite UN Last Will, y la norma pide uno por robot. Por
 eso hay dos tipos de cliente:
 - `_main`: publica state/factsheet/order_response y recibe order/instantActions.
@@ -56,7 +65,8 @@ class MqttBus:
         self.counter = HeaderCounter()
         self.inbox: queue.Queue[tuple[str, bytes]] = queue.Queue()
         self._ready: dict[str, threading.Event] = {}
-        self._stopping = False           # cierre pedido: la desconexión no es un fallo
+        self._subscriptions: list[tuple[str, int]] = []   # se renuevan en cada conexión
+        self._stopping = False          # cierre pedido: la desconexión no es un fallo
         # Espejo de publicaciones (topic, payload) para la interfaz web; None = sin UI.
         self.on_publish: Callable[[str, dict], None] | None = None
 
@@ -118,6 +128,11 @@ class MqttBus:
             c.disconnect()
 
     def subscribe(self, t: str, qos: int = 1) -> None:
+        # Se apunta ANTES de suscribir: si la conexión llega entre medias,
+        # `_on_connect` ya la encuentra en la lista. Suscribirse dos veces al
+        # mismo topic no duplica mensajes; sin conexión, paho devuelve un
+        # error que no importa porque `_on_connect` la hará al conectar.
+        self._subscriptions.append((t, qos))
         self._main.subscribe(t, qos)
         log.info("[mqtt] suscrito a %s", t)
 
@@ -154,6 +169,12 @@ class MqttBus:
             log.error("[%s] conexión MQTT rechazada: %s", serial, reason_code)
             return
         log.info("[%s] conectado al broker %s:%d", serial, self.host, self.port)
+        # Solo `_main` recibe mensajes. Se suscribe antes del ONLINE: quien
+        # vea ONLINE ya puede mandar orders.
+        if client is self._main and self._subscriptions:
+            client.subscribe(list(self._subscriptions))
+            log.info("[%s] suscripciones renovadas: %s", serial,
+                     ", ".join(t for t, _ in self._subscriptions))
         self.publish_connection(serial, "ONLINE")
         self._ready[serial].set()
 

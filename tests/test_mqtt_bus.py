@@ -39,3 +39,34 @@ def test_run_fm_no_arranca_con_otro_fm_online(monkeypatch, caplog):
     assert "vda5050/v3/imperial_fleet/fleet/connection" in seen["topics"]
     assert "vda5050/v3/SIM/sim-1/connection" in seen["topics"]
     assert "ya hay un Fleet Manager" in caplog.text and "--force" in caplog.text
+
+
+# ------------------------------- suscripciones al reconectar (decisión 120)
+def test_reconectar_renueva_las_suscripciones():
+    from fm.mqtt_bus import FLEET
+    bus = MqttBus("localhost", 1883, {"mir-1": "MiR"}, "imperial_fleet")
+    calls = {"main": [], "presence": []}
+    bus._main.subscribe = lambda *a: calls["main"].append(a)
+    bus._presence["mir-1"].subscribe = lambda *a: calls["presence"].append(a)
+
+    bus.subscribe("vda5050/v3/+/+/order")
+    bus.subscribe("vda5050/v3/+/+/instantActions")
+    calls["main"].clear()
+
+    # paho reconecta solo y llama otra vez a on_connect: debe volver a suscribir.
+    bus._on_connect(bus._main, FLEET, None, 0)
+    assert calls["main"] == [([("vda5050/v3/+/+/order", 1), ("vda5050/v3/+/+/instantActions", 1)],)]
+    # Los clientes de presencia no reciben mensajes: no se suscriben a nada.
+    bus._on_connect(bus._presence["mir-1"], "mir-1", None, 0)
+    assert calls["presence"] == []
+
+
+def test_conexion_rechazada_no_suscribe():
+    from fm.mqtt_bus import FLEET
+    bus = MqttBus("localhost", 1883, {"mir-1": "MiR"}, "imperial_fleet")
+    calls = []
+    bus._main.subscribe = lambda *a: calls.append(a)
+    bus.subscribe("vda5050/v3/+/+/order")
+    calls.clear()
+    bus._on_connect(bus._main, FLEET, None, 5)      # 5 = no autorizado
+    assert calls == []

@@ -2022,7 +2022,43 @@ a detectar el marcador y cambiar pose y offset.
      (decisión 77). Test nuevo de esa captura (lo que pedía el #29). Guía
      actualizada («Añadir una position nueva»).
 
-## Pendiente (a 2026-10-23)
+## 2026-10-29 — Revisión de `docs/sugerencias_mejora.md`
+
+Una revisión externa propuso mejoras de fiabilidad y funciones nuevas. Se
+apuntan como pendientes solo las necesarias; el resto queda en el
+documento de sugerencias, sin compromiso.
+
+- Pasan a pendientes: **#30** (resuscribir al reconectar), **#31**
+  (registro de `fleet/order` aceptadas) y **#32** (acotar `order_errors`).
+  #30 se comprobó en el código: `Dispatcher.subscribe()` solo se llama al
+  arrancar y `MqttBus._on_connect()` no vuelve a suscribir.
+- Se quedan en sugerencias: el presupuesto de mensajes por tick en
+  `Dispatcher.drain()` (con 2 robots y un solo emisor no hay ráfagas que lo
+  justifiquen y añade latencia), el modo mantenimiento, el indicador de
+  antigüedad del estado y el informe de diagnóstico.
+- La revisión decía que la suite se quedaba colgada. No se reproduce: 222
+  tests en verde en 2,3 s con el comando de CLAUDE.md.
+
+## 2026-10-29 — Resuscribir al reconectar con el broker (punto #30)
+
+El FM se suscribía a `order`/`instantActions` una sola vez, al arrancar.
+Con `clean_session=True` el broker olvida las suscripciones al cortarse la
+conexión, y paho reconecta solo pero no las rehace: tras reiniciar
+Mosquitto, el FM volvía a publicar `ONLINE` y `state`, pero ninguna order
+le llegaba.
+
+120. **`MqttBus` apunta las suscripciones y las renueva en cada conexión**
+     (`_on_connect` del cliente principal, antes de publicar `ONLINE`). Se
+     mantiene `clean_session=True`: con sesión persistente el broker
+     entregaría al reconectar las orders recibidas durante el corte, que
+     quien las mandó ya no espera (no tuvo ACK) o ya ha reenviado.
+     Tests offline nuevos en `tests/test_mqtt_bus.py`. Prueba con
+     Mosquitto en un puerto aparte (18830) y `config/fleet-sim.yaml`:
+     parar el broker, arrancarlo de nuevo y mandar `fleet/order` →
+     `ASSIGNED`. Con el código anterior, la misma prueba se queda sin
+     `order_response`.
+
+## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
 citan en decisiones anteriores ("punto 21"), así que no se renumeran; lo
@@ -2030,10 +2066,28 @@ cerrado se quita (su historia está en la entrada de su fecha). Cerrados el
 2026-10-14: #4 (GUIDs comunes), #17 (descartar robot sin la mission), #20
 (mapa activo: ya es `suberri_mirur`), #21 (un solo FM por broker, decisión 107)
 y #16 (configurador completo: v3, decisión 108).
+Cerrado el 2026-10-29: #30 (resuscribir al reconectar, decisión 120).
 
 **En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
 
 - *(nada en curso: #21 y #16 cerrados el 2026-10-14)*
+
+**Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
+
+- **#31** **Registro de `fleet/order` aceptadas** (antes de #2). Hoy solo se
+    recuerda la última (`Dispatcher.last_fleet_order`): con A → B → A, A
+    se ejecuta dos veces. Guardar las últimas N `(orderId, orderUpdateId)`
+    aceptadas con su `assignedSerial` y, ante un reenvío, **repetir el
+    `order_response` ASSIGNED** en vez de callar. Cambia la decisión 19
+    (idempotencia = silencio): acordarlo con quien hace el emisor de
+    Node-RED. Los rechazos no se guardan (la decisión 20 sigue: un
+    reintento tras `REJECTED` se acepta). Solo en memoria; la persistencia
+    sigue fuera de alcance.
+- **#32** **Acotar `OrderTracker.order_errors`**: cada rechazo de una
+    `<serial>/order` añade una entrada y solo se vacía al aceptar otra
+    order. Un emisor que reintenta contra un robot ocupado la hace crecer
+    sin límite en el `state`. Agrupar rechazos idénticos o quedarse con los
+    últimos N.
 
 **Aguas arriba (a cargo de otro compañero, sobre este FM)**
 
@@ -2142,8 +2196,6 @@ y #16 (configurador completo: v3, decisión 108).
     pestaña Crear (decisión 119): crear delante del marcador, re-detectarlo
     en la web, capturar y desplegar en el otro robot. Cuando haya un
     marcador nuevo que poner (o con uno de prueba que luego se borra).
-
-**Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 
 **Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 
