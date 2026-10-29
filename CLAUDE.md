@@ -66,6 +66,10 @@
   `state.information[]` con los `I_*` de `fm/vda5050/state.py`; los robots
   siguen siendo `mir-1`/`mir-2` y la UI enseña su nombre (Dejavu, Toretto). Lo abierto, ordenado, al final de
   `docs/avance.md` ("Pendiente"; los `#N` son identificadores fijos).
+- **Vuelta a la espera** (`fm/idle.py`, decisión 136): `idle_return` en
+  `fleet.yaml` (flota y por robot) y en el Configurador; tras `after_s` s
+  parado, el FM lanza esa action del catálogo una vez; no ocupa al robot
+  y se cancela si llega una order (`Robot.execute`).
 - **Datos de la instalación fuera de este repo** (decisión 135, el repo es
   público): `fleet.yaml` y `catalog/` viven en el repo privado
   `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los

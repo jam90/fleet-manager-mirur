@@ -18,7 +18,8 @@ Tres operaciones sobre el texto, todas a partir de una ruta de claves:
 Qué se puede editar (decisión 93): v1, las actions habilitadas y
 `battery_min` de cada robot, `auto_charge.*` y `assigner.prefer_not_charging`;
 v2, el catálogo `actions:` (crear, cambiar y borrar definiciones); v3, altas
-y bajas de robots y su `host` (piden reiniciar el FM, `fm/reload.py`). El
+y bajas de robots y su `host` (piden reiniciar el FM, `fm/reload.py`); y la
+vuelta a la espera, `idle_return` de la flota y de cada robot (decisión 136). El
 contenido de una definición es del driver: aquí no se interpreta, lo valida
 el driver al guardar.
 
@@ -50,7 +51,7 @@ GLOBAL_KEYS: dict[tuple[str, str], type] = {
     ("auto_charge", "abort_cooldown_s"): float,
     ("assigner", "prefer_not_charging"): bool,
 }
-ROBOT_KEYS = ("actions", "battery_min", "host")          # editables en un robot que ya está
+ROBOT_KEYS = ("actions", "battery_min", "host", "idle_return")   # editables en un robot que ya está
 NEW_ROBOT_KEYS = ("driver", "host", "battery_min", "actions")   # al dar de alta, en este orden
 # Serial de un robot: segmento del topic MQTT y nombre de fichero; corto y sin sorpresas.
 SERIAL = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
@@ -93,9 +94,12 @@ def plan(text: str, edits: dict) -> list[Op]:
                   "vieja": None},                                   # None = borrar
       "robots": {"mir-1": {"actions": [...], "battery_min": 30}},
       "auto_charge": {"battery_floor": 20}, "assigner": {"prefer_not_charging": true},
-      "site": {"guid": "imperialfleet-session000-…", "name": "suberri_mirur"}}`   # None = quitarlo
+      "site": {"guid": "imperialfleet-session000-…", "name": "suberri_mirur"},    # None = quitarlo
+      "idle_return": {"action": "ir_a_espera", "after_s": 30, "params": {}}}`     # None = quitarlo
+    En un robot, `idle_return`: None = como la flota (se quita la clave),
+    False = desactivada, o su propio `{action, after_s, params}`.
     """
-    unknown = set(edits) - {"actions", "robots", "auto_charge", "assigner", "site"}
+    unknown = set(edits) - {"actions", "robots", "auto_charge", "assigner", "site", "idle_return"}
     if unknown:
         raise EditError(f"no se puede editar {sorted(unknown)} desde aquí")
     current = yaml.safe_load(text) or {}
@@ -136,6 +140,13 @@ def plan(text: str, edits: dict) -> list[Op]:
                 ops.append(Op(("robots", serial, "actions"), list(value)))
             elif key == "host":
                 ops.append(Op(("robots", serial, "host"), _host(f"robots.{serial}.host", value)))
+            elif key == "idle_return":
+                where = f"robots.{serial}.idle_return"
+                if value is None:
+                    ops.append(Op(("robots", serial, "idle_return"), delete=True))
+                else:
+                    ops.append(Op(("robots", serial, "idle_return"),
+                                  False if value is False else _idle(where, value)))
             else:
                 ops.append(Op(("robots", serial, key), _number(f"robots.{serial}.{key}", value, float)))
     if "site" in edits:                  # decisión 129; el nombre va de comentario
@@ -147,6 +158,18 @@ def plan(text: str, edits: dict) -> list[Op]:
             raise EditError("site debe ser {guid, name} o nada")
         else:
             ops.append(Op(("site",), site["guid"].strip(), comment=str(site.get("name") or "") or None))
+    if "idle_return" in edits:           # decisión 136: el bloque entero, clave a clave
+        idle = edits["idle_return"]
+        if idle is None:
+            ops.append(Op(("idle_return",), delete=True))
+        else:
+            idle = _idle("idle_return", idle)
+            now = current.get("idle_return") or {}
+            for key in ("action", "after_s", "params"):
+                if key in idle and now.get(key, ...) != idle[key]:
+                    ops.append(Op(("idle_return", key), idle[key]))
+                elif key not in idle and key in now:
+                    ops.append(Op(("idle_return", key), delete=True))
     for block in ("auto_charge", "assigner"):
         for key, value in (edits.get(block) or {}).items():
             typ = GLOBAL_KEYS.get((block, key))
@@ -159,6 +182,28 @@ def plan(text: str, edits: dict) -> list[Op]:
             else:
                 ops.append(Op((block, key), _number(f"{block}.{key}", value, typ)))
     return ops
+
+
+def _idle(where: str, value) -> dict:
+    """`{action, after_s, params}` de la UI → lo que se escribe, en ese
+    orden y sin `params` vacíos. El resto (que la action exista y esté
+    habilitada) lo comprueba el cargador al guardar."""
+    if not isinstance(value, dict) or set(value) - {"action", "after_s", "params"}:
+        raise EditError(f"{where}: se espera {{action, after_s, params}}")
+    action = value.get("action")
+    if not isinstance(action, str) or not ACTION_NAME.match(action):
+        raise EditError(f"{where}.action: elige una action del catálogo")
+    out: dict = {"action": action}
+    if value.get("after_s") is not None:
+        out["after_s"] = _number(f"{where}.after_s", value["after_s"], float)
+    params = value.get("params") or {}
+    if not isinstance(params, dict) or not all(isinstance(k, str) and k for k in params) or not all(
+            isinstance(v, (str, int, float)) and not isinstance(v, bool) for v in params.values()):
+        raise EditError(f"{where}.params: parámetro → valor (texto o número)")
+    params = {k: v for k, v in params.items() if v != ""}
+    if params:
+        out["params"] = params
+    return out
 
 
 def _host(where: str, value) -> str:
@@ -353,7 +398,7 @@ def _set(text: str, op: Op) -> str:
 def _insert(text: str, parent, rest: tuple[str, ...], op: Op, where: str, depth: int) -> str:
     """La clave no existe. Se añade como última clave de su bloque, con la
     sangría de sus hermanas; si falta un bloque de primer nivel, al final."""
-    if len(rest) == 2 and not where and rest[0] in ("auto_charge", "assigner", "actions"):
+    if len(rest) == 2 and not where and rest[0] in ("auto_charge", "assigner", "actions", "idle_return"):
         sep = "" if text.endswith("\n") else "\n"
         return f"{text}{sep}\n{rest[0]}:\n" + _render(rest[1], op.value, 2, depth, op.comment)
     if len(rest) != 1:
@@ -382,6 +427,8 @@ def _delete(text: str, op: Op) -> str:
     if text[a:k.start_mark.index].strip():
         raise EditError(f"{'.'.join(op.path)} comparte línea con otra clave: edítalo a mano")
     b = _line_end(text, _last_index(v))
+    if len(op.path) == 1 and text[max(0, a - 2):a] == "\n\n" and b + 1 >= len(text):
+        a -= 1                            # el bloque del final se fue con su línea en blanco (`_insert`)
     return text[:a] + text[b + 1:]
 
 

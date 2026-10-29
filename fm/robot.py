@@ -12,6 +12,7 @@ from fm.adapters.base import Job, RobotDriver, Telemetry
 from fm.assigner import RobotSnapshot
 from fm.charge import ChargeGuard
 from fm.config import AutoChargeConfig, RobotConfig
+from fm.idle import IdleGuard
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
@@ -50,6 +51,7 @@ class Robot:
         self.reindex = False
         self.orders = OrderTracker(self.serial)
         self.charge = ChargeGuard(self.serial, auto_charge or AutoChargeConfig())
+        self.idle = IdleGuard(self.serial, cfg.idle_return, clock)    # vuelta a la espera (decisión 136)
         # Site de la flota (`FleetConfig.site`, decisión 129); lo cambia en
         # caliente `fm/reload.py`.
         self.site = site
@@ -100,11 +102,16 @@ class Robot:
         self.orders.poll(self.driver)
         self.orders.watch_duration(now, self.last_telemetry.paused, self.cfg.expected_s)
         self.charge.tick(self.driver, self.last_telemetry)
+        t = self.last_telemetry
+        self.idle.tick(self.driver, busy=self.busy,
+                       ready=(t.available and t.operating_mode == "AUTOMATIC" and not t.paused
+                              and not self.outside_site))
         return self.last_telemetry
 
     def overlay(self):
-        """Lo que el FM sabe de este robot y el driver no: order + auto-carga."""
-        return self.charge.decorate(self.orders.overlay())
+        """Lo que el FM sabe de este robot y el driver no: order, auto-carga y
+        vuelta a la espera."""
+        return self.idle.decorate(self.charge.decorate(self.orders.overlay()))
 
     def state(self, header: dict) -> State:
         """`state` VDA de este robot: telemetría + overlay del FM + el gancho
@@ -127,7 +134,8 @@ class Robot:
     def busy(self) -> bool:
         """Ocupado = job del FM vivo (order o auto-carga), o el robot ejecuta
         algo que no es nuestro (lanzado desde la web) — decisión 16. Lo último
-        lo decide el driver."""
+        lo decide el driver. Ir a la espera no cuenta: se cancela si llega
+        una order (decisión 136)."""
         return self.orders.busy or self.charge.active or self.foreign_busy
 
     @property
@@ -182,6 +190,7 @@ class Robot:
         `OrderRejected`, como cualquier otro rechazo: así `fleet/order` recibe
         su `order_response REJECTED` y `<serial>/order` deja el error en
         `state.errors`, en vez de acabar en una excepción sin respuesta."""
+        self.idle.cancel(self.driver)        # si iba a la espera, deja de ir
         try:
             job_id = self.driver.execute(job, priority)
         except OrderRejected:

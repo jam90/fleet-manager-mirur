@@ -250,6 +250,26 @@ def test_config_guardar_y_aplicar(tmp_path):
     assert bad.status_code == 400 and "catálogo" in bad.json()["detail"]
 
 
+def test_config_vuelta_a_la_espera(tmp_path):
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    info = c.get("/api/config").json()
+    assert info["idle_return"] is None and info["robots"][0]["idle_return"]["mode"] == "fleet"
+    assert "idle_return" not in info["robots"][0]["settings"]
+    r = c.post("/api/config", json={"idle_return": {"action": "coger", "after_s": 20}}).json()
+    assert r["changed"] and r["restart"] == []                       # en caliente
+    srv.reloader.apply_pending()
+    assert srv.robots["sim-1"].idle.cfg.action == "coger" and srv.robots["sim-1"].idle.cfg.after_s == 20
+    # El robot la desactiva; no mandar idle_return de la flota no la quita.
+    c.post("/api/config", json={"robots": {"sim-1": {"idle_return": False}}})
+    srv.reloader.apply_pending()
+    info = c.get("/api/config").json()
+    assert info["idle_return"]["action"] == "coger" and info["robots"][0]["idle_return"]["mode"] == "off"
+    assert not srv.robots["sim-1"].idle.cfg.enabled
+    bad = c.post("/api/config", json={"robots": {"sim-1": {"idle_return": {"action": "dejar"}}}})
+    assert bad.status_code == 400 and "no está habilitada en sim-1" in bad.json()["detail"]
+
+
 def test_config_editada_a_mano(tmp_path):
     srv, p, notes = _server_editable(tmp_path)
     c = TestClient(srv.app)

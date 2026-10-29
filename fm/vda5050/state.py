@@ -48,6 +48,8 @@ I_UPTIME = "UPTIME"                       # s desde el arranque, como texto
 I_MANUAL_DRIVE = "MANUAL_DRIVE"           # alguien lo conduce a mano (joystick)
 I_SAFETY_MUTED = "SAFETY_MUTED"           # sistema de seguridad silenciado
 I_MAP_UNSAVED = "MAP_UNSAVED"             # cambios de mapa sin guardar en el robot
+# Del core, no de un driver (como AUTO_CHARGE): el FM lo manda a la espera (decisión 136).
+I_IDLE_RETURN = "IDLE_RETURN"
 
 
 def drop_none(d: Any) -> Any:

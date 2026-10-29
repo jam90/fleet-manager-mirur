@@ -511,6 +511,38 @@ mínimo, **no** "cargar hasta nueva mission"): si no, nunca pasa a `Done`, el
 robot queda ocupado para siempre y no sale del dock. La de `mirur-tknika`
 (`Carga en estación MIRUR`) carga hasta el 70 % y sale del dock.
 
+## Vuelta a la espera
+
+Para que un robot no se quede estorbando donde acabó una mission
+(`fm/idle.py`, decisión 136): si lleva `after_s` segundos **parado** —
+disponible, en automático, sin pausa, en el site de la flota y sin order,
+carga ni mission lanzada desde la web—, el FM le manda la action del
+catálogo `idle_return.action` (con sus `params`), como si fuera una order.
+
+```yaml
+idle_return:                 # toda la flota
+  action: ir_a_espera        # una action del catálogo `actions:`
+  after_s: 30                # segundos parado
+  # params: { target_pos: Punto espera 1 }
+robots:
+  mir-1:
+    idle_return: { action: ir_a, params: { target_pos: Espera 1 } }   # otra, solo para este robot
+  sim-1:
+    idle_return: false       # este no vuelve
+```
+
+- **Una vez:** no se repite hasta que el robot haga otra cosa (si no, al
+  llegar a la espera volvería a estar parado y entraría en bucle). Al
+  arrancar el FM, un robot parado se va a la espera.
+- **No ocupa al robot:** el asignador lo puede elegir mientras va, y al
+  lanzarle una order el FM cancela antes la vuelta. Mientras va,
+  `state.information[]` lleva `IDLE_RETURN` y la web lo enseña «a la espera».
+- La action tiene que estar habilitada en el robot. Si la de la flota no lo
+  está en alguno, ese robot no vuelve (aviso al arrancar); si la de un robot
+  no lo está, la config no carga.
+- Si no se puede mandar o acaba `FAILED`, se dice en el log y no se insiste.
+- Se edita en el Configurador y se aplica en caliente.
+
 ## Limitaciones conocidas
 
 - Sin navegación por grafo `nodes`/`edges`: el MiR navega con sus missions; la

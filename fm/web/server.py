@@ -137,6 +137,7 @@ class ConfigEditIn(BaseModel):
     auto_charge: dict[str, Any] = {}
     assigner: dict[str, Any] = {}
     site: dict[str, Any] | None = None                    # solo si se manda; None = quitarlo
+    idle_return: dict[str, Any] | None = None             # ídem (decisión 136)
 
 
 class WebServer:
@@ -219,10 +220,14 @@ class WebServer:
         for s, r in self.robots.items():
             rc = r.cfg
             settings = {k: v for k, v in rc.raw.items()
-                        if k not in ("actions", "driver", "manufacturer", "battery_min")}
+                        if k not in ("actions", "driver", "manufacturer", "battery_min", "idle_return")}
+            # Vuelta a la espera (decisión 136): la de la flota, la suya o ninguna.
+            own = rc.raw.get("idle_return")
+            idle = {"mode": "off" if own is False else "own" if isinstance(own, dict) else "fleet",
+                    "own": own if isinstance(own, dict) else None, "effective": asdict(rc.idle_return)}
             robots.append({"serial": s, "driver": rc.driver, "manufacturer": r.manufacturer,
                            "battery_min": rc.battery_min, "actions": sorted(rc.action_types),
-                           "settings": settings, "sync": s in self.syncs,
+                           "settings": settings, "sync": s in self.syncs, "idle_return": idle,
                            # para avisar antes de reiniciar: el FM perdería de vista sus orders
                            "busy": r.busy, "order": r.orders.active.order.orderId if r.orders.busy else None})
         # Qué necesita cada action del catálogo: no depende del robot (el
@@ -247,6 +252,7 @@ class WebServer:
                 "robots": robots,
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "assigner": {"prefer_not_charging": self.cfg.prefer_not_charging},
+                "idle_return": asdict(self.cfg.idle_return) if self.cfg.idle_return.enabled else None,
                 "drivers": self.cfg.drivers,
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "editable": self.config_path is not None and self.reloader is not None,
@@ -644,8 +650,9 @@ class WebServer:
         @app.post("/api/config")
         def config_save(body: ConfigEditIn):
             edits = body.model_dump()
-            if "site" not in body.model_fields_set:   # no mandarlo ≠ quitarlo
-                del edits["site"]
+            for key in ("site", "idle_return"):
+                if key not in body.model_fields_set:   # no mandarlo ≠ quitarlo
+                    del edits[key]
             return self.save_config(edits)
 
         @app.get("/api/create")

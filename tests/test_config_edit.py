@@ -257,3 +257,29 @@ def test_site_de_la_flota_se_pone_cambia_y_quita():
     assert apply_edits(YAML, {"site": None}) == YAML
     with pytest.raises(EditError, match="site debe ser"):
         apply_edits(YAML, {"site": "sin nombre"})
+
+
+# ------------------------------------------- vuelta a la espera (decisión 136)
+def test_idle_return_de_la_flota_y_de_un_robot():
+    text = (Path(__file__).resolve().parent.parent / "config" / "fleet.example.yaml").read_text(encoding="utf-8")
+    new = apply_edits(text, {"idle_return": {"action": "ir_a", "after_s": 30, "params": {"target_pos": "Espera 1"}}})
+    assert new.startswith(text) and new.endswith("idle_return:\n  action: ir_a\n  after_s: 30\n"
+                                                  "  params: {target_pos: Espera 1}\n")
+    # Un robot con la suya y otro desactivado: una línea en cada uno.
+    two = apply_edits(new, {"robots": {"mir-2": {"idle_return": {"action": "ir_a", "params": {"target_pos": "E2"}}},
+                                       "mir-1": {"idle_return": False}}})
+    import difflib
+    added = [x for x in difflib.ndiff(new.splitlines(), two.splitlines()) if x[:2] in ("+ ", "- ")]
+    assert added == ["+     idle_return: false", "+     idle_return: {action: ir_a, params: {target_pos: E2}}"]
+    # Vuelve a la de la flota (se quita la clave); la flota pierde sus params.
+    back = apply_edits(two, {"robots": {"mir-1": {"idle_return": None}},
+                             "idle_return": {"action": "ir_a", "after_s": 45, "params": {"target_pos": ""}}})
+    assert "    idle_return: false\n" not in back and "  after_s: 45\n" in back and "Espera 1" not in back
+    assert apply_edits(back, {"idle_return": None, "robots": {"mir-2": {"idle_return": None}}}) == text
+
+
+def test_idle_return_errores():
+    with pytest.raises(EditError, match="elige una action"):
+        apply_edits(YAML, {"idle_return": {"after_s": 30}})
+    with pytest.raises(EditError, match="params"):
+        apply_edits(YAML, {"idle_return": {"action": "coger", "params": {"x": [1]}}})

@@ -1064,6 +1064,59 @@
       </ul>
     </div>
 
+    <!-- Vuelta a la espera (fm/idle.py, decisión 136): idle_return de la
+         flota y, por robot, la misma, otra o ninguna. -->
+    <div class="panel" id="cfg-idle">
+      <h3>Vuelta a la espera</h3>
+      <p class="hint">Si un robot lleva un rato <b>parado</b> (en automático, sin pausa, en el site de la flota y sin nada que
+        hacer), el FM le manda esta action <b>una vez</b>, para que no estorbe donde acabó. Una order que llegue mientras va,
+        la cancela. <code>idle_return</code></p>
+      <h4>Toda la flota</h4>
+      <template v-if="!cfgEdit.on">
+        <p v-if="cfgState.idle_return">{{ idleText(cfgState.idle_return) }}</p>
+        <p class="muted" v-else>Desactivada: cada robot se queda donde termina.</p>
+      </template>
+      <template v-else>
+        <label><input type="checkbox" id="idle-on" v-model="cfgEdit.draft.idle.on"> Mandar a los robots parados a la espera</label>
+        <div class="act-form" v-if="cfgEdit.draft.idle.on">
+          <label class="field">Action
+            <select id="idle-action" v-model="cfgEdit.draft.idle.fleet.action">
+              <option v-for="a in viewActions.filter(x => x.status !== 'borrada')" :key="a.name" :value="a.name">{{ a.name }}</option></select></label>
+          <label class="field">Tras (segundos parado)
+            <input class="num-in" type="number" id="idle-after" min="1" step="5" v-model.number="cfgEdit.draft.idle.fleet.after_s"></label>
+          <label class="field" v-for="k in idleParamKeys(cfgEdit.draft.idle.fleet.action)" :key="k.key">{{ k.key }}
+            <input :type="k.kind === 'number' ? 'number' : 'text'" :list="k.kind === 'position' ? 'idle-positions' : null"
+                   v-model="cfgEdit.draft.idle.fleet.params[k.key]" autocomplete="off"></label>
+        </div>
+      </template>
+      <h4>Por robot</h4>
+      <dl class="kv">
+        <template v-for="r in cfgState.robots" :key="r.serial">
+          <dt>{{ r.serial }}</dt>
+          <dd v-if="!cfgEdit.on">{{ r.idle_return.effective.action ? idleText(r.idle_return.effective) : 'no vuelve' }}
+            <span class="muted">· {{ IDLE_MODES[r.idle_return.mode] }}</span></dd>
+          <dd v-else>
+            <select :id="'idle-mode-' + r.serial" v-model="cfgEdit.draft.idle.robots[r.serial].mode" :aria-label="'vuelta a la espera de ' + r.serial">
+              <option v-for="(label, m) in IDLE_MODES" :key="m" :value="m">{{ label }}</option></select>
+            <span class="warnline" v-if="cfgEdit.draft.idle.robots[r.serial].mode === 'fleet' && cfgEdit.draft.idle.on
+                  && !cfgEdit.draft.robots[r.serial].actions.includes(cfgEdit.draft.idle.fleet.action)">
+              ⚠ no tiene la action {{ cfgEdit.draft.idle.fleet.action }}: no vuelve</span>
+            <div class="act-form" v-if="cfgEdit.draft.idle.robots[r.serial].mode === 'own'">
+              <label class="field">Action
+                <select v-model="cfgEdit.draft.idle.robots[r.serial].own.action">
+                  <option v-for="a in cfgEdit.draft.robots[r.serial].actions" :key="a" :value="a">{{ a }}</option></select></label>
+              <label class="field">Tras (segundos; vacío = los de la flota)
+                <input class="num-in" type="number" min="1" step="5" v-model.number="cfgEdit.draft.idle.robots[r.serial].own.after_s"></label>
+              <label class="field" v-for="k in idleParamKeys(cfgEdit.draft.idle.robots[r.serial].own.action)" :key="k.key">{{ k.key }}
+                <input :type="k.kind === 'number' ? 'number' : 'text'" :list="k.kind === 'position' ? 'idle-positions' : null"
+                       v-model="cfgEdit.draft.idle.robots[r.serial].own.params[k.key]" autocomplete="off"></label>
+            </div>
+          </dd>
+        </template>
+      </dl>
+      <datalist id="idle-positions"><option v-for="n in cfgChoices.positions" :key="n" :value="n"></option></datalist>
+    </div>
+
     <div class="grid-2">
       <div class="panel">
         <h3>Umbrales</h3>
@@ -1397,6 +1450,8 @@
               tienen.</p></li>
           <li><b>Probar</b><a class="where" href="#operacion">→ Operación</a>
             <p>Manda una order de esa action y mira cómo la ejecuta un robot.</p></li>
+          <li><b>Opcional: vuelta a la espera</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>Para que un robot no se quede estorbando donde acaba (ver «Que un robot parado no estorbe»).</p></li>
         </ol>
       </details>
 
@@ -1648,6 +1703,27 @@
         </ol>
       </details>
 
+      <details class="guide-sec">
+        <summary>Que un robot parado no estorbe
+          <span class="hint">Mandarlo a la zona de espera tras un rato sin trabajo.</span></summary>
+        <ol class="steps">
+          <li><b>Tener la action de ir a la espera</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>Una action del catálogo que lleve al robot a su sitio de espera, habilitada en los robots que volverán (p. ej.
+              <code>ir_a_espera</code>). Si los dos comparten zona, que la mission elija un punto libre (prueba uno y, si está
+              ocupado, va a otro) o da a cada robot el suyo con un parámetro.</p></li>
+          <li><b>Activarla para la flota</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>«Editar» → «Vuelta a la espera»: marca la casilla, elige la action, los <b>segundos parado</b> (deja tiempo a que
+              llegue la order siguiente: 30 s suele bastar) y sus parámetros, y «Guardar». Se aplica en caliente.</p></li>
+          <li><b>Ajustar por robot</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>En «Por robot»: «como la flota», «otra action» (con sus segundos y parámetros, p. ej. su propio punto de espera)
+              o «desactivada».</p></li>
+          <li><b>Verlo funcionar</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Al acabar una order, el robot espera esos segundos y sale «a la espera». Solo cuenta si está en automático, sin
+              pausa, en el site de la flota y sin nada que hacer; y va <b>una vez</b>: no repite hasta hacer otra cosa. Una order
+              que llegue mientras va lo cancela y la hace él.</p></li>
+        </ol>
+      </details>
+
     </div>
   </main>
 </div>
@@ -1874,6 +1950,8 @@ createApp({
       if (s.paused) return { key: 'pausado', label: 'en pausa' };
       if (s.powerSupply && s.powerSupply.charging) return { key: 'cargando', label: 'cargando' };
       const running = (s.actionStates || []).some(a => a.actionStatus === 'RUNNING');
+      // Va a la espera (decisión 136): se mueve, pero puede recibir una order.
+      if (!running && (s.information || []).some(i => i.infoType === 'IDLE_RETURN')) return { key: 'libre', label: 'a la espera' };
       if (s.driving || running) return { key: 'ejecutando', label: 'ejecutando' };
       if ((s.actionStates || []).some(a => a.actionStatus === 'WAITING')) return { key: 'encola', label: 'en cola' };
       return { key: 'libre', label: 'libre' };
@@ -2405,6 +2483,27 @@ createApp({
       { block: 'assigner', key: 'prefer_not_charging', label: 'No sacar al que carga', unit: 'bool' },
     ];
     const say = (msg, cls = '') => { cfgEdit.msg = msg; cfgEdit.msgCls = cls; };
+    // ---- vuelta a la espera (decisión 136)
+    const IDLE_MODES = { fleet: 'como la flota', own: 'otra action', off: 'desactivada' };
+    const idleCopy = c => ({ action: c.action || '', after_s: c.after_s ?? null, params: { ...(c.params || {}) } });
+    // Lo que se guarda: sin params vacíos ni after_s sin poner (= el de la flota).
+    function idleClean(c) {
+      const out = { action: c.action || '' };
+      if (c.after_s !== null && c.after_s !== '' && c.after_s !== undefined) out.after_s = c.after_s;
+      const params = Object.fromEntries(Object.entries(c.params || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined));
+      if (Object.keys(params).length) out.params = params;
+      return out;
+    }
+    // Los parámetros que pide la definición de una action, con su tipo.
+    function idleParamKeys(name) {
+      const a = cfgState.actions.find(x => x.name === name);
+      const d = (a && a.definition) || {};
+      const keys = v => Array.isArray(v) ? v : Object.keys(v || {});
+      return [...keys(d.position_inputs).map(key => ({ key, kind: 'position' })),
+              ...keys(d.number_inputs).map(key => ({ key, kind: 'number' })),
+              ...keys(d.required_inputs).map(key => ({ key, kind: 'text' }))];
+    }
+    const idleText = c => `${c.action}${Object.keys(c.params || {}).length ? ' (' + Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(', ') + ')' : ''} tras ${c.after_s} s parado`;
     function startEdit() {
       cfgEdit.draft = {
         actions: {},                  // nombre → { definition, comments } | null (borrar)
@@ -2414,6 +2513,13 @@ createApp({
         robots: Object.fromEntries(cfgState.robots.map(r => [r.serial, { actions: [...r.actions], battery_min: r.battery_min }])),
         auto_charge: { ...cfgState.auto_charge },
         assigner: { ...cfgState.assigner },
+        // Vuelta a la espera (decisión 136): copias con `params` propios, que se editan.
+        idle: {
+          on: !!cfgState.idle_return,
+          fleet: idleCopy(cfgState.idle_return || { action: '', after_s: 30 }),
+          robots: Object.fromEntries(cfgState.robots.map(r => [r.serial, {
+            mode: r.idle_return.mode, own: idleCopy(r.idle_return.own || { action: '', after_s: null }) }])),
+        },
       };
       cfgEdit.on = true; say('');
     }
@@ -2445,10 +2551,20 @@ createApp({
       }
       for (const f of THRESHOLDS)
         if (d[f.block][f.key] !== cfgState[f.block][f.key]) (out[f.block] = out[f.block] || {})[f.key] = d[f.block][f.key];
+      const fleetIdle = d.idle.on ? idleClean(d.idle.fleet) : null;
+      if (JSON.stringify(fleetIdle) !== JSON.stringify(cfgState.idle_return ? idleClean(cfgState.idle_return) : null))
+        out.idle_return = fleetIdle;
+      for (const r of cfgState.robots) {
+        if (d.removeRobots[r.serial]) continue;
+        const di = d.idle.robots[r.serial], was = r.idle_return;
+        const want = di.mode === 'fleet' ? null : di.mode === 'off' ? false : idleClean(di.own);
+        const had = was.mode === 'fleet' ? null : was.mode === 'off' ? false : idleClean(was.own);
+        if (JSON.stringify(want) !== JSON.stringify(had)) ((out.robots = out.robots || {})[r.serial] = out.robots[r.serial] || {}).idle_return = want;
+      }
       return out;
     });
     // Cuántos cambios: uno por action del catálogo y por alta o baja de robot; uno por campo de lo demás.
-    const nChanges = computed(() => Object.entries(cfgEdits.value).reduce((n, [blk, b]) => n + Object.entries(b)
+    const nChanges = computed(() => Object.entries(cfgEdits.value).reduce((n, [blk, b]) => n + Object.entries(b || { _: 0 })
       .reduce((m, [k, v]) => m + (blk === 'actions' || v === null || !(v && typeof v === 'object' && !Array.isArray(v))
         || (blk === 'robots' && !cfgState.robots.some(r => r.serial === k)) ? 1 : Object.keys(v).length), 0), 0));
 
@@ -2753,7 +2869,7 @@ createApp({
              canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
-             cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             cfgEdit, THRESHOLDS, IDLE_MODES, idleParamKeys, idleText, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
              capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,

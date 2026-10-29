@@ -2445,6 +2445,35 @@ nuestras positions: `catalog/` y `config/fleet.yaml` no le sirven.
      del repo público: no se reescribe (IPs privadas y poses de un taller;
      no compensa un force push).
 
+## 2026-10-29 — Vuelta a la espera tras un rato parado
+
+En pruebas con otro FM, algunas missions dejan al robot en un sitio de paso
+y molesta al otro. El usuario pide que, pasado un tiempo sin trabajo, el FM
+mande a los robots a la espera, con el tiempo y la mission configurables.
+
+136. **`idle_return`: tras `after_s` segundos parado, el FM lanza una
+     action del catálogo** (`fm/idle.py::IdleGuard`, en el tick de cada
+     robot como la auto-carga). Es una action y no una mission suelta
+     para reutilizar todo lo de una order (parámetros, positions por
+     nombre, mapa de la mission) y no depender de la marca; tiene que
+     estar habilitada en el robot. Se define para la flota y cada robot
+     puede usar otra (`{action, after_s, params}`, lo que no diga se
+     hereda; con otra action no hereda los params) o ninguna (`false`).
+     **Parado** (criterio del usuario): disponible, en modo automático,
+     sin pausa, en el site de la flota y sin order, carga ni mission de la
+     web; si deja de cumplirse, la cuenta vuelve a cero. **Una vez:** no
+     se repite hasta que el robot haga otra cosa (si no, en la espera
+     seguiría parado y entraría en bucle); al arrancar el FM cuenta como
+     recién hecho, así que un robot parado se va a la espera. **No ocupa al
+     robot** (elegido por el usuario): el asignador lo puede elegir
+     mientras va y `Robot.execute` cancela antes la vuelta, para que la
+     order no espere detrás. Si no se puede mandar o acaba FAILED, log y no
+     se insiste. `information` `IDLE_RETURN`; la web lo pinta «a la
+     espera». En caliente (`HOT_ROBOT_KEYS`) y editable en el Configurador
+     (panel «Vuelta a la espera»; `config_edit` escribe el bloque de la
+     flota clave a clave y el del robot en una línea). Guía: «Que un robot
+     parado no estorbe». Sin probar con robot (#35).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2480,6 +2509,11 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
     deja libre su número). Decidir qué pasa con las missions de positions
     fijas (decisión 131): copiarlas apuntando a las positions copiadas o
     pasarlas a recibir la position como input.
+
+- **#35** **Probar con robot la vuelta a la espera** (decisión 136): activarla
+    con `ir_a_espera` y 30 s, mandar una order y ver que vuelve una sola
+    vez; mandar otra mientras va (se cancela y hace la order); con los dos
+    robots, que `Ir a zona de espera MIRUR` reparte los puntos de espera.
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 

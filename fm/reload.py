@@ -1,8 +1,9 @@
 """Aplicar en caliente una configuración nueva (decisión 91).
 
 Qué se aplica en caliente: lo "ligero", lo que el FM consulta en cada tick o
-en cada order — umbrales de auto-carga, `assigner.*`, `battery_min` y qué
-actions tiene cada robot (y su definición). Lo "estructural" (robots que
+en cada order — umbrales de auto-carga, `assigner.*`, `battery_min`, la
+vuelta a la espera (`idle_return`) y qué actions tiene cada robot (y su
+definición). Lo "estructural" (robots que
 entran o salen, host, driver, manufacturer, bloque `drivers:`, MQTT) pide
 reiniciar el FM: un robot nuevo necesita su cliente MQTT con Last Will, su
 hilo de poll y su `connection` retained, y eso solo se monta al arrancar.
@@ -27,7 +28,7 @@ log = logging.getLogger("fm.reload")
 
 # Claves de `robots.<serial>` que se aplican en caliente; cualquier otra que
 # cambie (host, pose…) es del driver y pide reiniciar.
-HOT_ROBOT_KEYS = {"actions", "battery_min"}
+HOT_ROBOT_KEYS = {"actions", "battery_min", "idle_return"}
 
 
 def restart_reasons(old: FleetConfig, new: FleetConfig, robots: dict) -> list[str]:
@@ -112,6 +113,7 @@ class Reloader:
         for s, r in self.robots.items():
             r.cfg = new.robots[s]
             r.charge.cfg = new.auto_charge
+            r.idle.cfg = new.robots[s].idle_return
             r.site = new.site
             if s in fresh:
                 r.driver.reconfigure(fresh[s])

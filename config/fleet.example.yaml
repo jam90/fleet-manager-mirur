@@ -42,6 +42,16 @@ drivers:
     #   - Almacen
     #   - Montaje
 
+# Vuelta a la espera (opcional): si un robot lleva `after_s` segundos parado,
+# el FM le manda esta action del catálogo, una vez, para que no estorbe donde
+# acabó. Una order que llegue mientras va, la cancela. Cada robot puede usar
+# otra (`idle_return: {action: ..., params: {...}}`) o ninguna (`idle_return: false`).
+# Se edita también desde el Configurador.
+# idle_return:
+#   action: ir_a
+#   after_s: 30
+#   params: { target_pos: Espera }
+
 # Histéresis: battery_min (aceptar trabajo) > battery_floor (ir a cargar).
 # Así un robot que acaba de salir del suelo no recibe trabajo y vuelve a caer.
 #

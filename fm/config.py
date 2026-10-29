@@ -15,6 +15,11 @@ en `raw["actions"]`, así que el driver recibe el mismo dict de siempre.
 La excepción es `expected_s` (decisión 123): tiempo normal de ejecución de
 la action, genérico para cualquier marca; el core lo usa para avisar cuando
 una order tarda más (`OrderTracker.watch_duration`).
+
+`idle_return` (decisión 136): qué action lanza el FM por su cuenta cuando un
+robot lleva un rato parado (ir a la zona de espera). Se define para la flota
+y cada robot puede usar otra o desactivarla; la action tiene que estar
+habilitada en el robot, porque la traduce su driver como la de una order.
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 from dotenv import load_dotenv
@@ -45,6 +51,20 @@ class ConfigError(ValueError):
 
 
 @dataclass
+class IdleReturnConfig:
+    """Vuelta a la espera (decisión 136): tras `after_s` segundos parado, el
+    FM lanza la action `action` (del catálogo, con `params`). Sin action,
+    desactivada."""
+    action: str | None = None
+    after_s: float = 30.0
+    params: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def enabled(self) -> bool:
+        return self.action is not None
+
+
+@dataclass
 class RobotConfig:
     """Parte genérica de `robots.<serial>`. `raw` es el bloque completo, para el driver."""
     serial: str
@@ -54,6 +74,7 @@ class RobotConfig:
     action_types: frozenset[str] = frozenset()    # actions habilitadas (lista `robots.<serial>.actions`)
     expected_s: dict[str, float] = field(default_factory=dict)   # actionType → s normales en ejecución
     raw: dict = field(default_factory=dict)       # con `actions` ya expandido: actionType → definición
+    idle_return: IdleReturnConfig = field(default_factory=IdleReturnConfig)   # la que vale para ESTE robot
 
 
 @dataclass
@@ -82,6 +103,7 @@ class FleetConfig:
     drivers: dict[str, dict] = field(default_factory=dict)   # defaults por marca: bloque `drivers:`
     actions: dict[str, dict] = field(default_factory=dict)   # catálogo `actions:`, tal cual (lo valida el driver)
     prefer_not_charging: bool = True
+    idle_return: IdleReturnConfig = field(default_factory=IdleReturnConfig)   # la de la flota (bloque raíz)
     # Site de la flota (decisión 129): solo trabajan los robots cuyo mapa
     # activo es de este site. None = sin comprobar (como antes).
     site: str | None = None
@@ -130,10 +152,12 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         raise ConfigError("'auto_charge.mission' ya no existe: muévelo a 'drivers.mir.charge_mission'")
 
     catalog = _parse_catalog(raw.get("actions"))
+    fleet_idle = _idle_return("idle_return", raw.get("idle_return"), IdleReturnConfig())
     robots: dict[str, RobotConfig] = {}
     for serial, r in (raw.get("robots") or {}).items():
         r = r or {}
         enabled = _enabled_actions(serial, r.get("actions"), catalog)
+        idle = _robot_idle_return(serial, r, enabled, fleet_idle)
         robots[serial] = RobotConfig(
             serial=serial,
             driver=str(r.get("driver", DEFAULT_DRIVER)),
@@ -144,6 +168,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
             # Copia profunda: cada driver recibe su propia definición y no
             # puede alterar la de otro robot ni el catálogo.
             raw={**r, "actions": {a: copy.deepcopy(catalog[a]) for a in enabled}},
+            idle_return=idle,
         )
 
     auto_charge = AutoChargeConfig(
@@ -170,6 +195,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         drivers={k: (v or {}) for k, v in (raw.get("drivers") or {}).items()},
         actions=catalog,
         prefer_not_charging=bool((raw.get("assigner") or {}).get("prefer_not_charging", True)),
+        idle_return=fleet_idle,
         site=_site(raw.get("site")),
     )
 
@@ -180,6 +206,50 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
             log.warning("[%s] battery_min (%.0f%%) <= battery_floor (%.0f%%): sin histéresis",
                         r.serial, r.battery_min, auto_charge.battery_floor)
     return cfg
+
+
+IDLE_KEYS = {"action", "after_s", "params"}
+
+
+def _idle_return(where: str, raw, base: IdleReturnConfig) -> IdleReturnConfig:
+    """Bloque `idle_return` (de la flota o de un robot) sobre `base`: lo que
+    no dice se hereda. Si cambia de action, sus parámetros no se heredan
+    (serían los de otra action)."""
+    if raw is None:
+        return base
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where}: se espera {{action: ..., after_s: ..., params: {{...}}}} o false")
+    unknown = set(raw) - IDLE_KEYS
+    if unknown:
+        raise ConfigError(f"{where}: claves desconocidas {sorted(unknown)} (valen {sorted(IDLE_KEYS)})")
+    action = raw.get("action", base.action)
+    if action is not None and (not isinstance(action, str) or not action.strip()):
+        raise ConfigError(f"{where}.action: el nombre de una action del catálogo")
+    after = raw.get("after_s", base.after_s)
+    if isinstance(after, bool) or not isinstance(after, (int, float)) or not after > 0:
+        raise ConfigError(f"{where}.after_s: segundos parado antes de lanzarla (un número mayor que 0)")
+    params = raw.get("params", base.params if action == base.action else {}) or {}
+    if not isinstance(params, dict) or not all(isinstance(k, str) for k in params):
+        raise ConfigError(f"{where}.params: un mapping parámetro → valor (p. ej. {{target_pos: Espera}})")
+    return IdleReturnConfig(action.strip() if action else None, float(after), dict(params))
+
+
+def _robot_idle_return(serial: str, r: dict, enabled: list[str], fleet: IdleReturnConfig) -> IdleReturnConfig:
+    """La vuelta a la espera de un robot: la de la flota, la suya
+    (`idle_return: {...}`) o ninguna (`idle_return: false`)."""
+    raw = r.get("idle_return", None)
+    if raw is False:
+        return IdleReturnConfig()
+    own = "idle_return" in r and raw is not None
+    idle = _idle_return(f"robots.{serial}.idle_return", raw, fleet)
+    if idle.enabled and idle.action not in enabled:
+        if own:
+            raise ConfigError(f"robots.{serial}.idle_return: la action '{idle.action}' no está habilitada "
+                              f"en {serial} (añádela a su lista actions)")
+        # La de la flota y un robot que no la tiene (p. ej. uno simulado): ese no vuelve.
+        log.warning("[%s] no tiene la action '%s' de idle_return: no volverá a la espera", serial, idle.action)
+        return IdleReturnConfig()
+    return idle
 
 
 def _parse_catalog(raw) -> dict[str, dict]:
