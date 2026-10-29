@@ -211,3 +211,49 @@ def test_post_fallido_no_prueba_otro_robot():
     resp = _fleet(disp, bus)
     assert resp["status"] == "REJECTED" and resp["errorType"] == "ROBOT_UNREACHABLE"
     assert robots["mir-2"].driver.executed == []
+
+
+# ---------------------------------------- --validate: schema en runtime (decisión 122)
+def _sin_blocking_type(man, serial, order_id="o1"):
+    """Pasa `parse_order` (no mira blockingType) pero no el schema oficial."""
+    d = json.loads(_order(man, serial, order_id=order_id))
+    del d["nodes"][0]["actions"][0]["blockingType"]
+    return json.dumps(d)
+
+
+def test_validate_rechaza_fleet_order_que_no_cumple_el_schema():
+    disp, robots, bus, states = _setup()
+    disp.validate = True
+    disp.handle(topic(FLEET_MAN, "fleet", "order"), _sin_blocking_type(FLEET_MAN, "fleet"))
+    t, resp = bus.published[-1]
+    assert resp["status"] == "REJECTED" and resp["errorType"] == "VALIDATION_FAILURE"
+    assert "schema" in resp["errorDescription"] and "blockingType" in resp["errorDescription"]
+    assert not any(r.driver.executed for r in robots.values())
+
+
+def test_validate_rechaza_order_dirigida_e_instant_actions():
+    disp, robots, bus, states = _setup()
+    disp.validate = True
+    disp.handle(topic("MiR", "mir-1", "order"), _sin_blocking_type("MiR", "mir-1"))
+    errs = robots["mir-1"].orders.order_errors
+    assert robots["mir-1"].driver.executed == [] and "schema" in errs[0].errorDescription
+    # instantActions sin `actions` (obligatorio en el schema)
+    ia = json.dumps(make_header(HeaderCounter(), "MiR", "mir-1", "instantActions"))
+    disp.handle(topic("MiR", "mir-1", "instantActions"), ia)
+    assert "schema" in robots["mir-1"].orders.instant_errors[0].errorDescription
+
+
+def test_sin_validate_lo_que_admite_parse_order_se_acepta():
+    disp, robots, bus, states = _setup()
+    disp.handle(topic(FLEET_MAN, "fleet", "order"), _sin_blocking_type(FLEET_MAN, "fleet"))
+    assert bus.published[-1][1]["status"] == "ASSIGNED"
+
+
+def test_motivo_del_schema_acotado():
+    from fm.fleet import SCHEMA_PROBLEMS_SHOWN, schema_problem
+    d = json.loads(_order(FLEET_MAN, "fleet"))
+    for k in ("orderId", "orderUpdateId", "nodes", "edges", "timestamp"):
+        del d[k]
+    msg = schema_problem("order", d)
+    assert msg.count("is a required property") == SCHEMA_PROBLEMS_SHOWN and "(y 2 más)" in msg
+    assert schema_problem("order", json.loads(_order(FLEET_MAN, "fleet"))) is None

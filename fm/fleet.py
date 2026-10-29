@@ -15,20 +15,37 @@ from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
 from fm.vda5050.header import parse_topic, validate_header
 from fm.vda5050.order import Order, OrderRejected, parse_instant_actions, parse_order
+from fm.vda5050.schemas import validation_errors
 from fm.vda5050.state import E_NO_MOBILE_ROBOT_AVAILABLE, E_VALIDATION_FAILURE, error_for_order
 
 log = logging.getLogger("fm.fleet")
 
+SCHEMA_PROBLEMS_SHOWN = 3     # el motivo de rechazo cabe en un log y en la UI
+
+
+def schema_problem(subtopic: str, data) -> str | None:
+    """Motivo legible si `data` no cumple el schema de `subtopic`; None si valida."""
+    problems = validation_errors(subtopic, data)
+    if not problems:
+        return None
+    more = len(problems) - SCHEMA_PROBLEMS_SHOWN
+    return ("no cumple el schema VDA 5050: " + "; ".join(problems[:SCHEMA_PROBLEMS_SHOWN])
+            + (f" (y {more} más)" if more > 0 else ""))
+
 
 class Dispatcher:
     def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus, publish_state,
-                 publish_factsheet=None):
+                 publish_factsheet=None, validate: bool = False):
         self.cfg = cfg
         self.robots = robots
         self.bus = bus
         self.publish_state = publish_state      # callback(robot) → publica state ya (§6.6 eventos)
         self.publish_factsheet = publish_factsheet   # callback(robot) → factsheet retained (H5 factsheetRequest)
         self.last_fleet_order: tuple[str, int] | None = None
+        # `--validate` (decisión 122): además de lo que comprueba `parse_order`,
+        # cada order/instantActions entrante se valida contra el JSON Schema
+        # oficial antes de procesarlo.
+        self.validate = validate
 
     def subscribe(self) -> None:
         # Cada robot vive bajo el manufacturer de su driver: se escucha a todos
@@ -57,24 +74,26 @@ class Dispatcher:
             data = json.loads(payload)
         except ValueError:
             data = None
-        header_err = validate_header(topic, data) if data is not None else "JSON malformado"
+        invalid = validate_header(topic, data) if data is not None else "JSON malformado"
+        if invalid is None and self.validate and pt.subtopic in ("order", "instantActions"):
+            invalid = schema_problem(pt.subtopic, data)
 
         if pt.subtopic == "order" and pt.serial == FLEET:
-            self.handle_fleet_order(data, header_err)
+            self.handle_fleet_order(data, invalid)
         elif pt.subtopic == "order":
-            self.handle_robot_order(pt.serial, data, header_err)
+            self.handle_robot_order(pt.serial, data, invalid)
         elif pt.subtopic == "instantActions":
-            self.handle_instant_actions(pt.serial, data, header_err)
+            self.handle_instant_actions(pt.serial, data, invalid)
 
-    def handle_robot_order(self, serial: str, data, header_err: str | None) -> None:
+    def handle_robot_order(self, serial: str, data, invalid: str | None) -> None:
         robot = self.robots.get(serial)
         if robot is None:
             log.warning("[fleet] order para robot desconocido '%s'", serial)
             return
         order_id = data.get("orderId") if isinstance(data, dict) else None
         try:
-            if header_err:
-                raise OrderRejected(E_VALIDATION_FAILURE, header_err)
+            if invalid:
+                raise OrderRejected(E_VALIDATION_FAILURE, invalid)
             order = parse_order(data)
             req = robot.translate_order(order)
             robot.execute(order, req)
@@ -85,14 +104,14 @@ class Dispatcher:
             robot.orders.reject(order_id, e)
         self.publish_state(robot)
 
-    def handle_instant_actions(self, serial: str, data, header_err: str | None) -> None:
+    def handle_instant_actions(self, serial: str, data, invalid: str | None) -> None:
         robot = self.robots.get(serial)
         if robot is None:
             log.warning("[fleet] instantActions para robot desconocido '%s'", serial)
             return
         try:
-            if header_err:
-                raise OrderRejected(E_VALIDATION_FAILURE, header_err)
+            if invalid:
+                raise OrderRejected(E_VALIDATION_FAILURE, invalid)
             actions = parse_instant_actions(data)
         except OrderRejected as e:
             # Mensaje inválido: no hay actionId al que referirse; error suelto en state.
@@ -102,12 +121,12 @@ class Dispatcher:
             return
         apply_instant_actions(robot, actions, self.publish_state, self.publish_factsheet)
 
-    def handle_fleet_order(self, data, header_err: str | None) -> None:
+    def handle_fleet_order(self, data, invalid: str | None) -> None:
         order_id = data.get("orderId") if isinstance(data, dict) else None
         update_id = data.get("orderUpdateId") if isinstance(data, dict) else None
         try:
-            if header_err:
-                raise OrderRejected(E_VALIDATION_FAILURE, header_err)
+            if invalid:
+                raise OrderRejected(E_VALIDATION_FAILURE, invalid)
             order = parse_order(data)
             if self.last_fleet_order == (order.orderId, order.orderUpdateId):
                 log.info("[fleet] fleet/order %s/%d repetida: ignorada", order.orderId, order.orderUpdateId)

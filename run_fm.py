@@ -42,6 +42,8 @@ def parse_args(argv=None):
     p.add_argument("--web-port", type=int, default=8050, help="puerto de la interfaz web (0 = sin web)")
     p.add_argument("--force", action="store_true",
                    help="arrancar aunque el broker diga que ya hay otro FM ONLINE (si ese ONLINE es antiguo)")
+    p.add_argument("--validate", action="store_true",
+                   help="validar cada order/instantActions entrante contra el JSON Schema oficial")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -137,7 +139,10 @@ def main(argv=None) -> int:
     for r in robots.values():
         publish_factsheet(r)
 
-    dispatcher = Dispatcher(cfg, robots, bus, lambda r: publish_state(r, bus), publish_factsheet)
+    dispatcher = Dispatcher(cfg, robots, bus, lambda r: publish_state(r, bus), publish_factsheet,
+                            validate=args.validate)
+    if args.validate:
+        log.info("[fleet] --validate: orders e instantActions se validan contra schemas/")
     dispatcher.subscribe()
 
     # Config editada desde el configurador: la web la encola y se aplica aquí,

@@ -119,7 +119,18 @@ y `MIR_HOST_<SERIAL>` como override por robot, `MQTT_HOST`, `MQTT_PORT`.
 .venv/bin/python run_fm.py                      # todos los robots, 1 Hz
 .venv/bin/python run_fm.py --robot mir-1 --period 0.5
 .venv/bin/python run_fm.py --config config/fleet-sim.yaml   # flota simulada, sin robots
+.venv/bin/python run_fm.py --validate           # orders entrantes contra el JSON Schema oficial
 ```
+
+**`--validate`.** Sin la opción, el FM comprueba de cada `order`,
+`fleet/order` e `instantActions` lo que necesita para ejecutarla (header ≡
+topic, ids, nodos, una action…). Con ella, además, valida el mensaje entero
+contra `schemas/` (VDA 5050 v3.0.0) y rechaza con `VALIDATION_FAILURE` lo que
+no cumpla, p. ej. una action sin `blockingType`. El motivo lleva los tres
+primeros fallos con su ruta (`nodes/0/actions/0: 'blockingType' is a
+required property`). Útil al integrar un emisor nuevo (Node-RED): lo que
+pase con `--validate` cumple la norma, no solo lo que este FM tolera. La
+web y los `scripts/` ya mandan mensajes válidos.
 
 Arranca aunque un robot no responda: publica `state` con
 `ROBOT_UNREACHABLE` y lo reintenta con backoff (1, 2, 4, 8, 8… s). La parte

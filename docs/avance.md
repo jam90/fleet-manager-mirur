@@ -2072,6 +2072,29 @@ robot ocupado hacía crecer `state.errors[]` sin límite.
      `order_response`, no al `state`. Test nuevo en `tests/test_orders.py`;
      README actualizado.
 
+## 2026-10-29 — Validación con schemas en runtime: `--validate` (punto #6)
+
+El brief (§10.1, H6) pedía validar en runtime lo que entra contra los JSON
+Schema oficiales; `fm/vda5050/schemas.py` existía pero solo lo usaban los
+tests. `parse_order` es más tolerante que el schema: p. ej. acepta una
+action sin `blockingType`. Se comprobó que lo que mandan la web y
+`scripts/_mqtt.py::build_order` ya valida.
+
+122. **`--validate` en `run_fm.py`, desactivado por defecto** (como en el
+     brief). Con la opción, `Dispatcher.handle` valida cada `order`,
+     `fleet/order` e `instantActions` contra `schemas/` después del
+     header ≡ topic y antes de procesarlo; si no valida, es el mismo
+     rechazo `VALIDATION_FAILURE` de siempre (`order_response`,
+     `state.errors[]` o error de instantActions), con los 3 primeros
+     fallos y su ruta en el motivo. Por defecto queda apagado para no
+     cambiar lo que hoy se acepta; activarlo al integrar Node-RED (#2) dice
+     si su emisor cumple la norma, y se podría dejar siempre activo
+     después. Tests nuevos en `tests/test_fleet.py`. Prueba con Mosquitto
+     en el puerto 18830 y `fleet-sim.yaml`: `send_fleet_order.py` →
+     `ASSIGNED`; la misma order sin `blockingType` → `REJECTED
+     VALIDATION_FAILURE` con `nodes/0/actions/0: 'blockingType' is a
+     required property`.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2080,8 +2103,8 @@ cerrado se quita (su historia está en la entrada de su fecha). Cerrados el
 2026-10-14: #4 (GUIDs comunes), #17 (descartar robot sin la mission), #20
 (mapa activo: ya es `suberri_mirur`), #21 (un solo FM por broker, decisión 107)
 y #16 (configurador completo: v3, decisión 108).
-Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120) y #32
-(rechazos acotados, decisión 121).
+Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
+(rechazos acotados, decisión 121) y #6 (`--validate`, decisión 122).
 
 **En curso / siguiente** (orden decidido por el usuario el 2026-10-14)
 
@@ -2172,11 +2195,6 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120) y #32
 - **#23** **Áreas del mapa desde el FM** (idea del usuario, 2026-10-23, sin
    diseñar): crear y quitar zonas del mapa del MiR desde la web del FM.
    Cuando se haga, su paso a paso va a la pestaña Guía (decisión 109).
-- **#6** **Validación con schemas en runtime (`--validate`)**, pedida en el brief
-   (§10.1, H6) y sin implementar (revisión del 2026-10-12): validar cada
-   `order`/`instantActions` entrante contra `schemas/` y rechazar con
-   `VALIDATION_FAILURE`. `fm/vda5050/schemas.py::validation_errors` ya
-   existe (hoy solo la usan los tests). El README no lo promete.
 
 **Probar con robot (hecho, solo con tests o con simulación)**
 
