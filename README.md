@@ -433,6 +433,9 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
   **Nuevo mapa** (`POST /api/create/map`) sube un PNG en gris de 8 bits,
   con su resolución y su origen, a un site del catálogo o a uno nuevo: solo
   escribe en el catálogo, y se lleva a los robots en Sincronización.
+  **Capturar de un robot** (`POST /api/create/<serial>/capture-map`) trae al
+  catálogo un mapa hecho en la web de un MiR, con sus positions y zonas;
+  solo lee el robot, y volver a capturarlo actualiza la copia.
   En **Sincronización**, con el robot ocupado solo se despliega lo que hay
   que crear; corregir lo que ya tiene espera a que quede libre. El estado
   de la flota marca las missions **sobrantes** de cada robot (su

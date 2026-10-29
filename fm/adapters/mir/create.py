@@ -24,6 +24,12 @@ y la copia se borra en la web del MiR.
   119). Un VL-marker nace con un docking offset provisional y su entrada
   la crea el MiR; en la web se vuelve a detectar el marcador y se ajusta
   el offset, y al capturar se recogen los dos.
+- **Capturar un mapa** de un robot (decisión 132): un mapa hecho en su web
+  (sin GUID de la flota), con su imagen, sus positions y sus zonas, entra
+  en el catálogo con GUIDs de la flota. No se escribe en el robot: como al
+  adoptar una mission, el MiR no deja cambiar el GUID, así que la copia del
+  catálogo llega por Sincronización y se activa en su web. Volver a
+  capturar el mismo mapa actualiza la copia y conserva sus GUIDs.
 - **Site** (decisión 128): la session del MiR, el entorno donde viven los
   mapas; es lo primero que se crea en una flota nueva. Como el mapa, solo
   se escribe en el catálogo y llega a los robots desde Sincronización.
@@ -375,6 +381,142 @@ def create_map(sync, name: str, png: bytes, resolution: float, origin_x: float, 
     return {"kind": "map", "guid": guid, "name": name, "site": session["name"],
             "new_site": new_site, "size": [width, height],
             "meters": [round(width * resolution, 2), round(height * resolution, 2)]}
+
+
+def capturable_maps(sync) -> list[dict]:
+    """Mapas del robot de `sync` sin GUID de la flota, con su site y cuántas
+    positions y zonas tienen, y `captured_as` si ya se capturaron. Se
+    recorren los sites (`sessions/<guid>/maps`): el listado de mapas no dice
+    su site y pedir cada mapa traería su imagen. Los de fábrica, no."""
+    cat = sync.catalog()
+    # Lo capturado antes de este robot. Los del principio (fase 0) no apuntan
+    # el GUID que tenían en el robot: esos no cuentan.
+    captured = {d["_origen"]["guid"]: g for g, d in cat.items.items()
+                if cat.kind(g) == "map" and d.get("_origen", {}).get("robot") == sync.serial
+                and d["_origen"].get("guid")}
+    out = []
+    with sync.lock:
+        c = sync.client
+        for s in c._req("GET", "sessions"):
+            if s["guid"].startswith(FACTORY):
+                continue
+            for m in c._req("GET", f"sessions/{s['guid']}/maps"):
+                if is_std(m["guid"]) or m["guid"].startswith(FACTORY):
+                    continue
+                out.append({"guid": m["guid"], "name": m["name"], "site": s["name"], "site_guid": s["guid"],
+                            "positions": len(c._req("GET", f"maps/{m['guid']}/positions")),
+                            "zones": len(c._req("GET", f"maps/{m['guid']}/zones")),
+                            "captured_as": captured.get(m["guid"]),
+                            "url": f"http://{c.host}/maps/{m['guid']}"})
+    return out
+
+
+def capture_map(sync, source: str, name: str = "", session_guid: str | None = None, new_session: str = "",
+                others: Iterable[str] = ()) -> dict:
+    """Lleva al catálogo el mapa `source` del robot (sin GUID de la flota) con
+    sus positions y sus zonas. Va al site `session_guid` del catálogo o a uno
+    nuevo `new_session`; si ese mapa ya se capturó de este robot, se actualiza
+    su copia (mismo site, mismos GUIDs). Solo escribe en el catálogo."""
+    if is_std(source):
+        raise CreateError("ese mapa ya tiene GUID de la flota: está en el catálogo")
+    cat = sync.catalog()
+    mine = lambda g: (cat.items[g].get("_origen", {}).get("robot") == sync.serial  # noqa: E731
+                      and cat.items[g]["_origen"].get("guid"))
+    prev = next((g for g in cat.items if cat.kind(g) == "map" and mine(g) == source), None)
+    with sync.lock:
+        c = sync.client
+        m = _get_or(c, f"maps/{source}", f"el mapa {source} no está en {sync.serial}")
+        png = base64.b64decode(m["base_map"])
+        width, height = png_size(png)
+        rows = [c._req("GET", f"positions/{p['guid']}") for p in c._req("GET", f"maps/{source}/positions")]
+        offsets = {p["guid"]: [c._req("GET", f"docking_offsets/{o['guid']}")
+                               for o in c._req("GET", f"positions/{p['guid']}/docking_offsets")] for p in rows}
+        zones = [c._req("GET", f"zones/{z['guid']}") for z in c._req("GET", f"maps/{source}/zones")]
+    name = (name or m["name"]).strip()
+    every = {**cat.items, **cat.drafts}
+    taken = set(every) | _retired(sync) | set(others)
+    if prev:                                   # volver a capturar: la misma copia
+        guid, session = prev, cat.items[cat.items[prev]["session_id"]]
+        new_site = False
+    else:
+        if any(cat.kind(g) == "map" and d["name"] == name for g, d in every.items()):
+            raise CreateError(f"ya hay un mapa {name!r} en el catálogo: ponle otro nombre")
+        if session_guid:
+            if session_guid not in cat.items or cat.kind(session_guid) != "session":
+                raise CreateError(f"el site {session_guid} no está en el catálogo")
+            session, new_site = cat.items[session_guid], False
+        else:
+            created = create_session(sync, new_session, others=others)
+            cat = sync.catalog()
+            session, new_site = cat.items[created["guid"]], True
+            taken.add(created["guid"])
+        _, inst, _, session_num = parse_std(session["guid"])
+        guid = next_guid("map", inst, session_num, taken, per_parent=False)
+    _, inst, _, map_num = parse_std(guid)
+    today = date.today().isoformat()
+    origen = lambda robot_guid: {"robot": sync.serial, "mapa": m["name"], "guid": robot_guid,  # noqa: E731
+                                 "capturado": today}
+    docs: list[tuple[str, dict]] = [("map", {
+        "guid": guid, "name": name if not prev else cat.items[prev]["name"], "session_id": session["guid"],
+        **{k: float(m.get(k) or 0.0) for k in ("resolution", "origin_x", "origin_y", "origin_theta")},
+        "base_map": f"{guid}.png", "_origen": origen(source)})]
+
+    # GUID del robot → del catálogo: lo ya capturado conserva el suyo; lo nuevo,
+    # el siguiente número del mapa. Primero todas, para traducir parent_id.
+    def renumber(kind: str, robot_guids: list[str]) -> dict[str, str]:
+        known = {mine(g): g for g in cat.items
+                 if cat.kind(g) == kind and cat.items[g].get("map_id") == guid and mine(g)}
+        out = {}
+        for rg in robot_guids:
+            out[rg] = known.get(rg) or next_guid(kind, inst, map_num, taken, per_parent=True)
+            taken.add(out[rg])
+        return out
+    pos_guid = renumber("position", [p["guid"] for p in rows])
+    for p in rows:
+        docs.append(("position", {
+            "guid": pos_guid[p["guid"]], "name": p["name"], "type_id": p["type_id"],
+            **{k: p[k] for k in ("pos_x", "pos_y", "orientation")}, "map_id": guid,
+            "parent_id": pos_guid.get(p["parent_id"]) if p.get("parent_id") else None,
+            "docking_offsets": [{k: o.get(k) for k in OFFSET_KEYS} for o in offsets[p["guid"]][:1]],
+            # La entrada de un marcador o cargador la crea el MiR (decisión 77).
+            "creada_por_mir": p["type_id"] in AUTO_CHILD_TYPES, "_origen": origen(p["guid"])}))
+    # Zonas: una acción solo puede usar recursos de fábrica o del catálogo (un
+    # sonido subido solo a ese robot no existiría en los demás). La que no
+    # cumple se salta y se dice, sin perder el resto del mapa.
+    known_sounds = {mine(g): g for g in cat.items if cat.kind(g) == "sound" and mine(g)}
+    skipped, ok_zones = [], []
+    for z in zones:
+        doc = normalized_zone(z)
+        bad = []
+        for a in doc["actions"]:
+            for p in a["parameters"]:
+                v = p["value"]
+                if isinstance(v, str) and GUIDISH.match(v) and not v.startswith(FACTORY) and not is_std(v):
+                    if v in known_sounds:
+                        p["value"] = known_sounds[v]
+                    else:
+                        bad.append(v)
+        if bad:
+            skipped.append(f"zona {z['name']!r}: usa {', '.join(bad)}, que no está en el catálogo")
+        else:
+            ok_zones.append((z["guid"], doc))
+    zone_guid = renumber("zone", [rg for rg, _ in ok_zones])
+    for rg, doc in ok_zones:
+        docs.append(("zone", {"guid": zone_guid[rg], **doc, "map_id": guid, "_origen": origen(rg)}))
+    gone = sorted(d["name"] for g, d in cat.items.items()
+                  if cat.kind(g) in ("position", "zone") and d.get("map_id") == guid
+                  and mine(g) not in {*pos_guid, *zone_guid})
+
+    folder = Path(sync.catalog_dir) / FOLDERS["map"]
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{guid}.png").write_bytes(png)
+    for k, d in docs:
+        write_doc(sync.catalog_dir, k, d)
+    return {"kind": "map", "guid": guid, "name": docs[0][1]["name"], "site": session["name"],
+            "new_site": new_site, "updated": bool(prev), "size": [width, height],
+            "meters": [round(width * docs[0][1]["resolution"], 2), round(height * docs[0][1]["resolution"], 2)],
+            "positions": len(rows), "zones": len(ok_zones), "skipped": skipped, "gone": gone,
+            "source": m["name"]}
 
 
 def png_from_b64(data: str) -> bytes:

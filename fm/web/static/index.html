@@ -750,6 +750,47 @@
       </template>
       <template v-else-if="createWhat === 'map'">
         <h3>Nuevo mapa</h3>
+        <div class="seg" role="radiogroup" aria-label="De dónde sale el mapa">
+          <button type="button" role="radio" id="map-mode-png" :aria-checked="mapForm.mode === 'png'"
+                  :class="{ on: mapForm.mode === 'png' }" @click="mapForm.mode = 'png'">Subir un PNG</button>
+          <button type="button" role="radio" id="map-mode-robot" :aria-checked="mapForm.mode === 'robot'"
+                  :class="{ on: mapForm.mode === 'robot' }" @click="setMapMode('robot')">Capturar de un robot</button>
+        </div>
+        <!-- Capturar un mapa de un robot (decisión 132): solo lee el robot. -->
+        <template v-if="mapForm.mode === 'robot'">
+          <p class="hint">Un mapa hecho en la web de un MiR (sin GUID de la flota) entra en el catálogo con su imagen, sus
+            positions y sus zonas. <b>El robot no se toca:</b> el MiR no deja cambiar el GUID de un mapa, así que la copia del
+            catálogo se lleva a los robots en <a href="#sincronizacion">Sincronización</a> (también a este) y se activa en su
+            web. Volver a capturar el mismo mapa actualiza su copia.</p>
+          <label class="field">Robot
+            <select id="cap-robot" v-model="capState.robot" @change="loadCapturable">
+              <option v-for="r in createState.robots.filter(x => x.can_create && x.online)" :key="r.serial" :value="r.serial">{{ r.serial }}</option></select></label>
+          <p class="empty" v-if="capState.loading">Mirando los mapas del robot…</p>
+          <p class="err warn" v-else-if="capState.error">{{ capState.error }}</p>
+          <p class="empty" v-else-if="!capState.list.length">Este robot no tiene mapas sin GUID de la flota.</p>
+          <ul class="drafts" v-else>
+            <li v-for="m in capState.list" :key="m.guid">
+              <label><input type="radio" name="cap-map" :value="m.guid" v-model="capState.source" @change="pickCapturable(m)">
+                <b>{{ m.name }}</b> <span class="muted">· site {{ m.site }} · {{ m.positions }} positions · {{ m.zones }} zonas</span>
+                <span class="chip" v-if="m.captured_as">ya en el catálogo</span></label>
+              <a class="btn" :href="m.url" target="_blank" rel="noopener">Ver en el MiR ↗</a>
+            </li>
+          </ul>
+          <template v-if="capSelected && !capSelected.captured_as">
+            <label class="field">Nombre en el catálogo<input id="cap-name" v-model="capState.name" autocomplete="off"></label>
+            <label class="field">Site donde se guarda en el catálogo
+              <select id="cap-session" v-model="capState.session">
+                <option v-for="x in createState.sessions" :key="x.guid" :value="x.guid">{{ x.name }}</option>
+                <option value="">— site nuevo —</option></select></label>
+            <label class="field" v-if="!capState.session">Nombre del site nuevo
+              <input id="cap-new-session" v-model="capState.new_session" autocomplete="off"></label>
+          </template>
+          <p class="hint" v-else-if="capSelected">Ya se capturó: se actualiza su copia del catálogo, con los mismos GUIDs. Lo que
+            ya no esté en el robot se dice, pero no se borra del catálogo.</p>
+          <div class="acts"><button class="btn primary" id="cap-map" :disabled="!canCaptureMap" @click="captureMap">
+            {{ capSelected && capSelected.captured_as ? 'Volver a capturar' : 'Capturar al catálogo' }}</button></div>
+        </template>
+        <template v-else>
         <!-- Subir un mapa (decisión 126): solo al catálogo, sin robot. -->
         <p class="hint">Sube un <b>PNG en gris de 8 bits</b> (como los que exporta la web del MiR: negro = obstáculo, blanco =
           libre) a un site del catálogo. No necesita robot: se guarda en el catálogo y se lleva
@@ -769,6 +810,7 @@
           <template v-if="mapForm.size">Esta imagen mide {{ mapForm.size[0] }} × {{ mapForm.size[1] }} píxeles:
             {{ (mapForm.size[0] * mapForm.resolution).toFixed(2) }} × {{ (mapForm.size[1] * mapForm.resolution).toFixed(2) }} m.</template></p>
         <div class="acts"><button class="btn primary" id="new-map" :disabled="!canUploadMap" @click="uploadMap">Subir al catálogo</button></div>
+        </template>
       </template>
       <template v-else-if="createWhat === 'position'">
         <h3>Nueva position</h3>
@@ -827,6 +869,21 @@
       <template v-else-if="createState.result.kind === 'session'">
         <b>Site «{{ createState.result.name }}» creado en el catálogo</b> <code class="guid">{{ createState.result.guid }}</code>.
         Ahora sube su primer mapa: <button class="link-btn" type="button" @click="setCreateWhat('map')">Nuevo mapa</button>.
+      </template>
+      <template v-else-if="createState.result.kind === 'map' && createState.result.source">
+        <b>Mapa «{{ createState.result.source }}» de {{ createState.result.robot }}
+          {{ createState.result.updated ? 'actualizado' : 'capturado' }} en el catálogo</b> como «{{ createState.result.name }}»,
+        en el site <b>{{ createState.result.site }}</b><template v-if="createState.result.new_site"> (nuevo)</template>:
+        {{ createState.result.positions }} position{{ createState.result.positions === 1 ? '' : 's' }} y
+        {{ createState.result.zones }} zona{{ createState.result.zones === 1 ? '' : 's' }}.
+        <code class="guid">{{ createState.result.guid }}</code>
+        <ul class="warns" v-if="createState.result.skipped.length || createState.result.gone.length">
+          <li v-for="(w, i) in createState.result.skipped" :key="'s' + i">Sin capturar: {{ w }}.</li>
+          <li v-if="createState.result.gone.length">Ya no están en el robot (siguen en el catálogo):
+            {{ createState.result.gone.join(', ') }}.</li>
+        </ul>
+        Después: llévalo a los robots en <a href="#sincronizacion">Sincronización</a> (también a {{ createState.result.robot }}),
+        actívalo en la web de cada uno y, si quieres, borra allí el original.
       </template>
       <template v-else-if="createState.result.kind === 'map'">
         <b>Mapa «{{ createState.result.name }}» subido al catálogo</b> <code class="guid">{{ createState.result.guid }}</code>
@@ -1212,7 +1269,7 @@
           </summary>
           <ul class="cat-list">
             <li v-for="it in sec.items" :key="it.guid">
-              <label><input type="checkbox" v-model="syncState.sel[it.guid]">
+              <label><input type="checkbox" :checked="!!syncState.sel[it.guid]" @change="setSel(it, $event.target.checked)">
                 <b>{{ it.name }}</b> <span class="muted">{{ it.extra }}</span>
                 <span class="muted" v-if="it.origin_group && it.kind === 'mission'"> · de {{ it.origin_group }}</span></label>
               <code class="guid">{{ it.guid }}</code>
@@ -1298,10 +1355,12 @@
               las pestañas de administración leen y escriben los robots a través del FM.</p></li>
           <li><b>Crear el site</b><a class="where" href="#crear">→ Crear</a>
             <p>Arriba, «Site»: el entorno donde vivirán los mapas (una planta, un edificio).</p></li>
-          <li><b>Subir su mapa</b><a class="where" href="#crear">→ Crear</a>
-            <p>Arriba, «Mapa»: el PNG del mapa, con su resolución y su origen (ver «Subir un mapa nuevo»).</p></li>
+          <li><b>Subir o capturar su mapa</b><a class="where" href="#crear">→ Crear</a>
+            <p>Arriba, «Mapa»: el PNG del mapa, con su resolución y su origen (ver «Subir un mapa nuevo»), o, si ya está hecho
+              en un robot, «Capturar de un robot», que se trae también sus positions y zonas (ver «Capturar un mapa de un
+              robot»).</p></li>
           <li><b>Llevar site y mapa a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>Marca el mapa (arrastra su site), elige cada robot, «Vista previa» y «Desplegar».</p></li>
+            <p>En «Mapas de &lt;site&gt;», marca el mapa (arrastra su site), elige cada robot, «Vista previa» y «Desplegar».</p></li>
           <li><b>Activar el mapa en cada robot</b><span class="where">web del MiR</span>
             <p>Crear un mapa en un robot no lo activa: cámbialo en su web y localiza el robot en él. Las positions y zonas se
               crean donde está el robot, así que este paso va antes.</p></li>
@@ -1479,11 +1538,32 @@
               antes con «Site»), la imagen, la resolución y el origen. Debajo sale cuántos metros mide. «Subir al catálogo» no toca
               ningún robot.</p></li>
           <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>En «Mapas», márcalo (arrastra su site), elige el robot, «Vista previa» y «Desplegar». Crearlo en un robot no
+            <p>En «Mapas de &lt;site&gt;», márcalo (arrastra su site y marca sus positions y zonas), elige el robot, «Vista previa» y «Desplegar». Crearlo en un robot no
               lo activa: para trabajar en él, cámbialo en la web del MiR.</p></li>
           <li><b>Si te has equivocado</b><a class="where" href="#crear">→ Crear</a>
             <p>«Borrar» en «Creado desde aquí» lo quita del catálogo y de los robots que lo tengan, salvo que tenga positions
               o zonas, o que sea el mapa activo de algún robot.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Capturar un mapa de un robot
+          <span class="hint">Un mapa hecho en la web de un MiR, con sus positions y zonas, a toda la flota.</span></summary>
+        <ol class="steps">
+          <li><b>Capturarlo</b><a class="where" href="#crear">→ Crear</a>
+            <p>Arriba, «Mapa» → «Capturar de un robot». Elige el robot y el mapa (salen los que no tienen GUID de la flota),
+              el nombre que tendrá en el catálogo y su site (uno del catálogo o uno nuevo). «Capturar al catálogo» solo lee el
+              robot. Una zona que use un sonido subido solo a ese robot no se captura: el aviso dice cuál.</p></li>
+          <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>En «Mapas de &lt;site&gt;», márcalo: se marcan solas sus positions y zonas. Llévalo también al robot del que
+              salió: el MiR no deja cambiar el GUID de un mapa, así que allí tendrá dos, el suyo y el del catálogo.</p></li>
+          <li><b>Activar el del catálogo</b><span class="where">web del MiR</span>
+            <p>En cada robot, cambia al mapa del catálogo y localiza el robot. Las missions con positions fijas solo van a un
+              robot que esté en su mapa. El original se puede borrar en la web cuando ya no haga falta.</p></li>
+          <li><b>Si se sigue editando el original</b><a class="where" href="#crear">→ Crear</a>
+            <p>Mientras se trabaje en el mapa original del robot (mover una position, añadir una zona), «Volver a capturar»
+              actualiza la copia del catálogo con los mismos GUIDs; lo que ya no está en el robot se avisa, pero no se
+              borra.</p></li>
         </ol>
       </details>
 
@@ -1798,7 +1878,9 @@ createApp({
         secs.push({ key, label, items: list, all: n === list.length, some: n > 0, open });
       };
       add('session', 'Sites', items.filter(i => i.kind === 'session'));
-      add('map', 'Mapas', items.filter(i => i.kind === 'map'));
+      // Los mapas, por site: así se ve dónde queda cada uno (un mapa capturado o subido va al site elegido).
+      for (const x of items.filter(i => i.kind === 'session'))
+        add('map-' + x.guid, 'Mapas de ' + x.name, items.filter(i => i.kind === 'map' && i.parent === x.guid));
       for (const m of items.filter(i => i.kind === 'map'))
         add('pos-' + m.guid, 'Positions de ' + m.name, items.filter(i => i.kind === 'position' && i.parent === m.guid && !i.auto));
       for (const m of items.filter(i => i.kind === 'map'))
@@ -1811,7 +1893,15 @@ createApp({
     });
     const selected = computed(() => Object.keys(syncState.sel).filter(g => syncState.sel[g]).sort());
     const nSelected = computed(() => selected.value.length);
-    const selectSection = (sec, on) => { for (const i of sec.items) syncState.sel[i.guid] = on; };
+    // Marcar un mapa marca también sus positions y zonas (lo normal es llevarlo
+    // entero); se pueden desmarcar después. Desmarcarlo las desmarca.
+    function setSel(it, on) {
+      syncState.sel[it.guid] = on;
+      if (it.kind !== 'map') return;
+      for (const c of syncState.catalog)
+        if ((c.kind === 'position' || c.kind === 'zone') && c.parent === it.guid && !c.auto) syncState.sel[c.guid] = on;
+    }
+    const selectSection = (sec, on) => { for (const i of sec.items) setSel(i, on); };
     const selectAll = on => { for (const sec of catSections.value) selectSection(sec, on); };
     // Missions distintas marcadas para sustituir (decisión 117): forman parte
     // de la vista previa, así que cambiar una la vuelve a pedir.
@@ -2061,8 +2151,9 @@ createApp({
         flow: ['<b>Crear</b> aquí el site', '<b>Subir</b> su primer mapa (botón «Mapa»)',
                `Llevar los dos a los robots en ${SYNC_LINK}`] },
       { kind: 'map', label: 'Mapa', robot: false,
-        hint: 'Un mapa nuevo de un site, a partir de un PNG. Va al catálogo, no a un robot.',
-        flow: ['<b>Subir</b> aquí el PNG', `Llevarlo a los robots en ${SYNC_LINK}`] },
+        hint: 'Un mapa nuevo de un site, desde un PNG o capturado de un robot. Va al catálogo, no a un robot.',
+        flow: ['<b>Subir</b> aquí el PNG o <b>capturarlo</b> de un robot', `Llevarlo a los robots en ${SYNC_LINK}`,
+               'Activarlo en la <b>web del MiR</b> de cada robot'] },
       { kind: 'position', label: 'Position', robot: true,
         hint: 'Un punto del mapa, creado donde está el robot.',
         flow: ['<b>Crear</b> aquí', 'Ajustarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
@@ -2088,7 +2179,7 @@ createApp({
       try { localStorage.setItem('fm.crear.que', kind); } catch (e) { /* sin almacenamiento */ }
     }
     // Nuevo mapa (decisión 126): el PNG se lee en el navegador y viaja en base64.
-    const mapForm = reactive({ name: '', session: '', resolution: 0.05, origin_x: 0, origin_y: 0,
+    const mapForm = reactive({ mode: 'png', name: '', session: '', resolution: 0.05, origin_x: 0, origin_y: 0,
                                png: '', filename: '', size: null });
     function pickMapFile(ev) {
       const f = ev.target.files[0];
@@ -2102,6 +2193,51 @@ createApp({
         img.src = rd.result;
       };
       rd.readAsDataURL(f);
+    }
+    // Capturar un mapa de un robot (decisión 132).
+    const capState = reactive({ robot: '', list: [], loading: false, error: '', source: '', name: '',
+                                session: '', new_session: '' });
+    const capSelected = computed(() => capState.list.find(m => m.guid === capState.source) || null);
+    function setMapMode(mode) {
+      mapForm.mode = mode;
+      if (mode === 'robot' && !capState.robot) {
+        const ok = createState.robots.filter(r => r.can_create && r.online);
+        capState.robot = ok.some(r => r.serial === createState.robot) ? createState.robot : (ok[0] || {}).serial || '';
+        loadCapturable();
+      }
+    }
+    async function loadCapturable() {
+      const serial = capState.robot;
+      Object.assign(capState, { list: [], error: '', source: '', loading: !!serial });
+      if (!serial) return;
+      try {
+        const r = await fetch(`/api/create/${serial}/maps`);
+        const out = await r.json();
+        if (serial !== capState.robot) return;
+        if (!r.ok) { capState.error = out.detail; return; }
+        capState.list = out.maps;
+      } catch (e) { capState.error = 'no se pudo contactar con el FM'; }
+      finally { capState.loading = false; }
+    }
+    function pickCapturable(m) {
+      // Por defecto, el nombre del robot y el site de la flota (o uno nuevo con el nombre del site del robot).
+      capState.name = m.name;
+      capState.session = createState.sessions.some(x => x.guid === fleet.site) ? fleet.site : '';
+      capState.new_session = m.site;
+    }
+    const canCaptureMap = computed(() => !createState.busy && !!capSelected.value && (!!capSelected.value.captured_as
+      || (!!capState.name.trim() && (!!capState.session || !!capState.new_session.trim()))));
+    async function captureMap() {
+      const m = capSelected.value, robot = capState.robot;
+      const body = { source: m.guid, name: capState.name.trim(), session: capState.session,
+                     new_session: capState.session ? '' : capState.new_session.trim() };
+      const out = await postCreate(`/api/create/${robot}/capture-map`, body, `capturando «${m.name}» de ${robot}…`);
+      if (out) {
+        createState.result = { ...out, robot };
+        addEvent(robot, `${out.updated ? 'recapturado' : 'capturado'} el mapa «${m.name}» como ${out.guid}`);
+      }
+      await loadCreate();
+      loadCapturable();
     }
     // Nuevo site (decisión 128).
     const siteForm = reactive({ name: '', description: '' });
@@ -2545,11 +2681,12 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
-             canPreview, canDeploy, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
+             canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
-             changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap, siteForm, createSite, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
+             changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
+             capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,

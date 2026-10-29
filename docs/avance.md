@@ -2340,6 +2340,46 @@ resuelve el nombre en el mapa activo.
      different map», y **el robot queda en Error** (código 10101), que hay
      que quitar a mano en su web. Rechazarla antes evita eso.
 
+## 2026-10-29 — Capturar un mapa de un robot
+
+Para quien monta el FM con un mapa ya hecho en un robot (o graba uno nuevo
+con él). Leído antes de escribir: `GET /maps` no dice el site de cada mapa
+y `GET /maps/<guid>` trae la imagen entera; `GET /sessions/<guid>/maps` da
+los mapas de cada site sin imagen. En los robots hay mapas sin GUID de la
+flota además de `suberri` (`g6` en mir-1, `G2` en mir-2, de otros
+proyectos), y `mapa-pruebas` ya está desplegado en los dos.
+
+132. **«Mapa» → «Capturar de un robot» en Crear** (`create.capture_map`,
+     `GET /api/create/<serial>/maps`, `POST …/capture-map`). Lista los
+     mapas del robot sin GUID de la flota (ni de fábrica), por site, con
+     cuántas positions y zonas tienen. Capturar copia al catálogo, con
+     GUIDs de la flota, la imagen con su resolución y origen, las positions
+     (con su docking offset y la entrada de marcadores y cargadores,
+     `creada_por_mir`) y las zonas, al site elegido o a uno nuevo (por
+     defecto, con el nombre del site del robot). **Solo lee el robot.**
+     Como al adoptar una mission (decisión 116), el MiR no deja cambiar el
+     GUID, así que la copia del catálogo llega por Sincronización (también
+     a ese robot, que tendrá las dos) y se activa en su web. **Volver a
+     capturar el mismo mapa** (se reconoce por `_origen`) actualiza su copia
+     con los mismos GUIDs, numera lo nuevo y avisa de lo que ya no está en
+     el robot sin borrarlo. Una zona cuya acción usa un GUID que no es de
+     fábrica ni del catálogo (un sonido subido solo a ese robot) se salta y
+     se avisa: no se pierde el mapa por una zona. Guía: «Capturar un mapa
+     de un robot», y el paso del mapa en «Acabo de llegar». Probado con
+     mir-1 sobre una copia del catálogo en el scratchpad (solo GET): `g6`
+     entra con 2 positions y 2 zonas en un site nuevo, y recapturarlo
+     conserva los GUIDs. Tests nuevos en `test_mir_create.py`.
+
+Al probarlo el usuario (llevar `g6`, de mir-1 y su site «Suberri», a
+`suberri_mirur` con sus positions y zonas), dos ajustes: en Sincronización
+los mapas salen **por site** («Mapas de suberri_mirur»), porque en una sola
+sección «Mapas» no se veía dónde había quedado; y **marcar un mapa marca sus
+positions y zonas** (desmarcarlo las desmarca), porque lo normal es llevarlo
+entero y la clausura de un mapa solo arrastra su site. Un fallo de la
+primera versión: con mir-2 la lista daba `KeyError: 'guid'` por el mapa
+`suberri_mirur`, capturado a mano en la fase 0 sin el GUID de origen en
+`_origen`; ahora esos no cuentan como "ya capturados".
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2358,10 +2398,6 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
 
 **Mapas desde el FM** (acordado el 2026-10-29, decisión 126)
 
-- **Capturar un mapa que ya está en un robot** (primer despliegue del FM, o
-    un mapa grabado con el robot), con su site, sus positions y sus zonas,
-    al catálogo con GUIDs de la flota. Hoy solo con
-    `scripts/catalog_capture.py positions`.
 - **Copiar un mapa del catálogo** con imagen, positions y zonas (GUIDs
     nuevos de ese mapa). Primer uso: `mapa-pruebas`, copia de
     `suberri_mirur`.

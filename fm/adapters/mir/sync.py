@@ -658,6 +658,15 @@ class MirSync:
         from fm.adapters.mir.create import create_position
         return create_position(self, name, map_guid, others, type_id)
 
+    def capturable_maps(self) -> list[dict]:
+        from fm.adapters.mir.create import capturable_maps
+        return capturable_maps(self)
+
+    def capture_map(self, source: str, name: str = "", session_guid: str | None = None, new_session: str = "",
+                    others=()) -> dict:
+        from fm.adapters.mir.create import capture_map
+        return capture_map(self, source, name, session_guid, new_session, others)
+
     def create_session(self, name: str, description: str = "", others=()) -> dict:
         from fm.adapters.mir.create import create_session
         return create_session(self, name, description, others)

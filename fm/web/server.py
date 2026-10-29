@@ -99,6 +99,13 @@ class SessionIn(BaseModel):
     description: str = ""
 
 
+class CaptureMapIn(BaseModel):
+    source: str                  # GUID del mapa en el robot
+    name: str = ""               # en el catálogo; por defecto, el del robot
+    session: str = ""            # GUID de un site del catálogo...
+    new_session: str = ""        # ...o el nombre de uno nuevo
+
+
 class MapIn(BaseModel):
     name: str
     png: str                     # base64 (o data URL) del PNG en gris de 8 bits
@@ -414,6 +421,30 @@ class WebServer:
         log.info("[web] site %r creado en el catálogo (%s)", out["name"], out["guid"])
         return out
 
+    def capturable_maps(self, serial: str) -> list[dict]:
+        y = self._creator(serial)
+        try:
+            return y.capturable_maps()
+        except Exception as e:
+            raise HTTPException(502, f"{serial}: {e}")
+
+    def capture_map(self, serial: str, body: CaptureMapIn) -> dict:
+        """Capturar un mapa del robot al catálogo (decisión 132). Solo lee el
+        robot; los demás se miran para no repetir un número de mapa o site."""
+        y = self._creator(serial)
+        with self._create_lock:
+            try:
+                others = self._others_guids("", "map", "") | self._others_guids("", "session", "")
+                out = y.capture_map(body.source, body.name, body.session or None, body.new_session, others)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            except Exception as e:
+                raise HTTPException(502, f"{serial}: {e}")
+        log.info("[web] mapa %r de %s %s en el catálogo (%s: %d positions, %d zonas%s)", out["source"], serial,
+                 "actualizado" if out["updated"] else "capturado", out["guid"], out["positions"], out["zones"],
+                 f", {len(out['skipped'])} saltadas" if out["skipped"] else "")
+        return out
+
     def create_map(self, body: MapIn) -> dict:
         """Subir un mapa (decisión 126): solo escribe en el catálogo, así que no
         depende de ningún robot; sí se miran los que respondan para no repetir
@@ -611,6 +642,14 @@ class WebServer:
         @app.post("/api/create/session")
         def create_session(body: SessionIn):    # `def`: escribe en catalog/
             return self.create_session(body)
+
+        @app.get("/api/create/{serial}/maps")
+        def capturable_maps(serial: str):    # `def`: REST bloqueante
+            return {"maps": self.capturable_maps(serial)}
+
+        @app.post("/api/create/{serial}/capture-map")
+        def capture_map(serial: str, body: CaptureMapIn):
+            return self.capture_map(serial, body)
 
         @app.post("/api/create/map")
         def create_map(body: MapIn):        # `def`: escribe en catalog/

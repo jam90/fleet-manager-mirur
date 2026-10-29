@@ -137,6 +137,8 @@ class FakeMir:
                 return []
             if len(parts) == 1:
                 return list(self.db[parts[0]].values())
+            if parts[0] == "sessions" and len(parts) == 3:
+                return [m for m in self.db["maps"].values() if m.get("session_id") == parts[1]]
             if parts[0] == "maps" and len(parts) == 3:
                 return [p for p in self.db[parts[2]].values() if p["map_id"] == parts[1]]
             if parts[0] == "positions" and len(parts) == 3:

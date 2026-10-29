@@ -370,3 +370,74 @@ def test_crear_site_y_su_primer_mapa(sync, tmp_path):
     assert "la usan otros recursos del catálogo: planta baja" in sync.delete_blockers(r["guid"], {}, [])[0]
     sync.forget(m["guid"])
     assert sync.delete_blockers(r["guid"], {}, []) == []
+
+
+
+# ------------------------------------------------------- capturar un mapa
+ROBOT_SND = "fb225e1c-3d65-11f1-8021-000e8eb5b8fb"      # sonido subido solo a ese robot
+
+
+def _robot_map(sync):
+    """Un mapa hecho en la web del robot (GUIDs del MiR): una position, un
+    marcador con su entrada y dos zonas, una con un sonido que no es del catálogo."""
+    import base64
+    db = sync.client.db
+    db["sessions"]["rs"] = {"guid": "rs", "name": "planta"}
+    db["maps"]["rm"] = {"guid": "rm", "name": "taller", "session_id": "rs", "resolution": 0.05,
+                        "origin_x": -1.0, "origin_y": 2.0, "origin_theta": 0.0,
+                        "base_map": base64.b64encode(_png(20, 10)).decode()}
+    pos = {"map_id": "rm", "parent_id": None, "orientation": 0.0}
+    db["positions"]["rp"] = {**pos, "guid": "rp", "name": "Mesa", "type_id": 0, "pos_x": 1.0, "pos_y": 1.0}
+    db["positions"]["rv"] = {**pos, "guid": "rv", "name": "VL", "type_id": 11, "pos_x": 2.0, "pos_y": 1.0}
+    db["positions"]["re"] = {**pos, "guid": "re", "name": "VL", "type_id": 12, "pos_x": 3.0, "pos_y": 1.0,
+                             "parent_id": "rv"}
+    zone = {"map_id": "rm", "polygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]}
+    db["zones"]["rz"] = {**zone, "guid": "rz", "name": "Pasillo", "type_id": 206, "actions": []}
+    db["zones"]["rs1"] = {**zone, "guid": "rs1", "name": "Pitido", "type_id": 102, "actions": [
+        {"type_id": 3, "parameters": [{"name": "sound", "value": ROBOT_SND}]}]}
+
+
+def test_capturar_un_mapa_del_robot_con_positions_y_zonas(sync, tmp_path):
+    # Decisión 132: el robot no se toca; todo entra con GUIDs de la flota.
+    _robot_map(sync)
+    # Un mapa del catálogo capturado a mano de este robot, sin el GUID de
+    # origen (los de la fase 0): no debe romper la lista.
+    doc = json.loads((tmp_path / "maps" / f"{MAP}.json").read_text())
+    (tmp_path / "maps" / f"{MAP}.json").write_text(json.dumps({**doc, "_origen": {"robot": "mir-2"}}))
+    maps = sync.capturable_maps()
+    assert [(m["name"], m["site"], m["positions"], m["zones"], m["captured_as"]) for m in maps] == \
+        [("taller", "planta", 3, 2, None)]                          # el del catálogo (MAP) no sale
+    out = sync.capture_map("rm", new_session="planta")
+    assert sync.client.writes == []
+    assert (out["name"], out["site"], out["new_site"], out["positions"], out["zones"]) == ("taller", "planta", True, 3, 1)
+    assert out["meters"] == [1.0, 0.5] and "no está en el catálogo" in out["skipped"][0]
+    cat = Catalog.load(tmp_path)
+    g = out["guid"]
+    assert g == std_guid("map", 1, 2, 2) and cat.items[g]["session_id"] == std_guid("session", 1, 0, 2)
+    assert cat.map_png(g) == _png(20, 10) and cat.items[g]["origin_x"] == -1.0
+    pos = {d["_origen"]["guid"]: d for d in cat.items.values() if d.get("map_id") == g and cat.kind(d["guid"]) == "position"}
+    assert {d["guid"] for d in pos.values()} == {std_guid("position", 1, 2, n) for n in (1, 2, 3)}
+    assert pos["re"]["parent_id"] == pos["rv"]["guid"] and pos["re"]["creada_por_mir"]
+    zones = [d for d in cat.items.values() if cat.kind(d["guid"]) == "zone" and d["map_id"] == g]
+    assert [z["name"] for z in zones] == ["Pasillo"]
+    assert cat.closure([g]) == [cat.items[g]["session_id"], g]
+    assert sync.capturable_maps()[0]["captured_as"] == g
+
+
+def test_volver_a_capturar_un_mapa_conserva_sus_guids(sync, tmp_path):
+    _robot_map(sync)
+    first = sync.capture_map("rm", new_session="planta")
+    mesa = next(d["guid"] for d in Catalog.load(tmp_path).items.values() if d["name"] == "Mesa")
+    db = sync.client.db
+    db["positions"]["rp"]["pos_x"] = 5.0                     # se mueve en la web
+    del db["zones"]["rz"]                                    # y se borra una zona
+    db["positions"]["rn"] = {"guid": "rn", "name": "Nueva", "type_id": 0, "pos_x": 0, "pos_y": 0,
+                             "orientation": 0, "map_id": "rm", "parent_id": None}
+    again = sync.capture_map("rm", name="otro nombre", session_guid=SES)   # se ignoran: ya está capturado
+    assert again["guid"] == first["guid"] and again["updated"] and again["site"] == "planta"
+    assert again["gone"] == ["Pasillo"]                      # se dice; no se borra del catálogo
+    cat = Catalog.load(tmp_path)
+    assert cat.items[mesa]["pos_x"] == 5.0 and cat.items[first["guid"]]["name"] == "taller"
+    assert next(d["guid"] for d in cat.items.values() if d["name"] == "Nueva") == std_guid("position", 1, 2, 4)
+    with pytest.raises(CreateError, match="ya tiene GUID de la flota"):
+        sync.capture_map(MAP)
