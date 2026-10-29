@@ -1,4 +1,4 @@
-# AGENTS.md — Mission Manager
+# AGENTS.md — Pasarela de voz (`clientes/voz`, antes mission-manager)
 
 Pasarela voz → misiones de robot para la flota MiR250 (proyecto de robótica de Tknika).
 El usuario habla en el navegador, un servidor whisper.cpp transcribe, esta app asocia el
@@ -39,7 +39,12 @@ REST del Fleet Manager (docs/mir-ur-api.md)  POST /api/fleet/order?wait=5, consu
 | `missions.json` | Tabla de misiones: `actionType` + `words` de disparo; las entradas con `"instant": "cancelOrder"` son órdenes de parada. Se relee en cada petición; montada en solo lectura en el contenedor |
 | `tests/test_logic.py` | pytest del análisis de activación / orden / confirmación / parada |
 | `tests/test_voice_log.py` | pytest del registro de voz |
-| `docs/mir-ur-api.md` | Referencia de la API REST del Fleet Manager |
+| `docs/mir-ur-api.md` | Enlace a la API REST del FM (`../../docs/api-rest.md`) |
+| `app/interprete.py` | **Experimental, no se usa en `main.py`**: comparador fonético + LLM con vetos, construido desde `missions.json` y `vocab.json` |
+| `vocab.json` | Objetos y zonas (provisionales) para el intérprete y el prompt |
+| `eval/` | Benchmarks (`bench_correction`, `bench_extraction`, `bench_audio`), casos (`eval/cases/`) y generador de audio (`make_audio`); `uv sync --extra eval`, se ejecutan con `uv run python -m eval.<script>` |
+| `docs/PROPUESTA_DETECCION_VOZ.md` | Cómo funciona y cómo reproducirlo, con las cifras medidas |
+| `docs/decisor.md` | Diagrama del intérprete experimental |
 | `TODOS.md` | Mejoras pendientes |
 
 ## Configuración (`.env`, plantilla en `.env.example`)
@@ -59,6 +64,10 @@ docker compose up -d --build --force-recreate app   # desplegar cambios de códi
 docker compose up -d --force-recreate app      # aplicar solo cambios de .env
 docker compose logs -f app                     # transcripciones, orders, errores
 ```
+
+Desde la raíz del repo, con el FM: `docker compose --profile sim --profile voz up --build fleet-sim voz`
+(servicio `voz`, contenedor `fm-voz`). Los modelos se sirven desde el repo `inferencia`
+(whisper en el host `:8080`, LLM en `:8001`).
 
 `whisper-check` (compose) espera a `WHISPER_HEALTH_URL`; si whisper está caído la app no arranca.
 

@@ -15,10 +15,15 @@
 #              red a las IPs de los MiR.
 #   fleet-sim  FM simulado sin hardware (config/fleet-sim.yaml). Solo con
 #              perfil `sim`: no arranca con `up` a secas.
+#   voz        Pasarela de voz (clientes/voz): navegador → whisper → order al
+#              FM por REST, como cualquier otro cliente. Solo con perfil `voz`.
+#              Whisper no va aquí: se sirve desde el repo `inferencia` (host
+#              :8080); `voz-whisper-check` espera a que responda.
 #
 # Uso:
 #   docker compose up --build                    # mosquitto + robots reales + web :8050
 #   docker compose --profile sim up --build fleet-sim   # demo sin robots, web :8051
+#   docker compose --profile sim --profile voz up --build fleet-sim voz   # demo + voz :8000
 #   docker compose run --rm fleet python run_fm.py --robot mir-1  # un solo robot
 #   mosquitto_sub -t 'vda5050/#' -v              # ver el tráfico desde el host
 #
@@ -96,6 +101,55 @@ services:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 15s
+
+  # Espera a que el whisper externo (repo inferencia, en el host) responda.
+  voz-whisper-check:
+    image: curlimages/curl:latest
+    profiles:
+      - voz
+    environment:
+      WHISPER_HEALTH_URL: ${WHISPER_HEALTH_URL:-http://host.docker.internal:8080/health}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Esperando a whisper en $$WHISPER_HEALTH_URL"
+        for i in $$(seq 1 60); do
+          if curl -fsS "$$WHISPER_HEALTH_URL" > /dev/null; then
+            echo "whisper responde"; exit 0
+          fi
+          echo "intento $$i: aún no"; sleep 2
+        done
+        echo "whisper no responde"; exit 1
+
+  voz:
+    build: ./clientes/voz
+    container_name: fm-voz
+    profiles:
+      - voz   # no arranca con `docker compose up` a secas
+    env_file:
+      - path: clientes/voz/.env   # opcional: sin él valen los valores por defecto de abajo
+        required: false
+    environment:
+      # Dentro de compose el FM se alcanza por nombre de servicio (ganan a clientes/voz/.env).
+      FM_URL: http://fleet:8050
+      FM_SIM_URL: http://fleet-sim:8050
+      WHISPER_URL: ${WHISPER_URL:-http://host.docker.internal:8080/inference}
+      WHISPER_HEALTH_URL: ${WHISPER_HEALTH_URL:-http://host.docker.internal:8080/health}
+    # Usuario del host: los archivos de clientes/voz/logs no quedan de root.
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${VOZ_PORT:-8000}:8000"   # el micro del navegador exige localhost o HTTPS
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./clientes/voz/missions.json:/app/missions.json:ro
+      - ./clientes/voz/logs:/app/logs   # registro de voz: grabaciones, fuera de git
+    depends_on:
+      voz-whisper-check:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   mosquitto-data:
