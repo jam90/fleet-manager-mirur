@@ -2498,7 +2498,22 @@ sin número: subir un mapa, crear un site, site de la flota, missions
 atadas a su mapa, capturar un mapa de un robot y retirar mapas
 (decisiones 126–133). Y #34 (crear grupos de missions, decisión 134).
 
-**En curso / siguiente** (al cerrar el 2026-10-29)
+**En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
+
+1. **2026-10-30: pruebas con robot.** La vuelta a la espera (#35) y el
+   bloque «Probar con robot» de abajo. Antes, reiniciar el FM real (coge
+   la retirada de mapas, los grupos, los datos en `mirur-instalacion` y
+   la vuelta a la espera) y quitar el Error de mir-2 (ver «Estado al
+   cerrar»).
+2. **Pestaña Robot:** #24, #26 y #27 (abajo, en su bloque).
+3. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
+   sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
+   publicando telemetría. Falta decidir qué pasa con las orders dirigidas
+   a ese robot, la auto-carga, la vuelta a la espera y una order en curso
+   (entrar en mantenimiento no debe abortarla).
+
+Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
+las del FM son placeholders y no hay tiempos que medir.
 
 - **Estado al cerrar:** el FM real hay que reiniciarlo para que coja la
     retirada de mapas (decisión 133). Los dos robots están en el mapa
