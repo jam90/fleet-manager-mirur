@@ -18,7 +18,7 @@ FastAPI (app/main.py) ──► whisper.cpp  POST /inference (language=es, promp
 Máquina de estados del navegador (manos libres):
   escuchando ─"tonto"→ ARMADO (8 s) ─orden→ confirmar (10 s) ─"adelante"→ enviar
   escuchando ─"tonto, coge la caja"→ confirmar ─"adelante"→ enviar
-  "tonto, para" → cancela al momento la última order (sin confirmación)
+  "tonto, para" → cancela al momento la última order (sin confirmación; en la cola del FM o en su robot)
   sin palabra de activación → se ignora · orden desconocida → "no entendido"
         │  POST /api/missions/{mission}?fleet=sim|real
         ▼
@@ -33,11 +33,12 @@ REST del Fleet Manager (docs/mir-ur-api.md)  POST /api/fleet/order?wait=5, consu
 | `app/logic.py` | `normalize`, `levenshtein`, `is_word` (activación/confirmación, distancia de edición ≤ 1 + variantes), `load_missions`, `match_mission`, `decide` |
 | `app/whisper_client.py` | `transcribe()` → `/inference` de whisper; `is_healthy()` |
 | `app/voice_log.py` | `save_audio`, `log_event`: cada frase (`voice`), order enviada (`order`) y cancelación (`cancel`) → `logs/voice.jsonl` + `logs/audio/` |
-| `app/fm_client.py` | `send_order`, `get_order`, `instant_action` (todas reciben la `base_url` del FM) |
+| `app/fm_client.py` | `send_order`, `get_order`, `cancel_order` (`POST /api/orders/{id}/cancel` del FM: cola o robot), `instant_action` (todas reciben la `base_url` del FM) |
 | `app/config.py` | pydantic-settings desde `.env`; `settings.fleet_url("sim"|"real")` |
 | `app/static/index.html` | Toda la UI + máquina de estados de manos libres, VAD, codificador WAV, medidores, logs de depuración `[MM]` |
 | `missions.json` | Tabla de misiones: `actionType` + `words` de disparo; las entradas con `"instant": "cancelOrder"` son órdenes de parada. Se relee en cada petición; montada en solo lectura en el contenedor |
 | `tests/test_logic.py` | pytest del análisis de activación / orden / confirmación / parada |
+| `tests/test_cancel.py` | "parar": la ruta de cancelar delega en el FM y le pasa sus errores |
 | `tests/test_voice_log.py` | pytest del registro de voz |
 | `docs/mir-ur-api.md` | Enlace a la API REST del FM (`../../docs/api-rest.md`) |
 | `app/interprete.py` | **Experimental, no se usa en `main.py`**: comparador fonético + LLM con vetos, construido desde `missions.json` y `vocab.json` |

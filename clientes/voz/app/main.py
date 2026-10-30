@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.fm_client import FMError, get_order, instant_action, send_order
+from app.fm_client import FMError, cancel_order as fm_cancel_order, get_order, send_order
 from app.logic import decide, load_missions
 from app.voice_log import log_event, new_id, save_audio
 from app.whisper_client import WhisperError, is_healthy, transcribe
@@ -71,17 +71,16 @@ async def order_status(order_id: str, fleet: Fleet = "sim"):
 
 @app.post("/api/orders/{order_id}/cancel")
 async def cancel_order(order_id: str, fleet: Fleet = "sim"):
-    base_url = settings.fleet_url(fleet)
+    # El FM cancela la order esté donde esté: en su cola (aún sin robot) o en curso.
     try:
-        order = await get_order(base_url, order_id)
-        if not order.get("serial"):
-            raise HTTPException(status_code=409, detail=f"la order {order_id} no tiene robot asignado")
-        result = await instant_action(base_url, order["serial"], "cancelOrder")
+        order = await fm_cancel_order(settings.fleet_url(fleet), order_id)
     except FMError as exc:
+        log_event("cancel", fleet=fleet, orderId=order_id, error=str(exc.detail))
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    logger.info("fleet=%s cancel order=%s robot=%s", fleet, order_id, order["serial"])
-    log_event("cancel", fleet=fleet, orderId=order_id, serial=order["serial"])
-    return {"orderId": order_id, "serial": order["serial"], **result}
+    logger.info("fleet=%s cancel order=%s robot=%s status=%s", fleet, order_id, order.get("serial"),
+                order.get("status"))
+    log_event("cancel", fleet=fleet, orderId=order_id, serial=order.get("serial"), status=order.get("status"))
+    return order
 
 
 @app.get("/api/config")

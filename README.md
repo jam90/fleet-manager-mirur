@@ -17,7 +17,9 @@ en [`CLAUDE.md`](CLAUDE.md).
    cada uno bajo el `manufacturer` de su marca.
 2. Acepta `order` dirigida a un robot (`<serial>/order`) o a la flota
    (`fleet/order`, extensión propia). En el segundo caso elige robot: no ocupado
-   y con batería ≥ `battery_min`; entre varios, el de más batería.
+   y con batería ≥ `battery_min`; entre varios, el de más batería. Si están
+   todos ocupados, la order espera en la **cola del FM** y va al primero que
+   quede libre, por orden de llegada.
 3. Traduce cada `actionType` (con sus `actionParameters`) a un trabajo del
    robot a través de su driver — en MiR, una **mission ya creada en la web**
    con sus inputs — y sigue su progreso en `state.actionStates[]`.
@@ -60,6 +62,7 @@ mandan sobre `.env`. Ejemplo:
 mqtt: { fleet_manufacturer: imperial_fleet }   # segmento <manufacturer> de fleet/*
 auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo pone el driver
 site: imperialfleet-session000-01-0000-001   # opcional: solo trabajan los robots de este site
+queue: { max_size: 50, max_wait_s: 600 }      # opcional: cola de fleet/order (ver Contrato MQTT)
 drivers:                            # defaults por marca (cualquier robot los puede pisar)
   mir:
     mission_group: "mirur-tknika"   # solo se indexan las missions de este grupo
@@ -207,6 +210,8 @@ el nombre de flota `mqtt.fleet_manufacturer` (`imperial_fleet`).
 | `vda5050/v3/MiR/<serial>/factsheet` | FM → bus, al arrancar y en `factsheetRequest` | 0 | sí |
 | `vda5050/v3/imperial_fleet/fleet/order` | bus → FM | 1 | no |
 | `vda5050/v3/imperial_fleet/fleet/order_response` | FM → bus | 1 | no |
+| `vda5050/v3/imperial_fleet/fleet/queue` | FM → bus, cuando cambia la cola | 1 | sí |
+| `vda5050/v3/imperial_fleet/fleet/instantActions` | bus → FM (solo `cancelOrder`) | 1 | no |
 
 El FM se suscribe a `vda5050/v3/+/+/order` e `instantActions` e ignora (log
 DEBUG) cualquier `(manufacturer, serialNumber)` que no sea un robot
@@ -267,13 +272,35 @@ conservan como mucho los 10 últimos distintos.
 ```json
 { "headerId": 4, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-43912315", "orderUpdateId": 0,
-  "status": "REJECTED", "errorType": "NO_MOBILE_ROBOT_AVAILABLE",
-  "errorDescription": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" }
+  "status": "REJECTED", "errorType": "NO_ROUTE_TO_TARGET",
+  "errorDescription": "ningún robot puede atender la order: mir-1: la mission 'coger' no existe en el robot; mir-2: no soporta 'coger'" }
 ```
 
-`order_response` es el ACK inmediato del asignador. Los fallos posteriores de
-ejecución (mission `Aborted`) van a `state.errors[]` del robot como
-`ORDER_EXECUTION_FAILED`. Una `fleet/order` repetida se ignora sin respuesta.
+`order_response` es el ACK del asignador. Con la cola, una misma order puede
+recibir varios: `QUEUED` al llegar y `ASSIGNED` cuando un robot queda libre.
+
+| `status` | Cuándo | Campos extra |
+|---|---|---|
+| `ASSIGNED` | lanzada en un robot (al llegar o al salir de la cola) | `assignedSerial`, `description` |
+| `QUEUED` | al llegar, si no hay robot libre | `queuePosition`, `description` (por qué espera) |
+| `REJECTED` | no se acepta: inválida, ningún robot de la flota puede hacerla, cola llena (`QUEUE_FULL`) | `errorType`, `errorDescription` |
+| `FAILED` | estaba en la cola y el robot no la aceptó al lanzarla | `errorType`, `errorDescription` |
+| `CANCELLED` | cancelada con `fleet/instantActions` | `description` |
+| `EXPIRED` | más de `queue.max_wait_s` esperando robot | `description` |
+| `CANCEL_FAILED` | `cancelOrder` de algo que no está en la cola ni en curso | `errorType`, `errorDescription` |
+
+```json
+{ "headerId": 5, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
+  "orderId": "fleet-77a1c2e0", "orderUpdateId": 0, "status": "QUEUED", "queuePosition": 1,
+  "description": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" }
+```
+
+Los fallos posteriores de ejecución (mission `Aborted`) van a
+`state.errors[]` del robot como `ORDER_EXECUTION_FAILED`. Una `fleet/order`
+repetida (mismo `orderId` y `orderUpdateId`) que está en la cola, en curso o
+terminada bien se ignora sin respuesta; si terminó `FAILED`, `CANCELLED` o
+`EXPIRED`, se acepta otra vez. Un `orderUpdateId` mayor de una que espera la
+sustituye en su mismo puesto (`QUEUED` otra vez); de una en curso, `REJECTED`.
 
 Si el robot elegido no puede traducir la order a una mission suya (le falta
 la mission o la position, o no tiene cargados los índices), se prueba el
@@ -284,12 +311,47 @@ prueba otro robot: un `VALIDATION_FAILURE` (la order está mal y ningún robot
 la aceptaría) y un fallo al encolar la mission en el robot (tras un timeout el
 MiR pudo encolarla igual, y acabarían dos robots con la misma order).
 
-**Todos los robots ocupados → `REJECTED NO_MOBILE_ROBOT_AVAILABLE` y el FM
-olvida la order.** No hay cola interna ni reintentos: el sistema aguas arriba
-recibe el rechazo y decide cuándo reenviar (puede vigilar `+/state` y esperar
-a un robot sin `actionStates` en `WAITING`/`RUNNING`). Un reenvío con el mismo
-`orderId` se acepta con normalidad si ya hay robot libre: la idempotencia solo
-ignora repeticiones de la última order **aceptada**.
+### Cola de `fleet/order`
+
+**Todos los robots ocupados → `QUEUED`.** La order espera en el FM y, en
+cuanto un robot queda libre, va a él (`ASSIGNED`): así el trabajo lo hace el
+robot que termina antes. Las tareas salen por orden de llegada, pero una que
+espera a un robot concreto no bloquea a las de detrás, y una order nueva no
+se cuela delante de las que esperan. Cada robot sigue teniendo como mucho una
+mission del FM: la cola es del FM, no del robot. Se rechaza al llegar lo que
+no podrá hacerse nunca (ningún robot tiene la action o puede traducirla);
+eso no se encola. Si al salir de la cola el robot no acepta la mission, la
+tarea termina `FAILED` y no se prueba en otro robot (mismo motivo que arriba).
+
+Límites en `fleet.yaml` (bloque `queue`, opcional): `max_size` (50 por
+defecto; la siguiente se rechaza con `QUEUE_FULL`) y `max_wait_s` (vacío =
+espera lo que haga falta; con segundos, la que se pasa sale `EXPIRED`).
+
+`fleet/queue` (retenido) lleva las tareas que esperan, en orden. Se publica
+cada vez que cambia, y al arrancar el FM aunque esté vacía:
+
+```json
+{ "headerId": 3, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
+  "tasks": [ { "orderId": "fleet-77a1c2e0", "orderUpdateId": 0, "actionType": "coger",
+               "receivedAt": "2026-10-30T11:01:21.918Z",
+               "waiting": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" } ] }
+```
+
+Para cancelar una order de la cola (o en curso), `fleet/instantActions` con
+`cancelOrder` y el parámetro `orderId` (por HTTP, `POST
+/api/orders/<orderId>/cancel`). En curso es el `cancelOrder` del
+robot. La respuesta llega por `order_response` (`CANCELLED` o
+`CANCEL_FAILED`):
+
+```json
+{ "headerId": 1, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
+  "actions": [ { "actionType": "cancelOrder", "actionId": "c-1", "blockingType": "HARD",
+                 "actionParameters": [ { "key": "orderId", "value": "fleet-77a1c2e0" } ] } ] }
+```
+
+**La cola vive en RAM**: si el FM se reinicia, las orders que esperaban se
+pierden (el `fleet/queue` vacío del arranque lo dice). Pasará a SQLite
+(`docs/plan-cola.md`, fase 2).
 
 ### `state` (resumen del mapeo)
 
@@ -317,7 +379,8 @@ Predefinidos v3: `VALIDATION_FAILURE`, `INVALID_ORDER_ACTION`,
 `ORDER_EXECUTION_FAILED` (mission Aborted/Cancelled), `MIR_<code>` (errores
 del MiR), `ROBOT_UNREACHABLE`, `ORDER_DURATION_EXCEEDED` (WARNING: la order
 supera el `expected_s` de su action), `ROBOT_OUTSIDE_SITE` (WARNING: el mapa
-activo del robot es de otro site que el de la flota; no recibe orders).
+activo del robot es de otro site que el de la flota; no recibe orders),
+`QUEUE_FULL` (la cola de `fleet/order` está llena).
 
 ## Scripts (`scripts/`)
 
@@ -330,7 +393,7 @@ header con la misma función que el servicio.
 | `list_missions.py <serial> [--all]` | missions del grupo (con `input_name`s de las de `fleet.yaml`) y positions |
 | `run_mission.py <serial> <mission> [k=v…]` | encola una mission por REST y la sigue hasta terminar (**mueve el robot**) |
 | `send_order.py <serial> <actionType> [k=v…]` | publica `<serial>/order` y muestra el `state` resultante |
-| `send_fleet_order.py <actionType> [k=v…]` | publica `fleet/order` y espera `order_response` |
+| `send_fleet_order.py <actionType> [k=v…]` | publica `fleet/order` y espera `order_response`; si queda `QUEUED`, sigue esperando a `ASSIGNED` (`--wait`, 120 s) |
 | `send_instant_action.py <serial> <actionType>…` | publica `instantActions` y muestra `instantActionStates` (**`stopPause` mueve el robot**) |
 | `read_vda_state.py [serial]` | resume `state`/`connection` por línea y valida contra el schema |
 | `mission_durations.py <serial> [--last N]` | solo lectura: duración real de cada action en la historia del robot y `expected_s` propuesto |
@@ -373,7 +436,8 @@ docker compose --profile sim --profile voz up --build fleet-sim voz   # flota si
 1. `mosquitto_sub -t 'vda5050/v3/MiR/+/state' -v` → un mensaje/robot/s, `headerId` creciente.
 2. Cliente nuevo en `+/connection` recibe `ONLINE` retained al instante.
 3. `send_fleet_order.py coger` → `ASSIGNED` + mission en la cola del MiR elegido. ✔
-4. Con ambos ocupados → `REJECTED NO_MOBILE_ROBOT_AVAILABLE` con detalle. ✔
+4. Con ambos ocupados → `QUEUED` con detalle; al terminar uno, `ASSIGNED` a ese
+   (probado con la flota simulada). ✔
 5. Repetir la misma order → ignorada. ✔
 6. Header con `manufacturer`/`serialNumber` ≠ topic → `REJECTED VALIDATION_FAILURE`.
 7. `kill -9` al FM → `CONNECTION_BROKEN` retained en cada `connection`. ✔
@@ -529,10 +593,14 @@ lista para usar en `scripts/api.http`.
 | `POST` | `/api/robots/<serial>/order?wait=N` | igual, pero `<serial>/order` (sin asignador) |
 | `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest` |
 | `GET` | `/api/orders?limit=` · `/api/orders/<orderId>` | seguimiento de orders (últimas 200, en RAM) |
+| `POST` | `/api/orders/<orderId>/cancel?wait=N` | cancela una fleet order, en la cola o en curso (200 `CANCELLED`, 409 si no se puede) |
+| `GET` | `/api/queue` | fleet orders esperando robot, en orden (lo de `fleet/queue`) |
 
 `status` de una order: `PENDING` (enviada, sin veredicto) → `ASSIGNED`
 (fleet) / `ACCEPTED` (dirigida) → `RUNNING` → `FINISHED` | `FAILED`; o
-`REJECTED` con `errorType` y `description`. Con `?wait=N` (máx. 30 s) el POST
+`REJECTED` con `errorType` y `description`. Una fleet order con todos los
+robots ocupados pasa antes por `QUEUED` (con `queuePosition`) y puede
+acabar `CANCELLED` o `EXPIRED` sin ejecutarse. Con `?wait=N` (máx. 30 s) el POST
 espera al veredicto y devuelve el seguimiento (200); si no llega a tiempo,
 202 con `PENDING` y se consulta después `GET /api/orders/<orderId>`. Sin
 `wait` responde al momento con `PENDING`. `orderId` es opcional: si el
@@ -620,8 +688,9 @@ robots:
 - Sin navegación por grafo `nodes`/`edges`: el MiR navega con sus missions; la
   order es un nodo lógico con una action.
 - `fleet/order` y `order_response` son extensión propia fuera del estándar.
-- Sin cola interna: si ningún robot puede, se rechaza y el sistema aguas
-  arriba reencola. Sin coordinación de tráfico entre robots.
+- La cola de `fleet/order` vive en RAM: si el FM se reinicia, las orders que
+  esperaban se pierden (pasará a SQLite, `docs/plan-cola.md`). Sin
+  coordinación de tráfico entre robots.
 - `safetyState.fieldViolation` siempre `false` (el MiR no lo expone).
 - `operatingMode`: con la llave en neutra se publica `INTERVENED`, pero el FM
   **rechaza orders** (la norma las permite en ese modo). Y en `MANUAL` la
@@ -639,7 +708,8 @@ fm/reload.py            aplicar una config nueva en caliente, entre ticks
 fm/robot.py             runtime por robot: driver + OrderTracker + última Telemetry
 fm/orders.py            OrderTracker: ciclo orderUpdateId + seguimiento del job (vía driver)
 fm/assigner.py          assign(): función pura
-fm/fleet.py             Dispatcher: <serial>/order, fleet/order → order_response
+fm/fleet.py             Dispatcher: <serial>/order, fleet/order (con cola) → order_response, fleet/queue
+fm/tasks.py             tareas de la cola de fleet/order y su almacén (TaskStore; en RAM)
 fm/mqtt_bus.py          paho: publish, LWT por robot, inbox (cola) de entrantes
 fm/adapters/base.py     frontera core ↔ marca: Telemetry, Job, RobotDriver (Protocol)
 fm/adapters/mir/        driver MiR250: client.py (REST), translate.py (puro), driver.py, config.py

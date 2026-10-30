@@ -177,6 +177,9 @@ def main(argv=None) -> int:
             reloader.apply_pending()
             dispatcher.drain()
             poll_all(grace)
+            # Con la telemetría recién leída: la cola de fleet/order se da a
+            # los robots que acaban de quedar libres (decisión 154).
+            dispatcher.tick()
             for r in robots.values():
                 tick_robot(r, bus)
             # Dormir lo que falte del periodo, en trozos cortos para reaccionar a señales.

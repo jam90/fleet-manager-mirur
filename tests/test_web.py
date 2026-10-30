@@ -566,6 +566,29 @@ def test_seguimiento_de_una_fleet_order():
     assert c.get("/api/orders/nada").status_code == 404
 
 
+def test_seguimiento_de_una_fleet_order_en_cola():
+    # Cola del FM (decisión 154): QUEUED no es un rechazo, y un CANCEL_FAILED
+    # no toca una order que sigue en marcha.
+    srv, bus = _server()
+    c = TestClient(srv.app)
+    srv.mirror(RESP, _verdict("mes-3", "QUEUED", queuePosition=2, description="sim-1: ocupado"))
+    o = c.get("/api/orders/mes-3").json()
+    assert o["status"] == "QUEUED" and o["queuePosition"] == 2 and o["description"] == "sim-1: ocupado"
+    srv.mirror(RESP, _verdict("mes-3", assignedSerial="sim-1"))
+    o = c.get("/api/orders/mes-3").json()
+    assert o["status"] == "ASSIGNED" and "queuePosition" not in o
+    srv.mirror(RESP, _verdict("mes-3", "CANCEL_FAILED", errorType="NO_ORDER_TO_CANCEL"))
+    assert c.get("/api/orders/mes-3").json()["status"] == "ASSIGNED"
+
+    for status in ("CANCELLED", "EXPIRED"):
+        srv.mirror(RESP, _verdict("mes-4", "QUEUED", queuePosition=1))
+        srv.mirror(RESP, _verdict("mes-4", status, description="fuera de la cola"))
+        assert c.get("/api/orders/mes-4").json()["status"] == status
+    srv.mirror(RESP, _verdict("mes-5", "FAILED", errorType="ROBOT_UNREACHABLE", errorDescription="sin red"))
+    o = c.get("/api/orders/mes-5").json()
+    assert o["status"] == "FAILED" and o["errorType"] == "ROBOT_UNREACHABLE"
+
+
 def test_order_dirigida():
     srv, bus = _server()
     c = TestClient(srv.app)
@@ -606,3 +629,64 @@ def test_wait_devuelve_el_veredicto_o_202():
     r = c.post("/api/fleet/order?wait=0.1", json={"actionType": "coger"})
     assert r.status_code == 202 and r.json()["status"] == "PENDING"
     assert c.post("/api/fleet/order?wait=99", json={"actionType": "coger"}).status_code == 422
+
+
+# ------------------------------------------- cola de fleet/order (decisión 156)
+def test_cancelar_una_fleet_order_desde_la_api():
+    srv, bus = _server()
+    c = TestClient(srv.app)
+    assert c.post("/api/orders/nada/cancel").status_code == 404
+    srv.mirror(RESP, _verdict("q-1", "QUEUED", queuePosition=1))
+    publish = bus.publish
+    answer = {}
+
+    def publish_and_answer(serial, subtopic, body, retain=False):
+        # El "Dispatcher" de mentira contesta al cancelOrder de la flota.
+        out = publish(serial, subtopic, body, retain)
+        if subtopic == "instantActions" and serial == "fleet":
+            oid = body["actions"][0]["actionParameters"][0]["value"]
+            threading.Thread(target=srv.mirror, args=(RESP, _verdict(oid, **answer))).start()
+        return out
+
+    bus.publish = publish_and_answer
+    answer.update(status="CANCEL_FAILED", errorType="NO_ORDER_TO_CANCEL", errorDescription="no está")
+    r = c.post("/api/orders/q-1/cancel?wait=2")
+    assert r.status_code == 409 and "no está" in r.json()["detail"]
+    t, msg = bus.published[-1]
+    assert t == "vda5050/v3/imperial_fleet/fleet/instantActions"
+    assert msg["actions"][0]["actionType"] == "cancelOrder"
+    assert c.get("/api/orders/q-1").json()["status"] == "QUEUED"     # un fallo no la toca
+
+    answer.update(status="CANCELLED", description="cancelada por cancelOrder")
+    r = c.post("/api/orders/q-1/cancel?wait=2")
+    assert r.status_code == 200 and r.json()["status"] == "CANCELLED"
+    assert c.post("/api/orders/q-1/cancel").status_code == 409             # ya terminó
+
+    bus.publish = publish                                                # nadie contesta
+    srv.mirror(RESP, _verdict("q-2", "QUEUED", queuePosition=1))
+    assert c.post("/api/orders/q-2/cancel?wait=0.1").status_code == 202
+    assert c.post("/api/orders/q-2/cancel").status_code == 202
+
+    srv.send_robot_order("sim-1", "coger", {}, "d-9")                      # dirigida: por su robot
+    assert "instant" in c.post("/api/orders/d-9/cancel").json()["detail"]
+
+
+def test_cancelada_en_curso_no_pasa_a_failed():
+    # El cancelOrder del robot deja la action FAILED en su state; la order
+    # cancelada desde la flota tiene que seguir CANCELLED.
+    srv, bus = _server()
+    c = TestClient(srv.app)
+    srv.mirror(RESP, _verdict("q-3", assignedSerial="sim-1"))
+    srv.mirror(RESP, _verdict("q-3", "CANCELLED", description="cancelada"))
+    srv.mirror(ST, _state("q-3", [{"actionId": "a", "actionType": "coger", "actionStatus": "FAILED"}]))
+    assert c.get("/api/orders/q-3").json()["status"] == "CANCELLED"
+
+
+def test_cola_desde_el_espejo():
+    srv, bus = _server()
+    c = TestClient(srv.app)
+    assert c.get("/api/queue").status_code == 503
+    tasks = [{"orderId": "q-1", "orderUpdateId": 0, "actionType": "coger",
+              "receivedAt": "2026-10-30T11:01:21.918Z", "waiting": "sim-1: ocupado"}]
+    srv.mirror("vda5050/v3/imperial_fleet/fleet/queue", {"tasks": tasks})
+    assert c.get("/api/queue").json() == tasks

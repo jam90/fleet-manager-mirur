@@ -7,7 +7,7 @@
 #
 # El core del FM solo lee las claves genéricas: `driver`, `manufacturer`,
 # `battery_min` y la lista `actions` de cada robot, más `auto_charge`,
-# `assigner`, `mqtt`, `site` (el site de la flota, que se elige en la
+# `assigner`, `queue`, `mqtt`, `site` (el site de la flota, que se elige en la
 # cabecera de la web) y los nombres del catálogo `actions:`. Cada definición
 # del catálogo la interpreta el driver del robot que la habilita. El resto
 # del bloque de cada robot lo interpreta su driver
@@ -27,6 +27,13 @@ auto_charge:
 
 assigner:
   prefer_not_charging: true    # si hay otro robot libre, no sacar al que carga
+
+# Cola de fleet/order: si todos los robots están ocupados, la order espera y
+# va al primero que quede libre, por orden de llegada. Opcional; estos son
+# los valores por defecto.
+queue:
+  max_size: 50                 # con tantas esperando, la siguiente se rechaza (QUEUE_FULL)
+  max_wait_s:                  # vacío = espera lo que haga falta; con segundos, sale EXPIRED
 
 # Defaults por marca. Cualquier clave se puede sobreescribir en el robot.
 drivers:

@@ -33,6 +33,7 @@ E_ORDER_EXECUTION_FAILED = "ORDER_EXECUTION_FAILED"           # propio: mission 
 E_ORDER_DURATION_EXCEEDED = "ORDER_DURATION_EXCEEDED"         # propio: la order supera el expected_s de su action
 E_ROBOT_UNREACHABLE = "ROBOT_UNREACHABLE"                     # propio: el driver no alcanza al robot
 E_ROBOT_OUTSIDE_SITE = "ROBOT_OUTSIDE_SITE"                   # propio: su mapa activo es de otro site
+E_QUEUE_FULL = "QUEUE_FULL"                                   # propio: la cola de fleet/order está llena
 
 # infoType propios (decisión 110). La norma no fija ninguno: `information[]`
 # es "solo para visualización o depuración" y la pestaña Robot los pinta.

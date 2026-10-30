@@ -21,6 +21,9 @@ robot lleva un rato parado (ir a la zona de espera). Se define para la flota
 y cada robot puede usar otra o desactivarla; la action tiene que estar
 habilitada en el robot, porque la traduce su driver como la de una order.
 Con `zone` (decisión 138) solo se manda a un robot que esté fuera de esa zona.
+
+`queue` (decisión 156): límites de la cola de `fleet/order` (`fm/tasks.py`):
+cuántas tareas pueden esperar y cuánto tiempo como mucho.
 """
 from __future__ import annotations
 
@@ -89,6 +92,16 @@ class AutoChargeConfig:
 
 
 @dataclass
+class QueueConfig:
+    """Cola de `fleet/order` (decisión 156). Con `max_size` tareas esperando,
+    la siguiente se rechaza: si la cola se llena, algo va mal aguas arriba y
+    es mejor que se note. `max_wait_s` = None: una tarea espera lo que haga
+    falta; con un número, al pasar ese tiempo sin robot sale como EXPIRED."""
+    max_size: int = 50
+    max_wait_s: float | None = None
+
+
+@dataclass
 class MqttConfig:
     host: str = "localhost"
     port: int = 1883
@@ -107,6 +120,7 @@ class FleetConfig:
     actions: dict[str, dict] = field(default_factory=dict)   # catálogo `actions:`, tal cual (lo valida el driver)
     prefer_not_charging: bool = True
     idle_return: IdleReturnConfig = field(default_factory=IdleReturnConfig)   # la de la flota (bloque raíz)
+    queue: QueueConfig = field(default_factory=QueueConfig)
     # Site de la flota (decisión 129): solo trabajan los robots cuyo mapa
     # activo es de este site. None = sin comprobar (como antes).
     site: str | None = None
@@ -199,6 +213,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         actions=catalog,
         prefer_not_charging=bool((raw.get("assigner") or {}).get("prefer_not_charging", True)),
         idle_return=fleet_idle,
+        queue=_queue(raw.get("queue")),
         site=_site(raw.get("site")),
     )
 
@@ -212,6 +227,26 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
 
 
 IDLE_KEYS = {"action", "after_s", "params", "zone"}
+QUEUE_KEYS = {"max_size", "max_wait_s"}
+
+
+def _queue(raw) -> QueueConfig:
+    """Bloque `queue:` de la raíz; lo que no dice, por defecto."""
+    if raw is None:
+        return QueueConfig()
+    if not isinstance(raw, dict):
+        raise ConfigError("queue: se espera {max_size: ..., max_wait_s: ...}")
+    unknown = set(raw) - QUEUE_KEYS
+    if unknown:
+        raise ConfigError(f"queue: claves desconocidas {sorted(unknown)} (valen {sorted(QUEUE_KEYS)})")
+    size = raw.get("max_size", QueueConfig.max_size)
+    if isinstance(size, bool) or not isinstance(size, int) or size < 1:
+        raise ConfigError("queue.max_size: cuántas tareas pueden esperar (un entero, 1 o más)")
+    wait = raw.get("max_wait_s")
+    if wait is not None and (isinstance(wait, bool) or not isinstance(wait, (int, float)) or not wait > 0):
+        raise ConfigError("queue.max_wait_s: segundos que una tarea puede esperar robot "
+                          "(un número mayor que 0), o nada para esperar siempre")
+    return QueueConfig(size, float(wait) if wait is not None else None)
 
 
 def _idle_return(where: str, raw, base: IdleReturnConfig) -> IdleReturnConfig:

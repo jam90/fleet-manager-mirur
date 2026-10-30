@@ -50,6 +50,12 @@ class FakeDriver:
         return "RUNNING"
 
 
+def last_response(bus, with_topic=False):
+    """Último `order_response` (desde la cola también se publica `fleet/queue`)."""
+    t, resp = next((t, p) for t, p in reversed(bus.published) if t.endswith("/order_response"))
+    return (t, resp) if with_topic else resp
+
+
 def _order(man, serial, action="coger", order_id="o1"):
     return json.dumps({**make_header(HeaderCounter(), man, serial, "order"),
                        "orderId": order_id, "orderUpdateId": 0, "edges": [],
@@ -87,7 +93,7 @@ def test_suscripcion_generica_y_filtro_por_manufacturer():
 def test_fleet_order_bajo_nombre_de_flota():
     disp, robots, bus, states = _setup()
     disp.handle(topic(FLEET_MAN, "fleet", "order"), _order(FLEET_MAN, "fleet"))
-    t, resp = bus.published[-1]
+    t, resp = last_response(bus, with_topic=True)
     assert t == f"vda5050/v3/{FLEET_MAN}/fleet/order_response"
     assert resp["manufacturer"] == FLEET_MAN and resp["serialNumber"] == "fleet"
     assert resp["status"] == "ASSIGNED" and resp["assignedSerial"] in robots
@@ -100,7 +106,7 @@ def test_fleet_order_bajo_nombre_de_flota():
 def test_header_distinto_del_topic_se_rechaza():
     disp, robots, bus, states = _setup()
     disp.handle(topic(FLEET_MAN, "fleet", "order"), _order("MiR", "fleet"))
-    t, resp = bus.published[-1]
+    t, resp = last_response(bus, with_topic=True)
     assert resp["status"] == "REJECTED" and resp["errorType"] == "VALIDATION_FAILURE"
 
 
@@ -126,13 +132,14 @@ def test_fleet_order_con_post_fallido_responde_rejected():
                             (RuntimeError("POST mission_queue → HTTP 400"), "ORDER_EXECUTION_FAILED")]:
         disp, robots, bus, states = _setup_broken(exc)
         disp.handle(topic(FLEET_MAN, "fleet", "order"), _order(FLEET_MAN, "fleet"))
-        t, resp = bus.published[-1]
+        t, resp = last_response(bus, with_topic=True)
         assert t.endswith("/fleet/order_response")
         assert resp["status"] == "REJECTED" and resp["errorType"] == error_type
         assert "fake 'coger'" in resp["errorDescription"]
         assert robots["mir-1"].orders.active is None and not robots["mir-1"].busy
         # La misma order se puede reintentar: no cuenta como "repetida".
-        assert disp.last_fleet_order is None
+        disp.handle(topic(FLEET_MAN, "fleet", "order"), _order(FLEET_MAN, "fleet"))
+        assert last_response(bus)["status"] == "REJECTED"
 
 
 def test_order_dirigida_con_post_fallido_deja_el_error_en_state():
@@ -164,7 +171,7 @@ def _setup_two(battery1=90.0, battery2=50.0):
 
 def _fleet(disp, bus):
     disp.handle(topic(FLEET_MAN, "fleet", "order"), _order(FLEET_MAN, "fleet"))
-    return bus.published[-1][1]
+    return last_response(bus)
 
 
 def test_si_el_elegido_no_puede_traducir_se_prueba_el_siguiente():
@@ -225,7 +232,7 @@ def test_validate_rechaza_fleet_order_que_no_cumple_el_schema():
     disp, robots, bus, states = _setup()
     disp.validate = True
     disp.handle(topic(FLEET_MAN, "fleet", "order"), _sin_blocking_type(FLEET_MAN, "fleet"))
-    t, resp = bus.published[-1]
+    t, resp = last_response(bus, with_topic=True)
     assert resp["status"] == "REJECTED" and resp["errorType"] == "VALIDATION_FAILURE"
     assert "schema" in resp["errorDescription"] and "blockingType" in resp["errorDescription"]
     assert not any(r.driver.executed for r in robots.values())
@@ -246,7 +253,7 @@ def test_validate_rechaza_order_dirigida_e_instant_actions():
 def test_sin_validate_lo_que_admite_parse_order_se_acepta():
     disp, robots, bus, states = _setup()
     disp.handle(topic(FLEET_MAN, "fleet", "order"), _sin_blocking_type(FLEET_MAN, "fleet"))
-    assert bus.published[-1][1]["status"] == "ASSIGNED"
+    assert last_response(bus)["status"] == "ASSIGNED"
 
 
 def test_motivo_del_schema_acotado():

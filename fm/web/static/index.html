@@ -213,8 +213,8 @@
      los fondos verde/rojo/ámbar (sobre todo en modo oscuro). */
   .resp a:not(.btn), .err a:not(.btn) { color: inherit; font-weight: 700; text-decoration: underline; }
   .resp.ASSIGNED { background: var(--ok-bg); border-color: var(--ok); }
-  .resp.REJECTED { background: var(--bad-bg); border-color: var(--bad); }
-  .resp.pending { background: var(--warn-bg); border-color: var(--warn-line); }
+  .resp.REJECTED, .resp.FAILED, .resp.EXPIRED { background: var(--bad-bg); border-color: var(--bad); }
+  .resp.pending, .resp.QUEUED { background: var(--warn-bg); border-color: var(--warn-line); }
 
   /* Eventos: tabla como las listas del MiR (cabecera en azul marino, filas separadas por líneas). */
   .events { list-style: none; margin: 0; padding: 0; display: grid; font-size: 13px; max-height: 380px; overflow: auto; }
@@ -759,7 +759,7 @@
     <section class="panels">
       <div class="panel">
         <h3>Enviar a la flota</h3>
-        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, entre varios, el de más batería.</p>
+        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, entre varios, el de más batería. Si están todos ocupados, la order espera en la cola y va al primero que quede libre.</p>
         <form class="form" @submit.prevent="sendOrder">
           <label class="field">action
             <select id="order-action" v-model="form.actionType" required>
@@ -794,7 +794,10 @@
           <code>{{ o.orderId }}</code> <b>{{ o.actionType }}</b>
           <template v-if="!o.status"> · esperando respuesta…</template>
           <template v-else-if="o.status === 'ASSIGNED'"> → <b>{{ o.assignedSerial }}</b> · {{ o.description }}</template>
-          <template v-else> · REJECTED <code>{{ o.errorType }}</code> {{ o.errorDescription }}</template>
+          <template v-else-if="o.status === 'QUEUED'"> · en cola (puesto {{ o.queuePosition }}) · {{ o.description }}
+            <button class="btn danger" :id="'cancel-' + o.orderId" @click="cancelFleetOrder(o)">✖ Quitar de la cola</button></template>
+          <template v-else-if="o.status === 'CANCELLED'"> · cancelada</template>
+          <template v-else> · {{ o.status }} <code>{{ o.errorType }}</code> {{ o.errorDescription || o.description }}</template>
         </div>
       </div>
 
@@ -1980,11 +1983,13 @@ createApp({
     }
 
     function onOrderResponse(resp) {
+      // CANCEL_FAILED no cambia la order: solo dice que no se pudo cancelar.
       const mine = fleetOrders.find(o => o.orderId === resp.orderId);
-      if (mine) Object.assign(mine, resp);
-      addEvent('fleet', resp.status === 'ASSIGNED'
-        ? `order ${resp.orderId} → ${resp.assignedSerial}`
-        : `order ${resp.orderId} REJECTED ${resp.errorType}: ${resp.errorDescription}`, resp.timestamp);
+      if (mine && resp.status !== 'CANCEL_FAILED') Object.assign(mine, resp);
+      const text = resp.status === 'ASSIGNED' ? `→ ${resp.assignedSerial}`
+        : resp.status === 'QUEUED' ? `en cola (puesto ${resp.queuePosition})`
+        : `${resp.status}${resp.errorType ? ' ' + resp.errorType : ''}: ${resp.errorDescription || resp.description || ''}`;
+      addEvent('fleet', `order ${resp.orderId} ${text}`, resp.timestamp);
     }
 
     // ---------------- WebSocket con reconexión
@@ -2049,6 +2054,13 @@ createApp({
       if (!r.ok) { addEvent('ui', 'no se pudo enviar: ' + (await r.json()).detail); return; }
       fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null });
       if (fleetOrders.length > 5) fleetOrders.pop();
+    }
+
+    // Saca de la cola del FM una order que aún espera robot (decisión 156).
+    // El resultado llega por order_response (CANCELLED) como cualquier otro.
+    async function cancelFleetOrder(o) {
+      const r = await fetch(`/api/orders/${encodeURIComponent(o.orderId)}/cancel?wait=3`, { method: 'POST' });
+      if (!r.ok) addEvent('ui', `no se pudo cancelar ${o.orderId}: ` + (await r.json()).detail);
     }
 
     // ---------------- vistas derivadas
@@ -3111,7 +3123,7 @@ createApp({
     loadFleet();
     connect();
     return { fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere,
-             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, hasRange,
+             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, cancelFleetOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh, opCounts,

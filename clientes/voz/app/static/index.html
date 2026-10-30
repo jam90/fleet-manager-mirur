@@ -73,7 +73,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/bundle.min.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
-    const FINAL = ["FINISHED", "FAILED", "REJECTED"];
+    // QUEUED (cola del FM) no es final: la order espera a un robot libre.
+    const FINAL = ["FINISHED", "FAILED", "REJECTED", "CANCELLED", "EXPIRED"];
     const MIN_SAMPLES = 16000 * 0.3;  // descarta frases de menos de 300 ms
     let config = { wakeWord: "tonto", confirmWord: "adelante", armWindowS: 5, confirmWindowS: 5 };
     let lastOrder = null;  // {orderId, fleet} de la última order enviada desde esta página
@@ -124,7 +125,10 @@
       const { orderId, fleet: f } = lastOrder;
       const resp = await fetch(`/api/orders/${orderId}/cancel?fleet=${f}`, { method: "POST" });
       const data = await resp.json();
-      $("order").textContent = resp.ok ? `Parando ${orderId} (${data.serial})…` : "Error al parar: " + data.detail;
+      // CANCELLED = ya está (fuera de la cola o parada en su robot); si no, el FM aún no ha contestado.
+      $("order").textContent = !resp.ok ? "Error al parar: " + data.detail
+        : data.status === "CANCELLED" ? `${orderId}: CANCELLED` + (data.serial ? ` · ${data.serial}` : "")
+        : `Parando ${orderId}…`;
     }
 
     // ---------- log de depuración (consola, prefijo [MM]) ----------

@@ -1,11 +1,20 @@
 """Despacho de mensajes MQTT entrantes: `<serial>/order`, `fleet/order`
-(asignador) e `instantActions`. Corre en el hilo principal, drenando
-`bus.inbox` al inicio de cada tick.
+(asignador con cola) e `instantActions`. Corre en el hilo principal,
+drenando `bus.inbox` al inicio de cada tick.
+
+`fleet/order` con cola (decisión 154, docs/plan-cola.md): una order que
+algún robot puede hacer se guarda como tarea (`fm/tasks.py`) aunque estén
+todos ocupados, y `tick()` se la da al primer robot que quede libre. Las
+tareas se reparten por orden de llegada; una que espera a un robot concreto
+no bloquea a las de detrás. `<serial>/order` no pasa por la cola: o se
+acepta o se rechaza, como siempre.
 """
 from __future__ import annotations
 
 import json
 import logging
+import time
+from typing import Callable
 
 from fm.assigner import assign
 from fm.config import FleetConfig
@@ -13,10 +22,13 @@ from fm.mqtt_bus import FLEET, MqttBus
 from fm.instant import apply_instant_actions
 from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
+from fm.tasks import (ASSIGNED, CANCELLED, EXPIRED, FAILED, FINISHED, QUEUED, REJECTED, RETRYABLE,
+                      MemoryTaskStore, Task, TaskStore, iso)
 from fm.vda5050.header import parse_topic, validate_header
-from fm.vda5050.order import Order, OrderRejected, parse_instant_actions, parse_order
+from fm.vda5050.order import Action, Order, OrderRejected, parse_instant_actions, parse_order
 from fm.vda5050.schemas import validation_errors
-from fm.vda5050.state import E_NO_MOBILE_ROBOT_AVAILABLE, E_VALIDATION_FAILURE, error_for_order
+from fm.vda5050.state import (E_NO_MOBILE_ROBOT_AVAILABLE, E_NO_ORDER_TO_CANCEL, E_OUTDATED_ORDER_UPDATE,
+                              E_QUEUE_FULL, E_VALIDATION_FAILURE, error_for_order)
 
 log = logging.getLogger("fm.fleet")
 
@@ -35,13 +47,16 @@ def schema_problem(subtopic: str, data) -> str | None:
 
 class Dispatcher:
     def __init__(self, cfg: FleetConfig, robots: dict[str, Robot], bus: MqttBus, publish_state,
-                 publish_factsheet=None, validate: bool = False):
+                 publish_factsheet=None, validate: bool = False, tasks: TaskStore | None = None,
+                 clock: Callable[[], float] = time.time):
         self.cfg = cfg
         self.robots = robots
         self.bus = bus
         self.publish_state = publish_state      # callback(robot) → publica state ya (§6.6 eventos)
         self.publish_factsheet = publish_factsheet   # callback(robot) → factsheet retained (H5 factsheetRequest)
-        self.last_fleet_order: tuple[str, int] | None = None
+        self.tasks = tasks if tasks is not None else MemoryTaskStore()
+        self.clock = clock                      # epoch: llegada y caducidad de las tareas
+        self._last_queue: list[dict] | None = None   # último `fleet/queue` publicado (None = ninguno aún)
         # `--validate` (decisión 122): además de lo que comprueba `parse_order`,
         # cada order/instantActions entrante se valida contra el JSON Schema
         # oficial antes de procesarlo.
@@ -82,6 +97,8 @@ class Dispatcher:
             self.handle_fleet_order(data, invalid)
         elif pt.subtopic == "order":
             self.handle_robot_order(pt.serial, data, invalid)
+        elif pt.subtopic == "instantActions" and pt.serial == FLEET:
+            self.handle_fleet_instant_actions(data, invalid)
         elif pt.subtopic == "instantActions":
             self.handle_instant_actions(pt.serial, data, invalid)
 
@@ -121,62 +138,260 @@ class Dispatcher:
             return
         apply_instant_actions(robot, actions, self.publish_state, self.publish_factsheet)
 
+    # ------------------------------------------------------------ fleet/order
     def handle_fleet_order(self, data, invalid: str | None) -> None:
         order_id = data.get("orderId") if isinstance(data, dict) else None
         update_id = data.get("orderUpdateId") if isinstance(data, dict) else None
         try:
             if invalid:
                 raise OrderRejected(E_VALIDATION_FAILURE, invalid)
-            order = parse_order(data)
-            if self.last_fleet_order == (order.orderId, order.orderUpdateId):
-                log.info("[fleet] fleet/order %s/%d repetida: ignorada", order.orderId, order.orderUpdateId)
-                return
-            robot = self._assign_and_execute(order)
+            task = self._accept(parse_order(data))
         except OrderRejected as e:
             log.warning("[fleet] fleet/order %s rechazada: %s", order_id, e)
-            self.bus.publish(FLEET, "order_response", {
-                "orderId": order_id or "", "orderUpdateId": update_id if isinstance(update_id, int) else 0,
-                "status": "REJECTED", "errorType": e.error_type, "errorDescription": e.description})
+            self._respond(order_id or "", update_id if isinstance(update_id, int) else 0, REJECTED,
+                          errorType=e.error_type, errorDescription=e.description)
             return
-        self.last_fleet_order = (order.orderId, order.orderUpdateId)
-        self.bus.publish(FLEET, "order_response", {
-            "orderId": order.orderId, "orderUpdateId": order.orderUpdateId,
-            "status": "ASSIGNED", "assignedSerial": robot.serial,
-            "description": f"asignado a {robot.serial}"})
-        log.info("[fleet] fleet/order %s → %s", order.orderId, robot.serial)
-        self.publish_state(robot)
+        if task is None:
+            return
+        # La nueva entra por detrás: si hay un robot libre, se lo lleva la
+        # primera tarea que pueda hacerlo, no necesariamente esta.
+        self._dispatch()
+        if task.status == QUEUED:
+            self._announce(task)
+        self._publish_queue()
 
-    def _assign_and_execute(self, order: Order) -> Robot:
-        # Una sola action por order (se valida aquí para que el rechazo sea
-        # VALIDATION_FAILURE y no un rechazo por robot).
+    def _accept(self, order: Order) -> Task | None:
+        """Valida la order y la guarda como tarea QUEUED, o actualiza la que
+        ya espera con ese `orderId`. None = repetida: no se hace nada. Lanza
+        `OrderRejected` si no se acepta."""
+        prev = self.tasks.find(order.orderId)
+        if prev is not None and prev.status not in RETRYABLE:
+            # Mismas reglas de orderUpdateId que una order dirigida (§6.1.4).
+            if order.orderUpdateId == prev.update_id:
+                log.info("[fleet] fleet/order %s/%d repetida: ignorada", order.orderId, order.orderUpdateId)
+                return None
+            if order.orderUpdateId < prev.update_id:
+                raise OrderRejected(E_OUTDATED_ORDER_UPDATE,
+                                    f"orderUpdateId {order.orderUpdateId} < {prev.update_id}, el último recibido")
+            if prev.status == ASSIGNED:
+                raise OrderRejected(E_VALIDATION_FAILURE,
+                                    f"la order '{order.orderId}' está en curso en {prev.serial}: "
+                                    "v1 no admite ampliar una order en curso")
         action = pick_action(order)
-        snaps = {s: r.snapshot() for s, r in self.robots.items()}
-        result = assign(action.actionType, snaps, self.cfg)
-        if not result.ok:
-            raise OrderRejected(result.error_type, result.reason)
-        # El asignador solo mira batería y ocupación; el robot elegido aún
-        # puede rechazar al traducir (p.ej. no tiene grabada la mission). En
-        # ese caso se prueba el siguiente del ranking (decisión 89). Traducir
-        # no toca la red ni el robot, así que probar varios no tiene efectos.
+        self._check_feasible(action)
+        if prev is not None and prev.status == QUEUED:
+            # Actualización de una que todavía espera: conserva su sitio.
+            prev.order, prev.action_type, prev.announced = order, action.actionType, False
+            self.tasks.save(prev)
+            return prev
+        waiting = sum(1 for t in self.tasks.alive() if t.status == QUEUED)
+        if waiting >= self.cfg.queue.max_size:
+            raise OrderRejected(E_QUEUE_FULL, f"la cola está llena ({waiting} tareas esperando)")
+        task = Task(order, action.actionType, self.clock())
+        self.tasks.add(task)
+        return task
+
+    def _check_feasible(self, action: Action) -> None:
+        """¿Hay algún robot de la flota que pueda hacerla, aunque ahora esté
+        ocupado? Si no, se rechaza ya: en la cola esperaría para siempre.
+        Traducir no toca la red ni el robot."""
+        rejections: dict[str, str] = {}
         failures: dict[str, OrderRejected] = {}
-        for serial in result.ranking:
-            robot = self.robots[serial]
+        for serial in sorted(self.robots):
+            r = self.robots[serial]
+            if action.actionType not in r.cfg.action_types:
+                rejections[serial] = f"no soporta '{action.actionType}'"
+                continue
             try:
-                req = robot.translate_order(order)
+                r.driver.translate(action)
+                return
             except OrderRejected as e:
                 # VALIDATION_FAILURE es culpa de la order (falta un parámetro,
                 # no es un número…): ningún otro robot la aceptaría.
                 if e.error_type == E_VALIDATION_FAILURE:
                     raise
-                log.info("[fleet] %s no puede con %s (%s): pruebo el siguiente",
-                         serial, order.orderId, e)
+                failures[serial] = e
+        raise self._all_failed(rejections, failures)
+
+    def tick(self) -> None:
+        """Cada tick, con la telemetría recién leída: seguir las tareas en
+        curso, caducar las que llevan demasiado esperando y repartir la cola."""
+        self._follow_assigned()
+        self._expire()
+        self._dispatch()
+        self._publish_queue()
+
+    def _dispatch(self) -> None:
+        """Reparte las tareas QUEUED, por orden de llegada (decisión 156:
+        sin prioridades), entre los robots libres. Se miran todas, no solo
+        la primera: si la primera espera a un robot concreto, las de detrás
+        pueden ir a otro."""
+        for task in [t for t in self.tasks.alive() if t.status == QUEUED]:
+            self._try_assign(task)
+
+    def _try_assign(self, task: Task) -> None:
+        snaps = {s: r.snapshot() for s, r in self.robots.items()}
+        result = assign(task.action_type, snaps, self.cfg)
+        if not result.ok:
+            self._wait(task, result.reason)
+            return
+        # El asignador solo mira batería y ocupación; el robot elegido aún
+        # puede rechazar al traducir (p.ej. tiene activo otro mapa). En ese
+        # caso se prueba el siguiente del ranking (decisión 89). Traducir no
+        # toca la red ni el robot, así que probar varios no tiene efectos.
+        failures: dict[str, OrderRejected] = {}
+        for serial in result.ranking:
+            robot = self.robots[serial]
+            try:
+                job = robot.translate_order(task.order)
+            except IgnoreOrder:
+                failures[serial] = OrderRejected(E_NO_MOBILE_ROBOT_AVAILABLE, "ya ha recibido esta order")
+                continue
+            except OrderRejected as e:
+                if e.error_type == E_VALIDATION_FAILURE:
+                    self._drop(task, e)
+                    return
                 failures[serial] = e
                 continue
             # `execute` NO se reintenta en otro robot: tras un timeout el MiR
             # pudo encolarla igual y acabarían dos robots con la misma order.
-            robot.execute(order, req)
-            return robot
-        raise self._all_failed(result.rejections, failures)
+            try:
+                job_id = robot.execute(task.order, job)
+            except OrderRejected as e:
+                self._drop(task, e)
+                return
+            task.status, task.serial, task.job_id = ASSIGNED, serial, job_id
+            task.assigned_at, task.waiting = self.clock(), ""
+            self.tasks.save(task)
+            self._respond(task.order_id, task.update_id, ASSIGNED,
+                          assignedSerial=serial, description=f"asignado a {serial}")
+            log.info("[fleet] fleet/order %s → %s", task.order_id, serial)
+            self.publish_state(robot)
+            return
+        self._wait(task, self._all_failed(result.rejections, failures).description)
+
+    def _wait(self, task: Task, reason: str) -> None:
+        """Sigue en la cola. El motivo solo va al log cuando cambia: se
+        evalúa en cada tick."""
+        if reason != task.waiting:
+            log.info("[fleet] fleet/order %s espera: %s", task.order_id, reason)
+            task.waiting = reason
+            self.tasks.save(task)
+
+    def _announce(self, task: Task) -> None:
+        queued = [t for t in self.tasks.alive() if t.status == QUEUED]
+        task.announced = True
+        self.tasks.save(task)
+        self._respond(task.order_id, task.update_id, QUEUED,
+                      queuePosition=queued.index(task) + 1, description=task.waiting)
+
+    def _drop(self, task: Task, e: OrderRejected) -> None:
+        """No se puede hacer. Si el emisor aún no sabía nada de ella (llegó y
+        falló en el acto), es un REJECTED como antes de la cola, y puede
+        reintentarla con el mismo orderId. Si ya estaba en la cola, FAILED."""
+        if task.announced:
+            self._close(task, FAILED, e.description, errorType=e.error_type, errorDescription=e.description)
+            return
+        task.status = REJECTED
+        self.tasks.remove(task)
+        log.warning("[fleet] fleet/order %s rechazada: %s", task.order_id, e)
+        self._respond(task.order_id, task.update_id, REJECTED,
+                      errorType=e.error_type, errorDescription=e.description)
+
+    def _close(self, task: Task, status: str, reason: str, **fields) -> None:
+        """La tarea sale de la cola sin ejecutarse (FAILED, CANCELLED, EXPIRED)."""
+        task.status, task.result, task.finished_at = status, reason, self.clock()
+        self.tasks.save(task)
+        log.warning("[fleet] fleet/order %s %s: %s", task.order_id, status, reason)
+        self._respond(task.order_id, task.update_id, status, **({"description": reason} | fields))
+
+    def _follow_assigned(self) -> None:
+        """Cierra las tareas cuyo robot ya terminó la order. No se publica:
+        el resultado de la ejecución está en el `state` del robot."""
+        for task in [t for t in self.tasks.alive() if t.status == ASSIGNED]:
+            robot = self.robots.get(task.serial)
+            a = robot.orders.active if robot else None
+            if a is not None and a.job_id == task.job_id and a.order.orderId == task.order_id:
+                if a.alive:
+                    continue
+                status, result = (FINISHED if a.job_status == "FINISHED" else FAILED), a.result or ""
+            else:
+                # Otra order ocupó su sitio sin que la viéramos terminar; no
+                # debería pasar (el robot solo acepta otra cuando está libre).
+                status, result = FAILED, "el FM perdió su seguimiento"
+            task.status, task.result, task.finished_at = status, result, self.clock()
+            self.tasks.save(task)
+            log.info("[fleet] fleet/order %s en %s: %s %s", task.order_id, task.serial, status, result)
+
+    def _expire(self) -> None:
+        limit = self.cfg.queue.max_wait_s
+        if limit is None:
+            return
+        now = self.clock()
+        for task in [t for t in self.tasks.alive() if t.status == QUEUED and now - t.received_at > limit]:
+            self._close(task, EXPIRED, f"sin robot en {limit:.0f} s ({task.waiting or 'sin motivo'})")
+
+    # ------------------------------------------------- fleet/instantActions
+    def handle_fleet_instant_actions(self, data, invalid: str | None) -> None:
+        """`cancelOrder` con el parámetro `orderId` (decisión 156). Si la
+        tarea espera, sale de la cola; si está en un robot, es el
+        `cancelOrder` de ese robot. El resultado va a `order_response`
+        (`CANCELLED` o `CANCEL_FAILED`): `fleet` no tiene `state`."""
+        try:
+            if invalid:
+                raise OrderRejected(E_VALIDATION_FAILURE, invalid)
+            actions = parse_instant_actions(data)
+        except OrderRejected as e:
+            log.warning("[fleet] fleet/instantActions rechazadas: %s", e)
+            return
+        for a in actions:
+            if a.actionType == "cancelOrder":
+                self._cancel(a)
+            else:
+                log.warning("[fleet] fleet/instantActions: '%s' no se admite (solo cancelOrder)", a.actionType)
+        self._publish_queue()
+
+    def _cancel(self, a: Action) -> None:
+        order_id = next((p.value for p in a.actionParameters if p.key == "orderId"), None)
+        task = self.tasks.find(order_id) if isinstance(order_id, str) else None
+        robot = self.robots.get(task.serial) if task and task.serial else None
+        active = robot.orders.active if robot else None
+        if task is not None and task.status == ASSIGNED and not (
+                active is not None and active.alive and active.job_id == task.job_id):
+            task = None                       # ya terminó en el robot; `tick` la cerrará
+        if task is None or not task.alive:
+            why = (f"la order '{order_id}' no está en la cola ni en curso" if isinstance(order_id, str)
+                   else "falta el parámetro 'orderId'")
+            log.warning("[fleet] cancelOrder %s: %s", a.actionId, why)
+            self._respond(order_id if isinstance(order_id, str) else "", 0, "CANCEL_FAILED",
+                          errorType=E_NO_ORDER_TO_CANCEL, errorDescription=why)
+            return
+        if task.status == ASSIGNED:
+            apply_instant_actions(robot, [Action("cancelOrder", a.actionId)],
+                                  self.publish_state, self.publish_factsheet)
+            if robot.orders.instant_states[-1].actionStatus != "FINISHED":
+                e = robot.orders.instant_errors[-1]
+                self._respond(task.order_id, task.update_id, "CANCEL_FAILED",
+                              errorType=e.errorType, errorDescription=e.errorDescription)
+                return
+        self._close(task, CANCELLED, f"cancelada por cancelOrder ({a.actionId})")
+
+    # ----------------------------------------------------------- publicación
+    def _respond(self, order_id: str, update_id: int, status: str, **fields) -> None:
+        self.bus.publish(FLEET, "order_response",
+                         {"orderId": order_id, "orderUpdateId": update_id, "status": status, **fields})
+
+    def _publish_queue(self) -> None:
+        """`fleet/queue` retenido: las tareas que esperan, en orden. Solo si
+        cambia. El primero sale en el primer tick, aunque esté vacío: borra
+        el de un FM anterior (las tareas en RAM no sobreviven al reinicio)."""
+        body = [{"orderId": t.order_id, "orderUpdateId": t.update_id, "actionType": t.action_type,
+                 "receivedAt": iso(t.received_at), "waiting": t.waiting}
+                for t in self.tasks.alive() if t.status == QUEUED]
+        if body == self._last_queue:
+            return
+        self._last_queue = body
+        self.bus.publish(FLEET, "queue", {"tasks": body}, retain=True)
 
     @staticmethod
     def _all_failed(rejections: dict[str, str], failures: dict[str, OrderRejected]) -> OrderRejected:

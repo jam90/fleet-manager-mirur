@@ -51,27 +51,35 @@ so it is safe to retry.
 | Fleet order (normal case) | The FM: a free robot with enough battery; the one with most battery wins | `POST /api/fleet/order` |
 | Directed order | You | `POST /api/robots/{serial}/order` |
 
-The FM has **no queue**. If no robot can take the order right now, it is
-**rejected** and your system must retry later.
+If every robot is busy, a fleet order **waits in the FM queue** (`QUEUED`)
+and goes to the first robot that becomes free, in arrival order. It is only
+**rejected** if no robot in the fleet could ever do it (no robot has that
+action, the mission is missing…) or the queue is full (`QUEUE_FULL`).
+Directed orders have no queue: busy robot → rejected.
 
 ### Order lifecycle (`status`)
 
 ```
 PENDING ──► ASSIGNED (fleet order) ─┐
-        └─► ACCEPTED (directed)  ───┴─► RUNNING ──► FINISHED
-                                                └─► FAILED
-PENDING ──► REJECTED
+   │    └─► ACCEPTED (directed)  ───┴─► RUNNING ──► FINISHED
+   │                                            └─► FAILED
+   ├──► QUEUED (fleet order, all robots busy) ──► ASSIGNED …
+   │              └─► CANCELLED | EXPIRED | FAILED
+   └──► REJECTED
 ```
 
 | status | Meaning | Final? |
 |---|---|---|
 | `PENDING` | Sent, the FM has not decided yet | no |
+| `QUEUED` | Fleet order waiting for a free robot; `queuePosition` and `description` (why it waits) | no |
 | `ASSIGNED` | Fleet order accepted; `serial` = chosen robot | no |
 | `ACCEPTED` | Directed order accepted by the robot | no |
 | `RUNNING` | Robot is executing the mission | no |
 | `FINISHED` | Mission completed | **yes** |
-| `FAILED` | Mission aborted or cancelled (see `errors`) | **yes** |
+| `FAILED` | Mission aborted or cancelled (see `errors`), or the robot did not accept it when it left the queue | **yes** |
 | `REJECTED` | Not executed; reason in `errorType` + `description` | **yes** |
+| `CANCELLED` | Cancelled with `POST /api/orders/{orderId}/cancel` (or `cancelOrder` over MQTT), while queued or running | **yes** |
+| `EXPIRED` | Waited longer than `queue.max_wait_s` without a free robot | **yes** |
 
 ---
 
@@ -127,12 +135,11 @@ Example, assigned:
 }
 ```
 
-Example, rejected (both robots busy):
+Example, queued (both robots busy):
 
 ```json
 {
-  "orderId": "mes-000125", "status": "REJECTED", "serial": null,
-  "errorType": "NO_MOBILE_ROBOT_AVAILABLE",
+  "orderId": "mes-000125", "status": "QUEUED", "serial": null, "queuePosition": 1,
   "description": "ningún robot puede atender la order: mir-1: ocupado; mir-2: batería 17.0% < 25%",
   "...": "…"
 }
@@ -162,12 +169,33 @@ orders when it restarts or after it has seen 200 newer ones.
 | `errorType` | string \| null | Rejection code (see below) |
 | `actionStates` | array | VDA 5050 `actionStates`: `{actionId, actionType, actionStatus}` |
 | `errors` | array | VDA 5050 errors that reference this order |
+| `queuePosition` | int | Only while `QUEUED`: 1 = next to get a robot |
 | `created` | number | Unix time (s) when the FM first saw it |
 | `updated` | string \| null | ISO 8601 UTC time of the last update |
 
 #### `GET /api/orders?limit=50`
 
 Most recent orders first (`limit` 1–200). Includes orders that arrived over MQTT.
+
+#### `POST /api/orders/{orderId}/cancel?wait=N` — cancel a fleet order
+
+Works while the order waits in the queue (it leaves the queue) and while a
+robot runs it (it is that robot's `cancelOrder`). Use your `orderId`; you
+do not need to know the robot.
+
+| Code | Meaning |
+|---|---|
+| `200` | Cancelled: `status: "CANCELLED"` (order object) |
+| `202` | Sent, no answer yet (no `wait`, or not in time): poll `GET /api/orders/{orderId}` |
+| `404` | This FM has not seen that order |
+| `409` | Cannot be cancelled: already finished, a directed order (cancel it with `POST /api/robots/{serial}/instant`), or the FM did not find it (`detail` says why) |
+
+#### `GET /api/queue`
+
+Fleet orders waiting for a robot, in order (the next one first):
+`[{orderId, orderUpdateId, actionType, receivedAt, waiting}]`, where
+`waiting` is why no robot has taken it yet. `503` until the FM has published
+its queue (a few seconds after it starts).
 
 ### Robot status
 
@@ -282,11 +310,13 @@ Response: `{"actionId": "ui-xxxxxxxx"}`. The result shows up in the robot's
 ## Recommended client flow
 
 1. `POST /api/fleet/order?wait=5` with your own `orderId`.
-2. If `status` is `REJECTED`: log `description` and retry later.
-3. Otherwise poll `GET /api/orders/{orderId}` every 1–2 s until `status` is
-   `FINISHED`, `FAILED` or `REJECTED`.
+2. If `status` is `REJECTED`: log `description`; it will not run.
+3. Otherwise (`QUEUED`, `ASSIGNED`…) poll `GET /api/orders/{orderId}` every
+   1–2 s until `status` is final: `FINISHED`, `FAILED`, `REJECTED`,
+   `CANCELLED` or `EXPIRED`.
 4. On network errors or timeouts, resend with the **same** `orderId`. It will
    not run twice.
+5. To stop it (queued or running): `POST /api/orders/{orderId}/cancel?wait=5`.
 
 ### Python example
 
@@ -295,7 +325,7 @@ import time
 import requests
 
 FM = "http://fm-host:8050"
-FINAL = {"FINISHED", "FAILED", "REJECTED"}
+FINAL = {"FINISHED", "FAILED", "REJECTED", "CANCELLED", "EXPIRED"}
 
 
 def run_mission(action_type: str, params: dict, order_id: str, timeout_s: float = 600) -> dict:
@@ -326,7 +356,7 @@ async function sendOrder(actionType, params = {}, orderId) {
     body: JSON.stringify({ actionType, params, orderId }),
   });
   if (r.status >= 400) throw new Error((await r.json()).detail);
-  return r.json();             // check .status: ASSIGNED / REJECTED / PENDING
+  return r.json();             // check .status: ASSIGNED / QUEUED / REJECTED / PENDING
 }
 ```
 
@@ -336,7 +366,8 @@ async function sendOrder(actionType, params = {}, orderId) {
 
 - One mission per order (one action). Chain missions from your side by
   sending the next one after `FINISHED`.
-- No queue: orders are rejected when no robot is free.
+- The fleet-order queue lives in memory: orders still waiting are lost if
+  the FM restarts (it will move to SQLite).
 - Order history is kept in memory only and is lost when the FM restarts.
 - No authentication. Do not expose it outside the workshop network.
 - The same operations are available over MQTT (VDA 5050 v3); see the FM README.

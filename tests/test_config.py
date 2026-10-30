@@ -186,3 +186,23 @@ def test_install_paths_de_env_o_del_repo(monkeypatch, tmp_path):
     monkeypatch.setenv("FM_CONFIG", "../instalacion/fleet.yaml")        # relativa: a la raíz del repo
     monkeypatch.setenv("FM_CATALOG", str(tmp_path / "catalog"))         # absoluta: tal cual
     assert install_paths() == (ROOT / "../instalacion/fleet.yaml", tmp_path / "catalog")
+
+
+def test_queue_por_defecto_y_valores(tmp_path):
+    cfg = load_config(_write(tmp_path, YAML), env_path=tmp_path / "no.env")
+    assert (cfg.queue.max_size, cfg.queue.max_wait_s) == (50, None)
+    cfg = load_config(_write(tmp_path, YAML + "queue: { max_size: 5, max_wait_s: 600 }\n"),
+                      env_path=tmp_path / "no.env")
+    assert (cfg.queue.max_size, cfg.queue.max_wait_s) == (5, 600.0)
+
+
+@pytest.mark.parametrize("bad, hint", [
+    ("queue: { max_size: 0 }", "max_size"),
+    ("queue: { max_size: true }", "max_size"),
+    ("queue: { max_wait_s: -1 }", "max_wait_s"),
+    ("queue: { prioridad: 1 }", "claves desconocidas"),
+    ("queue: 5", "queue"),
+])
+def test_queue_invalida(tmp_path, bad, hint):
+    with pytest.raises(ConfigError, match=hint):
+        load_config(_write(tmp_path, YAML + bad + "\n"), env_path=tmp_path / "no.env")

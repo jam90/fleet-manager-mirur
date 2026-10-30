@@ -72,6 +72,11 @@
   y se cancela si llega una order (`Robot.execute`). Con `zone` (decisión
   138) solo si el robot está fuera de esa zona del mapa (gancho `in_zone`
   del driver).
+- **Cola de `fleet/order`** (`fm/tasks.py`, decisiones 154–157,
+  `docs/plan-cola.md`): con todos los robots ocupados la order espera
+  (`QUEUED`) y va al primero que quede libre, por orden de llegada
+  (`Dispatcher.tick()`). Fase 1 en RAM, detrás de `TaskStore`; la fase 2
+  la pasa a SQLite (#39).
 - **Datos de la instalación fuera de este repo** (decisión 135, el repo es
   público): `fleet.yaml` y `catalog/` viven en el repo privado
   `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los
@@ -140,12 +145,15 @@ Servicio Python ("Fleet Manager", FM) que gestiona una flota de **MiR250**
 ### Lo que NO hace (alcance v1, no lo implementes salvo que te lo pidan)
 
 - Coordinación de tráfico entre robots (se evitan con su propio LIDAR).
-- Cola interna de órdenes: si ningún robot puede aceptarla, se **rechaza** con
-  motivo. El sistema aguas arriba reencola.
+- ~~Cola interna de órdenes~~ — **cambiado el 2026-10-30** (decisión 154):
+  `fleet/order` tiene cola en el FM (`docs/plan-cola.md`). Lo que ningún
+  robot podrá hacer nunca se sigue rechazando con motivo.
 - Navegación por grafo `nodes`/`edges` del VDA 5050: el MiR navega solo con sus
   missions. Los `nodes` de la order son **un único nodo lógico** con `actions`.
 - Cambio de herramienta, catálogo de piezas, PLC (eso era del proyecto anterior).
-- Persistencia: el estado vive en RAM y en el robot.
+- Persistencia: el estado vive en RAM y en el robot. Excepción prevista: la
+  cola de `fleet/order` pasará a SQLite (decisión 155, fase 2 de
+  `docs/plan-cola.md`).
 - `factsheet` / `visualization` VDA 5050 (opcionales, se añaden si se piden).
 
 ---
@@ -298,6 +306,8 @@ Convención de topics del estándar: `<interfaceName>/<majorVersion>/<manufactur
 | `vda5050/v3/MiR/<serial>/instantActions` | bus → FM | 1 | no |
 | `vda5050/v3/imperial_fleet/fleet/order` | bus → FM | 1 | no |
 | `vda5050/v3/imperial_fleet/fleet/order_response` | FM → bus | 1 | no |
+| `vda5050/v3/imperial_fleet/fleet/queue` | FM → bus | 1 | **sí** |
+| `vda5050/v3/imperial_fleet/fleet/instantActions` | bus → FM | 1 | no |
 
 ### 5.1. Header común (todos los mensajes)
 
@@ -467,7 +477,12 @@ propio `assignedSerial` (no se reutiliza `serialNumber` del header para eso).
   "errorDescription": "ningún robot puede atender la order: mir-1: ocupado; mir-2: batería 17.0% < 20%" }
 ```
 
-Separación importante: `order_response` es el **ACK/rechazo inmediato** del
+Con la cola (decisión 154) hay más estados, y una order puede recibir
+varios: `QUEUED` (con `queuePosition`) y más tarde `ASSIGNED`; `FAILED`,
+`CANCELLED`, `EXPIRED` y `CANCEL_FAILED`. Tabla completa y `fleet/queue`
+en `docs/plan-cola.md` §3.
+
+Separación importante: `order_response` es el **ACK/rechazo** del
 asignador. Los errores de **ejecución** posteriores (mission `Aborted`) van a
 `state.errors[]` del robot con `errorReferences: [{referenceKey: "orderId", …}]`.
 
@@ -816,7 +831,8 @@ Formato de log (stdout), un prefijo por robot para poder filtrar:
    `headerId` creciente, posición que cambia si se mueve el robot a mano.
 2. Cliente limpio suscrito a `+/connection` recibe `ONLINE` retained al instante.
 3. `fleet/order` válida → `order_response ASSIGNED` + mission en la cola del MiR elegido.
-4. `fleet/order` con los dos robots ocupados → `REJECTED orderError` con detalle.
+4. `fleet/order` con los dos robots ocupados → `QUEUED` con el motivo; al
+   quedar uno libre, `ASSIGNED` a ese (decisión 154).
 5. `fleet/order` con `manufacturer` o `serialNumber` que no cuadran con el
    topic → `REJECTED validationError`.
 6. Segunda `fleet/order` idéntica (`orderId`,`orderUpdateId`) → ignorada.

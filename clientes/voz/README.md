@@ -38,7 +38,8 @@ Abre http://localhost:8000 (el micrófono solo funciona en `localhost` o con HTT
 - `POST /api/voice`: campo multipart `audio` → `{transcription, normalized, mission, matched_word, actionType}`
 - `POST /api/missions/{mission}`: envía esa misión al Fleet Manager
 - `GET /api/orders/{orderId}`: estado de la order en el Fleet Manager
-- `POST /api/orders/{orderId}/cancel`: la cancela (`cancelOrder` en su robot)
+- `POST /api/orders/{orderId}/cancel`: la cancela el FM; si espera en su cola sale de ella, y si
+  ya la hace un robot es su `cancelOrder`
 - `GET /api/config`: palabras de activación y confirmación, ventanas y misiones para la página
 - todos los endpoints del Fleet Manager aceptan `?fleet=sim|real` (por defecto `sim`)
 - `GET /health`: `{status, whisper: ok|down}`
@@ -89,10 +90,11 @@ configuran en `.env`.
 Configura `FM_SIM_URL` (flota simulada, `:8051`) y `FM_URL` (robots reales, `:8050`) en `.env`;
 la página elige la flota (por defecto **Virtual**). Ver `docs/mir-ur-api.md`.
 Tras reconocer una orden por voz, la página muestra un botón **Enviar**: la order solo sale al
-pulsarlo, y luego la página consulta su estado hasta `FINISHED`, `FAILED` o `REJECTED`.
+pulsarlo, y luego la página consulta su estado hasta `FINISHED`, `FAILED`, `REJECTED`,
+`CANCELLED` o `EXPIRED` (con los robots ocupados pasa antes por `QUEUED`: espera en la cola del FM).
 
 ```bash
 curl -X POST 'http://localhost:8000/api/missions/mission_2?fleet=sim'   # → order del FM (mira "status")
 curl 'http://localhost:8000/api/orders/mm-1a2b3c4d?fleet=sim'          # → estado actual de la order
-curl -X POST 'http://localhost:8000/api/orders/mm-1a2b3c4d/cancel?fleet=sim'  # → cancelOrder en su robot
+curl -X POST 'http://localhost:8000/api/orders/mm-1a2b3c4d/cancel?fleet=sim'  # → la cancela el FM (cola o robot)
 ```

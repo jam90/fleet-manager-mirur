@@ -48,9 +48,9 @@ from fm.vda5050.header import HeaderCounter, make_header, topic
 
 log = logging.getLogger("fm.mqtt")
 
-# QoS según §4.1: 1 solo para connection; el resto 0. order_response es
-# extensión propia y se publica con QoS 1 para no perder el ACK.
-QOS = {"state": 0, "factsheet": 0, "visualization": 0, "connection": 1, "order_response": 1}
+# QoS según §4.1: 1 solo para connection; el resto 0. order_response y queue
+# son extensión propia y van con QoS 1 para no perder el ACK ni la cola.
+QOS = {"state": 0, "factsheet": 0, "visualization": 0, "connection": 1, "order_response": 1, "queue": 1}
 FLEET = "fleet"
 
 

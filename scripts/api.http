@@ -32,7 +32,7 @@ GET {{host}}/api/robots/mir-1/factsheet
 GET {{host}}/api/robots/mir-1/actions
 
 ### Orden a la flota: el FM elige robot. wait=5 → espera hasta 5 s el veredicto
-# 200 = veredicto (ASSIGNED / REJECTED); 202 = sigue PENDING al acabar la espera
+# 200 = veredicto (ASSIGNED / QUEUED si están todos ocupados / REJECTED); 202 = sigue PENDING
 POST {{host}}/api/fleet/order?wait=5
 Content-Type: application/json
 
@@ -44,8 +44,14 @@ Content-Type: application/json
 
 { "actionType": "abrir_puerta", "params": { "target_pos": "H2D1-VL" } }
 
-### Seguimiento de una order: PENDING → ASSIGNED/ACCEPTED → RUNNING → FINISHED | FAILED (o REJECTED)
+### Seguimiento de una order: PENDING → (QUEUED →) ASSIGNED/ACCEPTED → RUNNING → FINISHED | FAILED (o REJECTED)
 GET {{host}}/api/orders/prueba-001
+
+### Cola del FM: fleet orders esperando robot, la siguiente primero (y por qué esperan)
+GET {{host}}/api/queue
+
+### Cancelar una fleet order, en la cola o en curso (200 = CANCELLED, 409 = no se puede)
+POST {{host}}/api/orders/prueba-001/cancel?wait=5
 
 ### Últimas orders vistas (la más nueva primero)
 GET {{host}}/api/orders?limit=10

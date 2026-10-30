@@ -35,6 +35,12 @@ async def get_order(base_url: str, order_id: str) -> dict:
     return await _request(base_url, "GET", f"/api/orders/{order_id}")
 
 
+async def cancel_order(base_url: str, order_id: str) -> dict:
+    """Cancela una order de la flota: si espera en la cola del FM sale de ella, y si
+    ya la hace un robot es su cancelOrder. Espera la respuesta del FM."""
+    return await _request(base_url, "POST", f"/api/orders/{order_id}/cancel", params={"wait": settings.fm_wait})
+
+
 async def instant_action(base_url: str, serial: str, action_type: str) -> dict:
     """Envía una instantAction (startPause, stopPause, cancelOrder, stateRequest) a un robot."""
     return await _request(base_url, "POST", f"/api/robots/{serial}/instant", json={"actionType": action_type})

@@ -2777,6 +2777,113 @@ Trae su intérprete experimental y sus benchmarks (`clientes/voz/eval/`, antes
     tests; identificadores en inglés. El contrato HTTP de la voz (`/api/voice`,
     campos JSON) no cambia.
 
+## 2026-10-30 — Cola de `fleet/order` (fase 1)
+
+> Escrita con los números 142–145; al juntarla con la rama
+> `migracion/pasarela-voz` (que ya usaba 142–153) pasó a 154–157.
+
+154. **`fleet/order` con cola en el FM (late binding).** Con todos los
+     robots ocupados, una order que algún robot de la flota puede hacer ya
+     no se rechaza: se guarda como tarea (`QUEUED`) y en cada tick
+     (`Dispatcher.tick()`, tras leer la telemetría) va al primer robot que
+     quede libre, por orden de llegada. Motivo (planteado por el usuario):
+     si los dos robots están trabajando, la tarea tiene que ir al que
+     termine antes, y eso solo lo sabe el FM; el sistema de arriba dice
+     *qué* hay que hacer, no *quién*. Es lo habitual (MiR Fleet, Open-RMF):
+     la cola es del FM, no del robot; cada robot sigue con como mucho una
+     mission del FM. **Sustituye a la decisión 20** ("ambos ocupados →
+     rechazo, sin cola interna") y cambia dos límites del brief (§1: "sin
+     cola interna" y "estado en RAM"). Contrato: `order_response` con varios mensajes por
+     order (`QUEUED` con `queuePosition`, luego `ASSIGNED`; también
+     `FAILED`, `CANCELLED`, `EXPIRED`, `CANCEL_FAILED`) y el topic retenido
+     `fleet/queue`. Se rechaza al llegar lo que no podrá hacerse nunca:
+     se traduce la order (sin red) en cada robot que tiene la action y, si
+     ninguno puede, `REJECTED` con el motivo de cada uno, como antes. Se
+     miran todas las tareas, no solo la primera (una que espera a mir-1 no
+     bloquea a la de detrás), y una order nueva no se cuela delante de las
+     que esperan. Duplicados: la tarea se recuerda (las últimas 500
+     terminadas), así que A → B → A ya no ejecuta A dos veces (#31, en
+     parte). Plan completo en `docs/plan-cola.md`.
+155. **Dónde se guardan las tareas: detrás de `TaskStore`** (`fm/tasks.py`),
+     como los robots detrás de `RobotDriver`. Fase 1, en RAM
+     (`MemoryTaskStore`); fase 2, SQLite (`data/fm.sqlite`, `FM_DATA` en
+     `.env`). Motivo: el sistema de arriba ya recibió `QUEUED` y no la va a
+     reenviar, así que la cola tiene que sobrevivir a un reinicio; SQLite
+     viene con Python, no es un servicio más, sus escrituras son atómicas y
+     el histórico se puede consultar. Redis se valoró: solo compensa con
+     varios procesos tocando la misma cola, y hay un FM por broker
+     (decisión 107). Con la interfaz, cambiar de almacén es otra clase.
+156. **Decisiones de la cola** (propuestas aceptadas por el usuario):
+     orden de llegada, sin prioridades (D2); cancelar con
+     `fleet/instantActions` + `cancelOrder` y el parámetro `orderId`, que
+     en un robot es su `cancelOrder` (D3); `queue.max_wait_s` en
+     `fleet.yaml`, vacío = esperar siempre, y al pasarlo `EXPIRED` (D4);
+     `queue.max_size` = 50, la siguiente `REJECTED QUEUE_FULL` (D5). Para
+     más adelante: una tarea podrá sacar del dock a un robot cargando por
+     encima de `battery_resume` (D6); histórico de 30 días (D8); una tarea
+     en duda tras un reinicio se queda bloqueada con aviso en la web, nunca
+     se relanza a ciegas (D9). Las orders dirigidas (`<serial>/order`) se
+     aceptan aunque haya cola (D7): sin cambios.
+157. **Si el robot no acepta una tarea al lanzarla, no vuelve a la cola.**
+     El plan decía devolverla a `QUEUED`, pero tras un timeout el MiR pudo
+     encolarla igual y acabaría en dos robots: la misma regla que ya tenía
+     `fleet/order` (no se prueba en otro robot). Si falla en el mismo
+     momento de llegar es `REJECTED`, como antes, y se puede reintentar con
+     el mismo `orderId`; si ya estaba en la cola, `FAILED`.
+     El estado `ASSIGNING` del plan (antes del POST) se deja para la fase
+     2: solo sirve para recuperarse de una caída del FM, y en RAM no hay
+     nada que recuperar.
+
+Probado con `tests/test_queue.py` (15 tests) y de punta a punta con la
+flota simulada, en un Mosquitto aparte (puerto 18830) para no tocar el FM
+real: con `max_size: 3`, seis orders → dos `ASSIGNED`, tres `QUEUED`
+(puestos 1–3) y `QUEUE_FULL`; cancelar la quinta → `CANCELLED`; al terminar
+los robots, la tercera y la cuarta van cada una al que queda libre, y una
+séptima espera y entra al acabar el siguiente. Repetir las mismas orders
+tras terminar: ignoradas; las canceladas o rechazadas se aceptan de nuevo.
+`send_fleet_order.py` sigue esperando tras `QUEUED` (`--wait`, 120 s) y la
+web enseña los estados nuevos en el bloque `fleet/order` y en los eventos.
+
+## 2026-10-30 — La cola con la API REST y la pasarela de voz
+
+Al juntar la cola con la rama `migracion/pasarela-voz` (API REST, voz,
+compose), la API y la voz daban por hecho que no había cola.
+
+158. **La API REST entiende la cola.** El seguimiento de orders (espejo de
+     `order_response`) trataba como `REJECTED` todo lo que no fuera
+     `ASSIGNED`: una order encolada salía rechazada, y un `CANCEL_FAILED`
+     marcaba como rechazada una order en curso. Ahora: `QUEUED` (con
+     `queuePosition` mientras espera), `CANCELLED`, `EXPIRED` y `FAILED`;
+     un `CANCEL_FAILED` no cambia la order. Una cancelada desde la flota
+     sigue `CANCELLED` aunque el `state` de su robot diga `FAILED` (así
+     termina el `cancelOrder` del robot). Rutas nuevas, con la regla de la
+     decisión 145 (la API lee del espejo y publica al broker como un
+     cliente más): `POST /api/orders/<id>/cancel?wait=N` (publica
+     `fleet/instantActions` + `cancelOrder`; 200 `CANCELLED`, 409 con el
+     motivo si no se puede, 202 sin respuesta a tiempo) y `GET /api/queue`
+     (el `fleet/queue` retenido en el espejo). En la web, «Quitar de la
+     cola» en las orders enviadas que esperan.
+159. **«Tonto, para» cancela por el FM, no por el robot.** La pasarela
+     buscaba el robot de la última order y le mandaba `cancelOrder`; una
+     order en la cola aún no tiene robot y daba 409. Ahora llama a
+     `POST /api/orders/<id>/cancel` del FM, que la saca de la cola o la
+     para en su robot. La pasarela deja de necesitar saber el robot.
+     Su página deja de consultar el estado también con `CANCELLED` y
+     `EXPIRED`.
+
+**Arreglo de paso:** la espera de `?wait=` dejaba su future apuntado si
+la respuesta ya había llegado. El siguiente aviso de esa order despertaba un
+future de una petición cerrada (en los tests, "Event loop is closed"; con
+uvicorn, la lista crecía). Ahora se quita siempre al salir
+(`WebServer._wait_for`).
+
+Probado: `pytest` 312 en el FM y 18 en la voz (2 nuevos, en un venv
+temporal: aquí no hay `uv`). De punta a punta con la flota simulada, la web
+del FM y la pasarela de voz (Mosquitto aparte): tres misiones por la voz
+(dos `ASSIGNED`, una `QUEUED`), «parar» la que espera → `CANCELLED` y fuera
+de `/api/queue`; «parar» una en curso → `CANCELLED` en su robot, y lo sigue
+siendo tras su `state`; volver a pararla → 409 «ya terminó».
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2845,17 +2952,20 @@ las del FM son placeholders y no hay tiempos que medir.
     parámetro se trata como propio de cada robot (resolverlo por nombre al
     desplegar).
 
+- **#39** **Cola de `fleet/order`, fases 2–5** (`docs/plan-cola.md` §8):
+    SQLite y recuperación tras reinicio, bloque Cola en la web (ya
+    hay «Quitar de la cola» en las enviadas y `GET /api/queue`),
+    recuperar las `ASSIGNED`, histórico y sacar del dock (D6); prueba con
+    los dos MiR.
+
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 
-- **#31** **Registro de `fleet/order` aceptadas** (antes de #2). Hoy solo se
-    recuerda la última (`Dispatcher.last_fleet_order`): con A → B → A, A
-    se ejecuta dos veces. Guardar las últimas N `(orderId, orderUpdateId)`
-    aceptadas con su `assignedSerial` y, ante un reenvío, **repetir el
-    `order_response` ASSIGNED** en vez de callar. Cambia la decisión 19
-    (idempotencia = silencio): acordarlo con quien hace el emisor de
-    `fleet/order`. Los rechazos no se guardan (la decisión 20 sigue: un
-    reintento tras `REJECTED` se acepta). Solo en memoria; la persistencia
-    sigue fuera de alcance.
+- **#31** **Responder a un `fleet/order` reenviado** (antes de #2). El
+    registro ya está (cola, decisión 154: con A → B → A, A no se ejecuta
+    dos veces). Falta, ante un reenvío, **repetir el último
+    `order_response`** (ASSIGNED, QUEUED…) en vez de callar. Cambia la
+    decisión 19 (idempotencia = silencio): acordarlo con quien hace el
+    emisor de `fleet/order`.
 
 **Aguas arriba (a cargo de otro compañero, sobre este FM)**
 

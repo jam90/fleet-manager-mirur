@@ -11,6 +11,9 @@ comentarios que explican el *porqué*.
 - `fm/config.py` — `.env` + `config/fleet.yaml` → dataclasses genéricas
 - `fm/robot.py`, `fm/orders.py`, `fm/assigner.py`, `fm/fleet.py` — runtime,
   tracker `orderUpdateId`, asignador puro, Dispatcher MQTT
+- `fm/tasks.py` — cola de `fleet/order`: con todos los robots ocupados la order
+  espera (`QUEUED`) y va al primero que quede libre (`docs/plan-cola.md`; en RAM,
+  detrás de `TaskStore`, SQLite en la fase 2)
 - `fm/mqtt_bus.py` — paho; **sin broker no arranca** (`TimeoutError`)
 - `fm/charge.py` — auto-carga bajo `battery_floor`, no aborta orders
 - `fm/adapters/<marca>/` — drivers (`mir`, `sim`); el core no importa MiR
@@ -43,7 +46,7 @@ comentarios que explican el *porqué*.
   `docker compose --profile sim up --build fleet-sim` (demo, web `:8051`).
   Voz: `docker compose --profile sim --profile voz up --build fleet-sim voz`
   (pasarela en `:8000`; necesita el whisper del repo `inferencia` en el host `:8080`).
-  Tests de la voz aparte: `cd clientes/voz && uv run pytest` (16).
+  Tests de la voz aparte: `cd clientes/voz && uv run pytest` (18).
   Dentro de compose el broker es `MQTT_HOST=mosquitto` (gana al `.env`
   porque `load_dotenv()` no pisa variables existentes); desde el host todo
   sigue en `localhost:1883`. Ver `docker-compose.yml`, `Dockerfile.fm`,
