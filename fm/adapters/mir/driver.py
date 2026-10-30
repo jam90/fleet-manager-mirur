@@ -42,6 +42,11 @@ MIR250_SPEC = RobotSpec("MiR250", kinematics="DIFF", robot_class="CARRIER", max_
 # redibuja en la web del MiR, el FM lo ve en como mucho este tiempo.
 ZONE_TTL_S = 60.0
 
+# `find_job`: cuántas entradas de la mission_queue, de las más nuevas, se
+# miran buscando la etiqueta. Basta con unas pocas: la que se busca es la que
+# el FM lanzaba al caerse; entre medias solo cabe lo que se lanzó a mano.
+FIND_JOB_RECENT = 20
+
 
 class MirDriver:
     manufacturer = "MiR"
@@ -239,11 +244,29 @@ class MirDriver:
 
     def execute(self, job: Job, priority: int = 0) -> str:
         req: MissionRequest = job.payload
-        q = self.client.mission_queue_post(req.mission_guid, req.parameters or None, priority)
+        q = self.client.mission_queue_post(req.mission_guid, req.parameters or None, priority,
+                                           description=job.tag)
         qid = int(q["id"])
         self._own_queue_ids.add(qid)
         self._launched_ids.add(qid)
         return str(qid)
+
+    def find_job(self, tag: str) -> str | None:
+        """Entrada de la mission_queue lanzada con `description == tag` (el
+        orderId, decisión 161). El listado solo trae ids, así que se miran
+        las `FIND_JOB_RECENT` más nuevas una a una: el FM busca justo la que
+        estaba lanzando al caerse, que es de las últimas. Lanza si el robot
+        no responde: entonces no se sabe."""
+        recent = sorted((int(e["id"]) for e in self.client.mission_queue_get()), reverse=True)
+        for qid in recent[:FIND_JOB_RECENT]:
+            if self.client.mission_queue_id_get(qid).get("description") == tag:
+                return str(qid)
+        return None
+
+    def adopt_job(self, job_id: str) -> None:
+        """La lanzó el FM anterior: es propia, no trabajo ajeno."""
+        self._own_queue_ids.add(int(job_id))
+        self._launched_ids.add(int(job_id))
 
     def job_status(self, job_id: str) -> JobStatus | None:
         try:

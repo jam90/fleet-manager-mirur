@@ -22,8 +22,8 @@ from fm.mqtt_bus import FLEET, MqttBus
 from fm.instant import apply_instant_actions
 from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
-from fm.tasks import (ASSIGNED, CANCELLED, EXPIRED, FAILED, FINISHED, QUEUED, REJECTED, RETRYABLE,
-                      MemoryTaskStore, Task, TaskStore, iso)
+from fm.tasks import (ASSIGNED, ASSIGNING, CANCELLED, EXPIRED, FAILED, FINISHED, QUEUED, REJECTED,
+                      RETRYABLE, MemoryTaskStore, Task, TaskStore, iso)
 from fm.vda5050.header import parse_topic, validate_header
 from fm.vda5050.order import Action, Order, OrderRejected, parse_instant_actions, parse_order
 from fm.vda5050.schemas import validation_errors
@@ -33,6 +33,9 @@ from fm.vda5050.state import (E_NO_MOBILE_ROBOT_AVAILABLE, E_NO_ORDER_TO_CANCEL,
 log = logging.getLogger("fm.fleet")
 
 SCHEMA_PROBLEMS_SHOWN = 3     # el motivo de rechazo cabe en un log y en la UI
+# Cada cuánto se vuelve a buscar en el robot una tarea en duda tras reiniciar
+# el FM (decisión 162): mientras el robot no conteste, no se puede saber.
+DOUBT_RETRY_S = 30.0
 
 
 def schema_problem(subtopic: str, data) -> str | None:
@@ -145,7 +148,7 @@ class Dispatcher:
         try:
             if invalid:
                 raise OrderRejected(E_VALIDATION_FAILURE, invalid)
-            task = self._accept(parse_order(data))
+            task = self._accept(parse_order(data), data)
         except OrderRejected as e:
             log.warning("[fleet] fleet/order %s rechazada: %s", order_id, e)
             self._respond(order_id or "", update_id if isinstance(update_id, int) else 0, REJECTED,
@@ -160,7 +163,7 @@ class Dispatcher:
             self._announce(task)
         self._publish_queue()
 
-    def _accept(self, order: Order) -> Task | None:
+    def _accept(self, order: Order, raw: dict) -> Task | None:
         """Valida la order y la guarda como tarea QUEUED, o actualiza la que
         ya espera con ese `orderId`. None = repetida: no se hace nada. Lanza
         `OrderRejected` si no se acepta."""
@@ -173,7 +176,7 @@ class Dispatcher:
             if order.orderUpdateId < prev.update_id:
                 raise OrderRejected(E_OUTDATED_ORDER_UPDATE,
                                     f"orderUpdateId {order.orderUpdateId} < {prev.update_id}, el último recibido")
-            if prev.status == ASSIGNED:
+            if prev.status in (ASSIGNING, ASSIGNED):
                 raise OrderRejected(E_VALIDATION_FAILURE,
                                     f"la order '{order.orderId}' está en curso en {prev.serial}: "
                                     "v1 no admite ampliar una order en curso")
@@ -181,13 +184,13 @@ class Dispatcher:
         self._check_feasible(action)
         if prev is not None and prev.status == QUEUED:
             # Actualización de una que todavía espera: conserva su sitio.
-            prev.order, prev.action_type, prev.announced = order, action.actionType, False
+            prev.order, prev.raw, prev.action_type, prev.announced = order, raw, action.actionType, False
             self.tasks.save(prev)
             return prev
         waiting = sum(1 for t in self.tasks.alive() if t.status == QUEUED)
         if waiting >= self.cfg.queue.max_size:
             raise OrderRejected(E_QUEUE_FULL, f"la cola está llena ({waiting} tareas esperando)")
-        task = Task(order, action.actionType, self.clock())
+        task = Task(order, action.actionType, self.clock(), raw=raw)
         self.tasks.add(task)
         return task
 
@@ -217,6 +220,7 @@ class Dispatcher:
         """Cada tick, con la telemetría recién leída: seguir las tareas en
         curso, caducar las que llevan demasiado esperando y repartir la cola."""
         self._follow_assigned()
+        self._retry_doubts()
         self._expire()
         self._dispatch()
         self._publish_queue()
@@ -253,6 +257,12 @@ class Dispatcher:
                     return
                 failures[serial] = e
                 continue
+            # ASSIGNING se guarda ANTES del POST (decisión 161): si el FM se
+            # cae entre el POST y la respuesta, al arrancar busca la tarea en
+            # el robot por su etiqueta, en vez de olvidarla o lanzarla dos veces.
+            task.status, task.serial, task.assigned_at, task.waiting = ASSIGNING, serial, self.clock(), ""
+            self.tasks.save(task)
+            job.tag = task.tag
             # `execute` NO se reintenta en otro robot: tras un timeout el MiR
             # pudo encolarla igual y acabarían dos robots con la misma order.
             try:
@@ -260,8 +270,7 @@ class Dispatcher:
             except OrderRejected as e:
                 self._drop(task, e)
                 return
-            task.status, task.serial, task.job_id = ASSIGNED, serial, job_id
-            task.assigned_at, task.waiting = self.clock(), ""
+            task.status, task.job_id = ASSIGNED, job_id
             self.tasks.save(task)
             self._respond(task.order_id, task.update_id, ASSIGNED,
                           assignedSerial=serial, description=f"asignado a {serial}")
@@ -310,7 +319,9 @@ class Dispatcher:
         el resultado de la ejecución está en el `state` del robot."""
         for task in [t for t in self.tasks.alive() if t.status == ASSIGNED]:
             robot = self.robots.get(task.serial)
-            a = robot.orders.active if robot else None
+            if robot is None:
+                continue        # su robot no corre en este FM (`--robot`): se deja como está
+            a = robot.orders.active
             if a is not None and a.job_id == task.job_id and a.order.orderId == task.order_id:
                 if a.alive:
                     continue
@@ -330,6 +341,101 @@ class Dispatcher:
         now = self.clock()
         for task in [t for t in self.tasks.alive() if t.status == QUEUED and now - t.received_at > limit]:
             self._close(task, EXPIRED, f"sin robot en {limit:.0f} s ({task.waiting or 'sin motivo'})")
+
+    # ------------------------------------------------- al arrancar el FM
+    def recover(self) -> None:
+        """Una vez, al arrancar y con la telemetría ya leída: retoma lo que el
+        FM anterior dejó a medias (decisiones 161–162). Las QUEUED siguen en
+        la cola tal cual; el emisor ya tenía su `QUEUED`."""
+        for task in self.tasks.alive():
+            if task.status in (ASSIGNED, ASSIGNING) and task.serial not in self.robots \
+                    and task.serial in self.cfg.robots:
+                # Su robot está en la flota pero no corre en este FM (`--robot`):
+                # no se toca; la retomará el FM que lo lleve.
+                log.info("[fleet] fleet/order %s (%s en %s) no se retoma: el robot no corre en este FM",
+                         task.order_id, task.status, task.serial)
+            elif task.status == ASSIGNED:
+                if self._readopt(task):
+                    self._respond(task.order_id, task.update_id, ASSIGNED, assignedSerial=task.serial,
+                                  description=f"asignado a {task.serial} (retomada tras reiniciar el FM)")
+            elif task.status == ASSIGNING:
+                self._resolve_assigning(task)
+        # Se repite el QUEUED de las que esperan: quien siguiera la order (la
+        # API REST del FM, cuyo historial vive en RAM, o el emisor) puede
+        # haber perdido su estado. Para quien ya lo tenía no cambia nada.
+        queued = [t for t in self.tasks.alive() if t.status == QUEUED]
+        for pos, task in enumerate(queued, 1):
+            self._respond(task.order_id, task.update_id, QUEUED, queuePosition=pos, description=task.waiting)
+        if queued:
+            log.info("[fleet] %d tareas en la cola desde antes del reinicio", len(queued))
+
+    def _readopt(self, task: Task) -> bool:
+        """ASSIGNED: el robot la estaba haciendo. Se vuelve a seguir su job
+        como si el FM no se hubiera ido. False si no se puede (FAILED)."""
+        robot = self.robots.get(task.serial)
+        adopt = getattr(robot.driver, "adopt_job", None) if robot is not None else None
+        if adopt is None:
+            why = "ya no está en la flota" if robot is None else "tiene un driver que no permite retomarla"
+            self._close(task, FAILED, f"el FM se reinició y {task.serial} {why}")
+            return False
+        try:
+            job = robot.driver.translate(pick_action(task.order))
+        except OrderRejected as e:
+            self._close(task, FAILED, f"el FM se reinició y no puede retomarla: {e.description}")
+            return False
+        job.tag = task.tag
+        adopt(task.job_id)
+        robot.orders.accept(task.order, job, task.job_id)
+        log.info("[fleet] fleet/order %s: retomada en %s (job=%s)", task.order_id, task.serial, task.job_id)
+        return True
+
+    def _resolve_assigning(self, task: Task) -> None:
+        """ASSIGNING: el FM se cayó lanzándola. Se busca en el robot por su
+        etiqueta: si la tiene, se sigue (ASSIGNED); si seguro que no, vuelve
+        a la cola en su sitio; si no se puede saber, se queda en duda (D9) y
+        se reintenta cada `DOUBT_RETRY_S`. Nunca se relanza a ciegas."""
+        robot = self.robots.get(task.serial)
+        find = getattr(robot.driver, "find_job", None) if robot is not None else None
+        if robot is None or find is None:
+            why = "ya no está en la flota" if robot is None else "tiene un driver que no sabe buscarla"
+            self._doubt(task, f"{task.serial} {why}", retry=False)
+            return
+        if robot.last_telemetry is None:
+            self._doubt(task, f"{task.serial} no responde")
+            return
+        try:
+            job_id = find(task.tag)
+        except Exception as e:                 # sin red, la marca no lo sabe…
+            self._doubt(task, f"no se pudo buscar en {task.serial}: {type(e).__name__}: {str(e)[:120]}")
+            return
+        if job_id is None:
+            serial = task.serial
+            task.status, task.serial, task.assigned_at, task.retry_at = QUEUED, None, None, 0.0
+            task.waiting = f"vuelve a la cola: el FM se reinició antes de que {serial} la recibiera"
+            self.tasks.save(task)
+            log.warning("[fleet] fleet/order %s: %s", task.order_id, task.waiting)
+            if not task.announced:
+                self._announce(task)
+            return
+        task.status, task.job_id, task.waiting, task.retry_at = ASSIGNED, job_id, "", 0.0
+        self.tasks.save(task)
+        if self._readopt(task):
+            # El emisor puede no haber recibido el ASSIGNED: el FM se cayó antes.
+            self._respond(task.order_id, task.update_id, ASSIGNED, assignedSerial=task.serial,
+                          description=f"asignado a {task.serial} (comprobado tras reiniciar el FM)")
+
+    def _doubt(self, task: Task, reason: str, retry: bool = True) -> None:
+        task.retry_at = self.clock() + DOUBT_RETRY_S if retry else float("inf")
+        waiting = f"en duda tras reiniciar el FM: {reason}"
+        if waiting != task.waiting:
+            log.warning("[fleet] fleet/order %s %s (cancelOrder la descarta)", task.order_id, waiting)
+            task.waiting = waiting
+            self.tasks.save(task)
+
+    def _retry_doubts(self) -> None:
+        now = self.clock()
+        for task in [t for t in self.tasks.alive() if t.status == ASSIGNING and 0 < t.retry_at <= now]:
+            self._resolve_assigning(task)
 
     # ------------------------------------------------- fleet/instantActions
     def handle_fleet_instant_actions(self, data, invalid: str | None) -> None:
@@ -366,6 +472,12 @@ class Dispatcher:
             self._respond(order_id if isinstance(order_id, str) else "", 0, "CANCEL_FAILED",
                           errorType=E_NO_ORDER_TO_CANCEL, errorDescription=why)
             return
+        if task.status == ASSIGNING:
+            # En duda tras un reinicio (decisión 162): cancelarla es descartarla
+            # en el FM; si el robot la llegó a recibir, allí sigue.
+            self._close(task, CANCELLED, f"descartada con cancelOrder ({a.actionId}); "
+                                         f"si {task.serial} la recibió, sigue en el robot")
+            return
         if task.status == ASSIGNED:
             apply_instant_actions(robot, [Action("cancelOrder", a.actionId)],
                                   self.publish_state, self.publish_factsheet)
@@ -382,12 +494,13 @@ class Dispatcher:
                          {"orderId": order_id, "orderUpdateId": update_id, "status": status, **fields})
 
     def _publish_queue(self) -> None:
-        """`fleet/queue` retenido: las tareas que esperan, en orden. Solo si
-        cambia. El primero sale en el primer tick, aunque esté vacío: borra
-        el de un FM anterior (las tareas en RAM no sobreviven al reinicio)."""
+        """`fleet/queue` retenido: las tareas que esperan, en orden (y las en
+        duda tras un reinicio, `ASSIGNING`). Solo si cambia. El primero sale
+        en el primer tick, aunque esté vacío: sustituye al del FM anterior."""
         body = [{"orderId": t.order_id, "orderUpdateId": t.update_id, "actionType": t.action_type,
-                 "receivedAt": iso(t.received_at), "waiting": t.waiting}
-                for t in self.tasks.alive() if t.status == QUEUED]
+                 "status": t.status, "receivedAt": iso(t.received_at), "waiting": t.waiting}
+                | ({"serial": t.serial} if t.status == ASSIGNING else {})
+                for t in self.tasks.alive() if t.status in (QUEUED, ASSIGNING)]
         if body == self._last_queue:
             return
         self._last_queue = body

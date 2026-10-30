@@ -220,16 +220,19 @@ class MirClient:
         return self._req("GET", "maps")
 
     def mission_queue_post(self, mission_guid: str, parameters: list[dict] | None = None,
-                           priority: int = 0) -> dict:
+                           priority: int = 0, description: str | None = None) -> dict:
         """Encola una mission. `parameters` = [{"id": <input_name>, "value": ...}].
 
         `id` es el `input_name` de Blockly (lo que ve el usuario), NO el id
         interno de la action: con el interno el MiR responde 400
-        `parameter_input_name_not_valid`.
+        `parameter_input_name_not_valid`. `description` es texto libre que
+        el MiR guarda en la entrada (el FM pone ahí el orderId, decisión 161).
         """
         body: dict[str, Any] = {"mission_id": mission_guid, "priority": priority}
         if parameters:
             body["parameters"] = parameters
+        if description:
+            body["description"] = description
         return self._req("POST", "mission_queue", body)
 
     def mission_queue_id_get(self, queue_id: int) -> dict:

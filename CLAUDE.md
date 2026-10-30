@@ -72,11 +72,13 @@
   y se cancela si llega una order (`Robot.execute`). Con `zone` (decisión
   138) solo si el robot está fuera de esa zona del mapa (gancho `in_zone`
   del driver).
-- **Cola de `fleet/order`** (`fm/tasks.py`, decisiones 154–157,
+- **Cola de `fleet/order`** (`fm/tasks.py`, decisiones 154–162,
   `docs/plan-cola.md`): con todos los robots ocupados la order espera
   (`QUEUED`) y va al primero que quede libre, por orden de llegada
-  (`Dispatcher.tick()`). Fase 1 en RAM, detrás de `TaskStore`; la fase 2
-  la pasa a SQLite (#39).
+  (`Dispatcher.tick()`). En SQLite (`data/<fleet>.sqlite`, `FM_DATA`),
+  detrás de `TaskStore`; al arrancar, `Dispatcher.recover()` retoma las de
+  antes del reinicio (ganchos `find_job`/`adopt_job` del driver). Lo que
+  falta, en #39.
 - **Datos de la instalación fuera de este repo** (decisión 135, el repo es
   público): `fleet.yaml` y `catalog/` viven en el repo privado
   `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los
@@ -151,9 +153,8 @@ Servicio Python ("Fleet Manager", FM) que gestiona una flota de **MiR250**
 - Navegación por grafo `nodes`/`edges` del VDA 5050: el MiR navega solo con sus
   missions. Los `nodes` de la order son **un único nodo lógico** con `actions`.
 - Cambio de herramienta, catálogo de piezas, PLC (eso era del proyecto anterior).
-- Persistencia: el estado vive en RAM y en el robot. Excepción prevista: la
-  cola de `fleet/order` pasará a SQLite (decisión 155, fase 2 de
-  `docs/plan-cola.md`).
+- Persistencia: el estado vive en RAM y en el robot. Excepción: la cola de
+  `fleet/order`, en SQLite (decisión 160, `docs/plan-cola.md`).
 - `factsheet` / `visualization` VDA 5050 (opcionales, se añaden si se piden).
 
 ---
@@ -703,6 +704,10 @@ Gotchas verificados contra robots reales en el proyecto anterior:
    inventarlo: pedirlo al usuario o copiarlo de la web del MiR.
 10. **Missions y positions se crean en la web del MiR**, no por API. El FM solo
     las referencia por nombre.
+11. **`description` de `POST /mission_queue`** (verificado 2026-10-30): el MiR
+    lo guarda y lo devuelve en `GET mission_queue/<id>` (el listado
+    `GET mission_queue` solo trae `id`, `state`, `url`). El FM pone ahí la
+    etiqueta de la tarea para reconocerla tras un reinicio (decisión 161).
 
 Esqueleto mínimo del cliente (nombres a conservar):
 

@@ -71,7 +71,11 @@ services:
       # Si viven en otro sitio (FM_CONFIG/FM_CATALOG), monta esa carpeta aquí.
       - ./config:/app/config
       - ./catalog:/app/catalog
-    command: ["python", "run_fm.py", "--config", "config/fleet.yaml", "--catalog", "catalog"]
+      # Cola de fleet/order en SQLite (decisión 160): fuera de la imagen para
+      # que sobreviva a recrear el contenedor. `data/` ya existe en el repo
+      # (si no, docker la crearía de root y el FM no podría escribir).
+      - ./data:/app/data
+    command: ["python", "run_fm.py", "--config", "config/fleet.yaml", "--catalog", "catalog", "--data", "data"]
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -95,7 +99,8 @@ services:
     volumes:
       - ./config:/app/config
       - ./catalog:/app/catalog
-    command: ["python", "run_fm.py", "--config", "config/fleet-sim.yaml", "--catalog", "catalog"]
+      - ./data:/app/data   # fleet-sim.sqlite: no comparte cola con la flota real
+    command: ["python", "run_fm.py", "--config", "config/fleet-sim.yaml", "--catalog", "catalog", "--data", "data"]
     depends_on:
       mosquitto:
         condition: service_healthy

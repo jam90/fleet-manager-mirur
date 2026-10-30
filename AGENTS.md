@@ -12,8 +12,9 @@ comentarios que explican el *porqué*.
 - `fm/robot.py`, `fm/orders.py`, `fm/assigner.py`, `fm/fleet.py` — runtime,
   tracker `orderUpdateId`, asignador puro, Dispatcher MQTT
 - `fm/tasks.py` — cola de `fleet/order`: con todos los robots ocupados la order
-  espera (`QUEUED`) y va al primero que quede libre (`docs/plan-cola.md`; en RAM,
-  detrás de `TaskStore`, SQLite en la fase 2)
+  espera (`QUEUED`) y va al primero que quede libre (`docs/plan-cola.md`). En
+  SQLite (`data/<fleet>.sqlite`, `FM_DATA`; fuera de git), detrás de `TaskStore`;
+  sobrevive a reiniciar el FM
 - `fm/mqtt_bus.py` — paho; **sin broker no arranca** (`TimeoutError`)
 - `fm/charge.py` — auto-carga bajo `battery_floor`, no aborta orders
 - `fm/adapters/<marca>/` — drivers (`mir`, `sim`); el core no importa MiR

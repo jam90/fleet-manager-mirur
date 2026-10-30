@@ -16,3 +16,8 @@ img_referencia/
 config/fleet.yaml
 catalog/*
 !catalog/README.md
+
+# Estado que escribe el FM mientras funciona (decisión 160): la cola de
+# fleet/order en SQLite. Solo va el README.
+data/*
+!data/README.md

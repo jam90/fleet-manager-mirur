@@ -193,8 +193,11 @@ do not need to know the robot.
 #### `GET /api/queue`
 
 Fleet orders waiting for a robot, in order (the next one first):
-`[{orderId, orderUpdateId, actionType, receivedAt, waiting}]`, where
-`waiting` is why no robot has taken it yet. `503` until the FM has published
+`[{orderId, orderUpdateId, actionType, status, receivedAt, waiting}]`, where
+`waiting` is why no robot has taken it yet. `status` is `QUEUED`, or
+`ASSIGNING` (with `serial`) for an order in doubt after an FM restart: the FM
+does not know yet whether that robot received it, and retries every 30 s;
+cancelling it discards it. `503` until the FM has published
 its queue (a few seconds after it starts).
 
 ### Robot status
@@ -366,8 +369,9 @@ async function sendOrder(actionType, params = {}, orderId) {
 
 - One mission per order (one action). Chain missions from your side by
   sending the next one after `FINISHED`.
-- The fleet-order queue lives in memory: orders still waiting are lost if
-  the FM restarts (it will move to SQLite).
-- Order history is kept in memory only and is lost when the FM restarts.
+- The fleet-order queue survives an FM restart (it is stored on disk). The
+  order history of this API (`GET /api/orders`) is kept in memory only: after
+  a restart it only knows the orders still queued or running (the FM
+  announces them again) and the new ones.
 - No authentication. Do not expose it outside the workshop network.
 - The same operations are available over MQTT (VDA 5050 v3); see the FM README.

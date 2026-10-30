@@ -99,6 +99,9 @@ class QueueConfig:
     falta; con un número, al pasar ese tiempo sin robot sale como EXPIRED."""
     max_size: int = 50
     max_wait_s: float | None = None
+    # Días que se guardan las terminadas en el histórico (D8, decisión 160);
+    # None = no se borran. Se purga al arrancar el FM.
+    keep_days: float | None = 30.0
 
 
 @dataclass
@@ -154,6 +157,16 @@ def install_paths() -> tuple[Path, Path]:
         p = Path(os.environ.get(var) or default)
         return p if p.is_absolute() else ROOT / p
     return at("FM_CONFIG", "config/fleet.yaml"), at("FM_CATALOG", "catalog")
+
+
+def data_dir() -> Path:
+    """Carpeta de los datos que el FM escribe mientras funciona (decisión
+    160): hoy, la cola de `fleet/order` en SQLite. No es configuración de la
+    instalación (eso es `install_paths`) ni va en git: `FM_DATA` en `.env`,
+    relativa a la raíz del repo; por defecto `data/`. Llamar después de
+    `load_dotenv`."""
+    p = Path(os.environ.get("FM_DATA") or "data")
+    return p if p.is_absolute() else ROOT / p
 
 
 def load_config(yaml_path: str | Path = "config/fleet.yaml",
@@ -227,7 +240,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
 
 
 IDLE_KEYS = {"action", "after_s", "params", "zone"}
-QUEUE_KEYS = {"max_size", "max_wait_s"}
+QUEUE_KEYS = {"max_size", "max_wait_s", "keep_days"}
 
 
 def _queue(raw) -> QueueConfig:
@@ -246,7 +259,12 @@ def _queue(raw) -> QueueConfig:
     if wait is not None and (isinstance(wait, bool) or not isinstance(wait, (int, float)) or not wait > 0):
         raise ConfigError("queue.max_wait_s: segundos que una tarea puede esperar robot "
                           "(un número mayor que 0), o nada para esperar siempre")
-    return QueueConfig(size, float(wait) if wait is not None else None)
+    keep = raw.get("keep_days", QueueConfig.keep_days)
+    if keep is not None and (isinstance(keep, bool) or not isinstance(keep, (int, float)) or not keep > 0):
+        raise ConfigError("queue.keep_days: días que se guardan las tareas terminadas "
+                          "(un número mayor que 0), o nada para no borrarlas")
+    return QueueConfig(size, float(wait) if wait is not None else None,
+                       float(keep) if keep is not None else None)
 
 
 def _idle_return(where: str, raw, base: IdleReturnConfig) -> IdleReturnConfig:

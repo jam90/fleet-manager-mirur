@@ -57,6 +57,10 @@ class Job:
     action: Action
     label: str          # para el log: "mission 'coger'"
     payload: Any = None
+    # Etiqueta que el core pone antes de `execute` (el orderId de una tarea de
+    # la cola, decisión 161). El driver la deja en el robot si puede, para
+    # reconocer el job tras un reinicio del FM (`find_job`).
+    tag: str | None = None
 
 
 @dataclass
@@ -202,6 +206,19 @@ class RobotDriver(Protocol):
         en caliente, fm/reload.py). Sin red: después el core vuelve a llamar
         a `connect()` desde el hilo de poll. Sin el gancho, cambiar las
         actions del robot pide reiniciar el FM."""
+
+    def find_job(self, tag: str) -> str | None:
+        """Gancho opcional (cola de fleet/order, decisión 161): `job_id` del
+        job lanzado con `Job.tag == tag`, o None si seguro que el robot no lo
+        tiene. Lanza si no se puede saber (sin red, la marca no guarda la
+        etiqueta…). Lo usa el core al arrancar, para una tarea que el FM
+        estaba lanzando cuando se cayó. Puede usar la red."""
+
+    def adopt_job(self, job_id: str) -> None:
+        """Gancho opcional (decisión 161): tras reiniciar el FM, `job_id` lo
+        lanzó el FM anterior; el driver lo trata como propio (no como trabajo
+        ajeno) y el core vuelve a seguirlo con `job_status`. Sin el gancho,
+        una tarea en curso al reiniciar no se puede retomar."""
 
     def make_missions(self) -> "MissionsSource":
         """Gancho opcional: objeto para consultar las misiones del robot desde

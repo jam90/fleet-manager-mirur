@@ -56,13 +56,15 @@ sus positions, sus missions) y no van en este repo: para empezar, copia
 el `catalog/` vacío del repo. Para guardarlos con historial, ponlos en un
 repo aparte y di en `.env` dónde están (`FM_CONFIG`, `FM_CATALOG`, rutas
 relativas a la raíz del FM); `--config` y `--catalog` de `run_fm.py`
-mandan sobre `.env`. Ejemplo:
+mandan sobre `.env`. Lo que el FM escribe mientras funciona (la cola de
+`fleet/order`) va aparte, en `data/` (`FM_DATA` o `--data`; ver
+`data/README.md`). Ejemplo:
 
 ```yaml
 mqtt: { fleet_manufacturer: imperial_fleet }   # segmento <manufacturer> de fleet/*
 auto_charge: { battery_floor: 20 }  # genérico: umbrales; el job de carga lo pone el driver
 site: imperialfleet-session000-01-0000-001   # opcional: solo trabajan los robots de este site
-queue: { max_size: 50, max_wait_s: 600 }      # opcional: cola de fleet/order (ver Contrato MQTT)
+queue: { max_size: 50, max_wait_s: 600, keep_days: 30 }   # opcional: cola de fleet/order (Contrato MQTT)
 drivers:                            # defaults por marca (cualquier robot los puede pisar)
   mir:
     mission_group: "mirur-tknika"   # solo se indexan las missions de este grupo
@@ -284,7 +286,7 @@ recibir varios: `QUEUED` al llegar y `ASSIGNED` cuando un robot queda libre.
 | `ASSIGNED` | lanzada en un robot (al llegar o al salir de la cola) | `assignedSerial`, `description` |
 | `QUEUED` | al llegar, si no hay robot libre | `queuePosition`, `description` (por qué espera) |
 | `REJECTED` | no se acepta: inválida, ningún robot de la flota puede hacerla, cola llena (`QUEUE_FULL`) | `errorType`, `errorDescription` |
-| `FAILED` | estaba en la cola y el robot no la aceptó al lanzarla | `errorType`, `errorDescription` |
+| `FAILED` | estaba en la cola y el robot no la aceptó al lanzarla; o, tras reiniciar el FM, no se pudo retomar | `errorType`, `errorDescription` o `description` |
 | `CANCELLED` | cancelada con `fleet/instantActions` | `description` |
 | `EXPIRED` | más de `queue.max_wait_s` esperando robot | `description` |
 | `CANCEL_FAILED` | `cancelOrder` de algo que no está en la cola ni en curso | `errorType`, `errorDescription` |
@@ -324,16 +326,19 @@ eso no se encola. Si al salir de la cola el robot no acepta la mission, la
 tarea termina `FAILED` y no se prueba en otro robot (mismo motivo que arriba).
 
 Límites en `fleet.yaml` (bloque `queue`, opcional): `max_size` (50 por
-defecto; la siguiente se rechaza con `QUEUE_FULL`) y `max_wait_s` (vacío =
-espera lo que haga falta; con segundos, la que se pasa sale `EXPIRED`).
+defecto; la siguiente se rechaza con `QUEUE_FULL`), `max_wait_s` (vacío =
+espera lo que haga falta; con segundos, la que se pasa sale `EXPIRED`) y
+`keep_days` (días que se guardan las terminadas; 30 por defecto).
 
-`fleet/queue` (retenido) lleva las tareas que esperan, en orden. Se publica
-cada vez que cambia, y al arrancar el FM aunque esté vacía:
+`fleet/queue` (retenido) lleva las tareas que esperan, en orden, con su
+`status`: `QUEUED`, o `ASSIGNING` (y su `serial`) si está en duda tras un
+reinicio del FM (abajo). Se publica cada vez que cambia, y al arrancar el
+FM aunque esté vacía:
 
 ```json
 { "headerId": 3, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "tasks": [ { "orderId": "fleet-77a1c2e0", "orderUpdateId": 0, "actionType": "coger",
-               "receivedAt": "2026-10-30T11:01:21.918Z",
+               "status": "QUEUED", "receivedAt": "2026-10-30T11:01:21.918Z",
                "waiting": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" } ] }
 ```
 
@@ -349,9 +354,20 @@ robot. La respuesta llega por `order_response` (`CANCELLED` o
                  "actionParameters": [ { "key": "orderId", "value": "fleet-77a1c2e0" } ] } ] }
 ```
 
-**La cola vive en RAM**: si el FM se reinicia, las orders que esperaban se
-pierden (el `fleet/queue` vacío del arranque lo dice). Pasará a SQLite
-(`docs/plan-cola.md`, fase 2).
+**La cola sobrevive a un reinicio del FM** (SQLite en
+`data/<nombre del fleet.yaml>.sqlite`; `docs/plan-cola.md` §5). Al volver:
+
+- Las que esperaban siguen en la cola, en su sitio, y el FM repite su
+  `QUEUED` (por si quien las seguía perdió el estado).
+- Las que estaba haciendo un robot se siguen como si nada (el FM vuelve a
+  seguir su mission) y repite su `ASSIGNED`. Con un driver que no lo permite
+  (el simulado), pasan a `FAILED` con el motivo.
+- Si el FM se cayó justo al lanzar una, la busca en el robot por una
+  etiqueta que deja al lanzarla (en el MiR, el `description` de la entrada
+  de su `mission_queue`, que se ve en su web): si la tiene, `ASSIGNED`; si
+  no, vuelve a la cola. Si no se puede saber (robot sin red), se queda en
+  duda (`ASSIGNING` en `fleet/queue`) y se reintenta cada 30 s; un
+  `cancelOrder` la descarta. Nunca se lanza dos veces a ciegas.
 
 ### `state` (resumen del mapeo)
 
@@ -688,9 +704,7 @@ robots:
 - Sin navegación por grafo `nodes`/`edges`: el MiR navega con sus missions; la
   order es un nodo lógico con una action.
 - `fleet/order` y `order_response` son extensión propia fuera del estándar.
-- La cola de `fleet/order` vive en RAM: si el FM se reinicia, las orders que
-  esperaban se pierden (pasará a SQLite, `docs/plan-cola.md`). Sin
-  coordinación de tráfico entre robots.
+- Sin coordinación de tráfico entre robots.
 - `safetyState.fieldViolation` siempre `false` (el MiR no lo expone).
 - `operatingMode`: con la llave en neutra se publica `INTERVENED`, pero el FM
   **rechaza orders** (la norma las permite en ese modo). Y en `MANUAL` la
@@ -709,7 +723,7 @@ fm/robot.py             runtime por robot: driver + OrderTracker + última Telem
 fm/orders.py            OrderTracker: ciclo orderUpdateId + seguimiento del job (vía driver)
 fm/assigner.py          assign(): función pura
 fm/fleet.py             Dispatcher: <serial>/order, fleet/order (con cola) → order_response, fleet/queue
-fm/tasks.py             tareas de la cola de fleet/order y su almacén (TaskStore; en RAM)
+fm/tasks.py             tareas de la cola de fleet/order y su almacén (TaskStore; SQLite en data/)
 fm/mqtt_bus.py          paho: publish, LWT por robot, inbox (cola) de entrantes
 fm/adapters/base.py     frontera core ↔ marca: Telemetry, Job, RobotDriver (Protocol)
 fm/adapters/mir/        driver MiR250: client.py (REST), translate.py (puro), driver.py, config.py

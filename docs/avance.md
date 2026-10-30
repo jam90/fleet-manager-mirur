@@ -2884,6 +2884,78 @@ del FM y la pasarela de voz (Mosquitto aparte): tres misiones por la voz
 de `/api/queue`; «parar» una en curso → `CANCELLED` en su robot, y lo sigue
 siendo tras su `state`; volver a pararla → 409 «ya terminó».
 
+## 2026-10-30 — Cola de `fleet/order` (fase 2): SQLite y reinicios
+
+Antes, en la misma tarde, prueba de la fase 1 con los dos MiR (mission
+`prueba-cola`: 10 s de espera, sin moverse; creada a mano en el grupo
+`mirur-tknika` de cada robot, se queda para las pruebas de la cola). Con el
+`site:` quitado un rato, porque los robots estaban en mapas de otro proyecto.
+Cinco orders: la primera a mir-1, cuatro `QUEUED`, la quinta cancelada en la
+cola sin llegar a ejecutarse, y mir-1 cogió cada una al terminar la anterior
+(cada ~10,5 s). mir-2 no recibió ninguna: ejecutaba una mission ajena (cola
+664, esperando un registro PLC), y el FM la trató bien como ocupado. Falta
+ver el reparto entre los dos con los dos libres.
+
+160. **La cola en SQLite** (`SqliteTaskStore`, `fm/tasks.py`), detrás de
+     `TaskStore` como se decidió (155). Un fichero por `fleet.yaml`:
+     `<FM_DATA>/<nombre>.sqlite` (`data/fleet.sqlite`; `--data` en
+     `run_fm.py`), para que una flota simulada no comparta cola con la
+     real. `data/` fuera de git (solo su README). Un `commit` por cambio y
+     el diario por defecto de SQLite (no WAL): escribe poco, y lo que el FM
+     ya respondió está en disco aunque se vaya la luz. Un solo escritor, el
+     hilo principal; la web no lee de aquí (lee el espejo, decisión 145).
+     Las vivas, también en RAM; al arrancar se cargan del fichero. El
+     histórico se purga al arrancar: `queue.keep_days` (30, D8). La
+     tabla tiene `id` propio (orden de llegada) en vez de la clave
+     `(orderId, orderUpdateId)` del plan: una order FAILED se puede volver
+     a mandar con el mismo id, y serían dos filas. En compose, `./data`
+     montado en `fleet` y `fleet-sim`.
+161. **`ASSIGNING` y la etiqueta en el robot.** Antes del POST la tarea se
+     guarda `ASSIGNING`; el FM pone en `Job.tag` una etiqueta
+     (`<orderId>@<hora de llegada>`) y el driver MiR la deja en el campo
+     `description` de la entrada de la `mission_queue`. Si el FM se cae
+     entre el POST y la respuesta, al arrancar busca esa etiqueta en las 20
+     entradas más nuevas del robot (`find_job`): la tiene → `ASSIGNED`;
+     seguro que no → vuelve a la cola en su sitio. Por etiqueta y no por
+     hora, porque los relojes del PC (WSL salta) y del robot no tienen por
+     qué coincidir; con la hora de llegada, un reintento de la misma order
+     no se confunde con el anterior. **Retomar las `ASSIGNED` se adelanta
+     de la fase 4:** sin eso, al reiniciar, una tarea que el robot sigue
+     haciendo se marcaba FAILED. El driver la adopta (`adopt_job`: deja de
+     parecer trabajo ajeno) y el tracker la sigue como si nada. Las dos son
+     capacidades opcionales del driver; sin ellas (driver `sim`, cuyos jobs
+     viven en el propio proceso) una en curso pasa a FAILED con el motivo.
+     Un robot de la flota que no corre en este FM (`--robot`) no se toca.
+162. **Tarea en duda (D9) sin web todavía.** Si no se puede saber (robot sin
+     red, driver sin `find_job`), la tarea se queda `ASSIGNING`, sale en
+     `fleet/queue` con `status: ASSIGNING` y su robot, y se vuelve a buscar
+     cada 30 s. `cancelOrder` la descarta (si el robot la recibió, allí
+     sigue). Relanzarla a mano será de la web (fase 3). Al arrancar, el FM
+     repite el `QUEUED` (con su puesto) de las que esperan y el `ASSIGNED`
+     de las que retoma: el historial de la API REST vive en RAM, y sin esto
+     `GET /api/orders/<id>` de una order que sigue en la cola daba 404 tras
+     el reinicio (y la página de voz decía "estado perdido").
+
+Probado: `pytest` 328 (`tests/test_tasks.py`, `tests/test_queue_restart.py`:
+caída con la tarea en cola, en curso, a mitad del POST con el robot que la
+tiene y que no, sin red, descartar y `--robot`; y el driver MiR con la
+etiqueta). Con la flota simulada y `kill -9` a mitad: las dos en cola
+siguieron y se hicieron; las dos en curso, FAILED (driver `sim`).
+**Con los MiR** (mission `prueba-cola`, `site:` quitado un rato):
+
+- El MiR guarda el `description` del POST: la entrada 670 de mir-2 llevaba
+  `desc-130832@1793362113.766`, la etiqueta de la tarea en el SQLite. Un
+  driver recién creado la encuentra con `find_job` (670) y, con la etiqueta
+  de otro intento de la misma order, devuelve None.
+- Reinicio con tareas en curso: seis orders seguidas; antes del reinicio,
+  cada una al robot que quedaba libre (mir-1 se liberó a mitad: se vio
+  también el reparto entre los dos). FM caído de 13:09:45 a 13:09:50 con la
+  3 (mir-1) y la 4 (mir-2) en curso: al volver repitió su `ASSIGNED
+  (retomada…)` y el `QUEUED` de la 5 y la 6, vio que la 3 y la 4 ya habían
+  terminado y lanzó la 5 y la 6 en el mismo segundo. Las seis, FINISHED;
+  en la `mission_queue` de cada robot, una entrada por order (ninguna
+  repetida).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2952,11 +3024,12 @@ las del FM son placeholders y no hay tiempos que medir.
     parámetro se trata como propio de cada robot (resolverlo por nombre al
     desplegar).
 
-- **#39** **Cola de `fleet/order`, fases 2–5** (`docs/plan-cola.md` §8):
-    SQLite y recuperación tras reinicio, bloque Cola en la web (ya
-    hay «Quitar de la cola» en las enviadas y `GET /api/queue`),
-    recuperar las `ASSIGNED`, histórico y sacar del dock (D6); prueba con
-    los dos MiR.
+- **#39** **Cola de `fleet/order`, lo que falta** (`docs/plan-cola.md` §8).
+    Fase 3: bloque Cola en la web (ya hay «Quitar de la cola» en las
+    enviadas y `GET /api/queue`) y relanzar o descartar una tarea en duda.
+    Fase 4: `expected_s` con el histórico y sacar del dock (D6). La mission
+    `prueba-cola` (10 s de espera) sigue en los dos robots para probar;
+    borrarla cuando no haga falta.
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 

@@ -190,16 +190,19 @@ def test_install_paths_de_env_o_del_repo(monkeypatch, tmp_path):
 
 def test_queue_por_defecto_y_valores(tmp_path):
     cfg = load_config(_write(tmp_path, YAML), env_path=tmp_path / "no.env")
-    assert (cfg.queue.max_size, cfg.queue.max_wait_s) == (50, None)
-    cfg = load_config(_write(tmp_path, YAML + "queue: { max_size: 5, max_wait_s: 600 }\n"),
+    assert (cfg.queue.max_size, cfg.queue.max_wait_s, cfg.queue.keep_days) == (50, None, 30.0)
+    cfg = load_config(_write(tmp_path, YAML + "queue: { max_size: 5, max_wait_s: 600, keep_days: 7 }\n"),
                       env_path=tmp_path / "no.env")
-    assert (cfg.queue.max_size, cfg.queue.max_wait_s) == (5, 600.0)
+    assert (cfg.queue.max_size, cfg.queue.max_wait_s, cfg.queue.keep_days) == (5, 600.0, 7.0)
+    cfg = load_config(_write(tmp_path, YAML + "queue: { keep_days: }\n"), env_path=tmp_path / "no.env")
+    assert cfg.queue.keep_days is None                   # vacío = no se borra el histórico
 
 
 @pytest.mark.parametrize("bad, hint", [
     ("queue: { max_size: 0 }", "max_size"),
     ("queue: { max_size: true }", "max_size"),
     ("queue: { max_wait_s: -1 }", "max_wait_s"),
+    ("queue: { keep_days: 0 }", "keep_days"),
     ("queue: { prioridad: 1 }", "claves desconocidas"),
     ("queue: 5", "queue"),
 ])

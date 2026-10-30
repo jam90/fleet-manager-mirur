@@ -51,9 +51,15 @@ class _FakeClient(MirClient):
             qid = 100 + len(self.posted)
             self.queue[qid] = "Pending"
             return {"id": qid}
+        if method == "GET" and path == "mission_queue":
+            if self.fail_status:
+                raise ConnectionError("sin red")
+            return [{"id": qid, "state": st} for qid, st in sorted(self.queue.items())]
         if method == "GET" and path.startswith("mission_queue/"):
             qid = int(path.split("/")[1])
-            return {"state": self.queue[qid], "message": self.messages.get(qid, "")}
+            posted = self.posted[qid - 101] if 0 <= qid - 101 < len(self.posted) else {}
+            return {"state": self.queue[qid], "message": self.messages.get(qid, ""),
+                    "description": posted.get("description", "")}
         if method == "DELETE" and path.startswith("mission_queue/"):
             self.deleted.append(int(path.split("/")[1]))
             return None
@@ -290,3 +296,31 @@ def test_in_zone_por_guid_o_nombre_y_lo_guarda_un_rato():
     # Sin saberlo: zona que no está en el mapa, otro mapa sin zonas, sin pose.
     assert d.in_zone("no-existe", dentro) is None
     assert d.in_zone("z-1", Telemetry(70.0, map_id="m")) is None
+
+
+# ---------------------------------------------- cola de fleet/order (decisión 161)
+def test_la_etiqueta_va_al_description_y_find_job_la_encuentra():
+    d, c = _driver()
+    d.connect()
+    job = d.translate(Action("coger", "a1"))
+    job.tag = "o1@1000.000"
+    assert d.execute(job) == "101"
+    assert c.posted[-1]["description"] == "o1@1000.000"
+    other = d.translate(Action("coger", "a2"))          # sin etiqueta: no manda description
+    d.execute(other)
+    assert "description" not in c.posted[-1]
+    assert d.find_job("o1@1000.000") == "101"
+    assert d.find_job("o9@1.000") is None                # seguro que no está
+    c.fail_status = True
+    with pytest.raises(ConnectionError):                 # sin red: no se sabe
+        d.find_job("o1@1000.000")
+
+
+def test_adopt_job_hace_propia_una_mission_del_fm_anterior():
+    d, c = _driver()
+    d.connect()
+    c.queue[300] = "Executing"
+    c.status.update(state_id=5, mission_queue_id=300)
+    assert d.poll().foreign_busy                         # recién arrancado: parece ajena
+    d.adopt_job("300")
+    assert not d.poll().foreign_busy

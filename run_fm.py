@@ -4,7 +4,10 @@
     python run_fm.py [--period 1.0] [--robot mir-1 --robot mir-2] [--config <fleet.yaml>] [--catalog <dir>]
 
 Por defecto, `fleet.yaml` y `catalog/` son los que dice `.env` (FM_CONFIG,
-FM_CATALOG) o, sin ellas, `config/fleet.yaml` y `catalog/` del repo.
+FM_CATALOG) o, sin ellas, `config/fleet.yaml` y `catalog/` del repo. La cola
+de `fleet/order` se guarda en `<FM_DATA>/<nombre del fleet.yaml>.sqlite`
+(por defecto `data/fleet.sqlite`; `--data` para otra carpeta): una flota
+simulada (`fleet-sim.yaml`) no comparte cola con la real.
 
 Bucle principal: cada `period` segundos, `Robot.poll()` de todos los robots en
 paralelo (solo red), y después, en el hilo principal, por robot: Telemetry →
@@ -27,11 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fm.adapters import make_driver  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-from fm.config import ConfigError, install_paths, load_config  # noqa: E402
+from fm.config import ConfigError, data_dir, install_paths, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
 from fm.mqtt_bus import MqttBus, running_fm  # noqa: E402
 from fm.reload import Reloader  # noqa: E402
 from fm.robot import Robot  # noqa: E402
+from fm.tasks import SqliteTaskStore  # noqa: E402
 from fm.vda5050.factsheet import factsheet_for  # noqa: E402
 from fm.vda5050.state import State  # noqa: E402
 
@@ -44,6 +48,8 @@ def parse_args(argv=None):
     p.add_argument("--robot", action="append", help="limitar a estos serials (repetible)")
     p.add_argument("--config", help="fleet.yaml (por defecto FM_CONFIG de .env o config/fleet.yaml)")
     p.add_argument("--catalog", help="carpeta del catálogo (por defecto FM_CATALOG de .env o catalog/)")
+    p.add_argument("--data", help="carpeta de los datos que escribe el FM, la cola de fleet/order "
+                                  "(por defecto FM_DATA de .env o data/)")
     p.add_argument("--env", default=".env")
     p.add_argument("--web-port", type=int, default=8050, help="puerto de la interfaz web (0 = sin web)")
     p.add_argument("--force", action="store_true",
@@ -154,8 +160,15 @@ def main(argv=None) -> int:
     for r in robots.values():
         publish_factsheet(r)
 
+    # Cola de fleet/order en SQLite (decisión 160): un fichero por fleet.yaml.
+    queue_db = Path(args.data or data_dir()) / f"{config.stem}.sqlite"
+    tasks = SqliteTaskStore(queue_db, keep_days=cfg.queue.keep_days)
+    log.info("[fleet] cola de fleet/order en %s", queue_db)
     dispatcher = Dispatcher(cfg, robots, bus, lambda r: publish_state(r, bus), publish_factsheet,
-                            validate=args.validate)
+                            validate=args.validate, tasks=tasks)
+    # Lo que el FM anterior dejó a medias (decisiones 161–162), antes de
+    # atender nada nuevo: la telemetría ya está leída (`poll_all` de arriba).
+    dispatcher.recover()
     if args.validate:
         log.info("[fleet] --validate: orders e instantActions se validan contra schemas/")
     dispatcher.subscribe()
@@ -190,6 +203,7 @@ def main(argv=None) -> int:
         if web is not None:
             web.stop()
         bus.stop()
+        tasks.close()
     if restart:
         # El nuevo proceso comprueba el broker (decisión 107): ve OFFLINE y arranca.
         log.info("[fm] reiniciando: %s %s", sys.executable, " ".join(sys.argv))
