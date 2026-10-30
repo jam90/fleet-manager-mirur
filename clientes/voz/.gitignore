@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+
+# Voice log (transcriptions + audio recordings)
+logs/
+
+# Evaluación: audio generado, voces Piper y resultados (se regeneran)
+eval/audio_cases/
+eval/resultados/

@@ -2663,6 +2663,120 @@ contestar desde el FM: eso sigue en la web o la tablet del robot).
      ignoraba (mapa todo gris); un atributo SVG en camelCase enlazado con
      Vue va con `.camel` (`:view-box.camel`).
 
+## 2026-10-07 — docker-compose con Mosquitto
+
+> Entrada escrita en otra copia del repo (sin commitear) e integrada el 2026-10-30
+> con la rama `migracion/pasarela-voz`: por eso va aquí y sus decisiones se
+> renumeraron de 51–57 a 142–148.
+
+El FM no arranca sin broker (`MqttBus.start()` falla con TimeoutError;
+también lo usan la web y `scripts/*`), y hasta ahora Mosquitto se instalaba
+a mano en el host (`localhost:1883` sin auth). Se añade compose para que
+`broker + FM` arranquen juntos.
+
+### Código
+
+- `mosquitto/config/mosquitto.conf`: `listener 1883`, `allow_anonymous true`
+  (como el broker de desarrollo del README), persistencia en
+  `/mosquitto/data` para los retained (`connection`, `factsheet`).
+- `Dockerfile.fm`: `python:3.12-slim`, instala `requirements.txt`, copia
+  `run_fm.py` + `fm/` + `config/` + `schemas/`; usuario sin privilegios;
+  `STOPSIGNAL SIGTERM` (el FM publica `OFFLINE` al cerrar limpio).
+- `docker-compose.yml`: `mosquitto` (1883 publicado, healthcheck, volumen
+  `mosquitto-data`), `fleet` (robots reales, web `:8050`) y `fleet-sim`
+  (perfil `sim`, web `:8051`). `MQTT_HOST=mosquitto` en `environment:`
+  gana al `.env` porque `load_dotenv()` no pisa variables existentes;
+  el token (`AUTH_HEADER`/`MIR_AUTH…`) sigue viniendo de `.env` (fuera de git).
+  `config/` montado `:ro` para retocar missions/umbrales sin reconstruir.
+- `docker compose up --build` = flota real; `--profile sim up fleet-sim` =
+  demo sin hardware. Verificado end-to-end con sim: `state` a 1 Hz visible
+  desde el host, `POST :8051/api/fleet/order coger` → `order_response
+  ASSIGNED sim-1` → `coger:FINISHED`. `pytest`: 76 passed.
+
+### Decisiones nuevas
+
+142. **Un `Dockerfile.fm` para ambos perfiles**: `fleet` y `fleet-sim` usan
+    la misma imagen y solo cambian `command` (`--config`) y puerto. Menos
+    deriva que dos Dockerfiles.
+143. **`fleet-sim` con perfil `sim`**: `up` a secas levanta solo lo real
+    (evita publicar dos FM contra el mismo broker por despiste en clase).
+144. **Sin auth en el broker de compose**, igual que el de desarrollo. Si algún
+    día se expone a la LAN del taller, añadir usuario/clave en
+    `mosquitto.conf` y `MQTT_USERNAME/PW` (hoy `mqtt_bus.py` no los soporta).
+
+## 2026-10-09 — API REST para integración (estado, orders, seguimiento)
+
+> Entrada escrita en otra copia del repo (sin commitear) e integrada el 2026-10-30
+> con la rama `migracion/pasarela-voz`: por eso va aquí y sus decisiones se
+> renumeraron de 51–57 a 142–148.
+
+Hasta ahora el estado de los robots y el veredicto del asignador solo
+llegaban por MQTT o por el WebSocket de la UI: un cliente HTTP simple podía
+mandar una `fleet/order` pero no saber si se asignó ni cómo iba.
+
+### Código
+
+- `fm/web/server.py`: rutas nuevas `GET /api/health`, `/api/robots`,
+  `/api/robots/<serial>` (resumen), `…/state|connection|factsheet` (mensaje
+  VDA crudo, 503 si aún no hay), `…/actions`, `POST /api/robots/<serial>/order`
+  (order dirigida), `GET /api/orders`, `/api/orders/<orderId>`. Los POST de
+  order aceptan `orderId` propio y `?wait=N` (≤ 30 s).
+- El espejo (`mirror`) retiene también `factsheet` y alimenta `orders`:
+  `order_response` → ASSIGNED/REJECTED; `state` con ese `orderId` →
+  ACCEPTED y fase por `actionStates` (RUNNING/FINISHED/FAILED); `errors[]`
+  con `errorReferences.orderId` de una order PENDING → REJECTED (así se ve el
+  rechazo de una order dirigida, que no tiene `order_response`).
+- `scripts/api.http`: chuleta de todas las rutas (REST Client de VS Code).
+- Tests: `tests/test_web.py` (+4). `pytest`: 80 passed. Probado end-to-end
+  con la flota simulada (Dispatcher y SimDriver reales, bus en memoria en
+  lugar de Mosquitto): asignada → RUNNING → FINISHED, rechazo por ocupados,
+  dirigida rechazada por `OTHER_ORDER_ACTIVE`, dirigida aceptada y
+  `cancelOrder` → FAILED.
+
+### Decisiones nuevas
+
+145. **La API lee del espejo, no de `Robot`.** Todo lo que devuelve un GET es
+    algo que el FM ya publicó por MQTT: un cliente HTTP y uno MQTT ven lo
+    mismo, y el hilo web no toca el estado del hilo principal. El historial
+    `orders` lo escribe el hilo principal y lo leen las peticiones: Lock
+    (como `HeaderCounter`).
+146. **`?wait=` con futures, no con polling.** El POST registra un future
+    antes de publicar; el espejo lo despierta (`call_soon_threadsafe`) en
+    cuanto hay veredicto. Sin espera, o si no llega a tiempo, el cliente
+    consulta `GET /api/orders/<orderId>` (202 = sigue PENDING).
+147. **Historial de orders en RAM, acotado a 200** y sin persistencia (§1).
+    Incluye las orders que llegan por MQTT, no solo las de la API.
+148. **`orderId` del cliente admitido**: el sistema aguas arriba puede usar
+    sus ids y reintentar con el mismo (idempotencia VDA, §5.4).
+
+## 2026-10-29 — Pasarela de voz en `clientes/` y modelos en un repo aparte
+
+La voz (antes `../mission-manager`, sin commits) entra en este repo como
+`clientes/voz/`, copiada primero tal cual y luego traducida al castellano.
+Trae su intérprete experimental y sus benchmarks (`clientes/voz/eval/`, antes
+`../llms`). Servicio `voz` en el compose, con perfil propio.
+
+### Decisiones nuevas
+
+149. **Mismo repo, distinto servicio.** La voz es un cliente del FM por la API
+    REST, como un MES: proceso y contenedor propios. En el mismo proceso, un
+    fallo o reinicio de la voz pararía la flota y borraría el historial de
+    orders (RAM, decisión 147). Un solo repo evita tener la config de acciones y
+    la documentación repartidas.
+150. **`fm/` nunca importa `clientes/`** (`tests/test_independencia.py`), por el
+    mismo motivo que el core no importa drivers: el FM debe poder desplegarse
+    solo y seguir siendo un servicio VDA 5050 genérico.
+151. **Modelos fuera: repo `inferencia`.** Whisper y el LLM (provisión,
+    descarga, carga y servicio) viven en otro repo y exponen APIs genéricas
+    (whisper `/inference`, OpenAI `/v1`). La lógica de dominio (palabra de
+    activación, `missions.json`, prompts, vetos) se queda en la pasarela, así
+    cambiar de modelo no toca el FM ni la pasarela.
+152. **La voz va con perfil `voz`**: `docker compose up` a secas sigue
+    levantando solo mosquitto + flota real, como antes.
+153. **Mismas convenciones que el FM**: castellano en comentarios, docs, logs y
+    tests; identificadores en inglés. El contrato HTTP de la voz (`/api/voice`,
+    campos JSON) no cambia.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se

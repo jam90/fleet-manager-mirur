@@ -1,0 +1,8 @@
+[
+  {"id": "N1", "whisper": "qué hora es",              "expected": "qué hora es",              "mission": "none", "origin": "control", "error": "frase normal, no es comando"},
+  {"id": "N2", "whisper": "la caja es azul",          "expected": "la caja es azul",          "mission": "none", "origin": "control", "error": "menciona la caja sin orden"},
+  {"id": "N3", "whisper": "se cae la caja",           "expected": "se cae la caja",           "mission": "none", "origin": "control", "error": "\"cae\" real (cf. T15)"},
+  {"id": "N4", "whisper": "la tarea ya está hecha",   "expected": "la tarea ya está hecha",   "mission": "none", "origin": "control", "error": "\"hecha\" real (cf. D15)"},
+  {"id": "N5", "whisper": "gracias, muy bien",        "expected": "gracias, muy bien",        "mission": "none", "origin": "control", "error": "frase normal, no es comando"},
+  {"id": "N6", "whisper": "ayer traje una caja nueva", "expected": "ayer traje una caja nueva", "mission": "none", "origin": "control", "error": "verbo traer en pasado, no es orden"}
+]

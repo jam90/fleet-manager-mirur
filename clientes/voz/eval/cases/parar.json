@@ -1,0 +1,14 @@
+[
+  {"id": "S1",  "whisper": "para",       "expected": "para",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "sin error"},
+  {"id": "S2",  "whisper": "¡Pará!",     "expected": "para",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "acento voseo"},
+  {"id": "S3",  "whisper": "paralo",     "expected": "páralo", "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "sin error (clítico)"},
+  {"id": "S4",  "whisper": "pa ra",      "expected": "para",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "palabra partida"},
+  {"id": "S5",  "whisper": "stop",       "expected": "stop",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "sin error"},
+  {"id": "S6",  "whisper": "estop",      "expected": "stop",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "e- epentética"},
+  {"id": "S7",  "whisper": "es top",     "expected": "stop",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "palabra partida"},
+  {"id": "S8",  "whisper": "para ya",    "expected": "para ya", "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "sin error + palabra extra"},
+  {"id": "S9",  "whisper": "bara",       "expected": "para",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "consonante cambiada (p → b)"},
+  {"id": "S10", "whisper": "pala",       "expected": "para",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "consonante cambiada (r → l)"},
+  {"id": "S11", "whisper": "paro",       "expected": "para",   "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "vocal cambiada"},
+  {"id": "S12", "whisper": "parad",      "expected": "parar",  "mission": "parar", "object": null, "quantity": null, "zone": null, "origin": "sint.", "error": "-r → -d"}
+]

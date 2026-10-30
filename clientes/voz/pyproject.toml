@@ -1,0 +1,28 @@
+[project]
+name = "mission-manager"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.15.0",
+    "python-multipart>=0.0.32",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.optional-dependencies]
+# Solo para eval/ (benchmarks e intérprete experimental); el servicio no las necesita.
+eval = [
+    "jiwer>=4.0.0",
+    "numpy>=2.3.5",
+    "openai>=3.37.0",
+    "piper-tts>=1.8.0",
+    "scipy>=1.18.1",
+    "soundfile>=0.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

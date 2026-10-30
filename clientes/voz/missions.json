@@ -1,0 +1,5 @@
+{
+  "mission_1": {"actionType": "dejar", "params": {}, "words": ["deja", "dejar", "dejalo", "dejala"]},
+  "mission_2": {"actionType": "coger", "params": {}, "words": ["trae", "traelo", "traer", "coge", "coger", "cogela", "cogelo"]},
+  "parar": {"instant": "cancelOrder", "words": ["para", "parar", "paralo", "stop"]}
+}

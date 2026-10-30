@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mission Manager</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }
+    button { font-size: 1.1rem; padding: .7rem 1.4rem; border-radius: .5rem; border: none; background: #2563eb; color: #fff; cursor: pointer; }
+    button.recording { background: #dc2626; }
+    button:disabled { opacity: .5; cursor: wait; }
+    #send { background: #16a34a; }
+    pre { background: #f3f4f6; padding: 1rem; border-radius: .5rem; white-space: pre-wrap; }
+    .bar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1rem 0; }
+    .badge { display: inline-block; padding: .3rem .8rem; border-radius: 1rem; font-weight: 600; background: #e5e7eb; }
+    .badge.listening { background: #dbeafe; color: #1e40af; }
+    .badge.armed { background: #fde68a; color: #92400e; animation: pulse 1s infinite; }
+    .badge.confirm { background: #fed7aa; color: #9a3412; animation: pulse 1s infinite; }
+    .badge.processing { background: #e9d5ff; color: #6b21a8; }
+    .badge.error { background: #fecaca; color: #991b1b; }
+    @keyframes pulse { 50% { opacity: .55; } }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; }
+    dt { color: #6b7280; }
+    dd { margin: 0; }
+    .meter { display: inline-block; width: 12rem; height: .7rem; background: #e5e7eb; border-radius: .35rem; overflow: hidden; vertical-align: middle; }
+    .meter > div { height: 100%; width: 0; background: #16a34a; transition: width 80ms linear; }
+    .meter > div.speech { background: #7c3aed; }
+    section { border-top: 1px solid #e5e7eb; margin-top: 1.5rem; padding-top: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>Mission Manager</h1>
+
+  <div class="bar">
+    <label>Flota:
+      <select id="fleet">
+        <option value="sim" selected>Virtual</option>
+        <option value="real">Real (los robots se mueven)</option>
+      </select>
+    </label>
+    <span>Whisper: <span id="health" class="badge">…</span></span>
+  </div>
+
+  <section>
+    <h2>Manos libres</h2>
+    <label><input type="checkbox" id="handsfree"> Activar escucha continua</label>
+    <p>Di <b id="wakeHint">tonto</b> + orden (o solo <b>tonto</b> y la orden después), y confirma con <b id="confirmHint">adelante</b>.</p>
+    <p>Estado: <span id="hfState" class="badge">apagado</span> <span id="hfInfo"></span></p>
+    <dl>
+      <dt>Última transcripción</dt><dd id="hfText">—</dd>
+      <dt>Orden detectada</dt><dd id="hfOrder">—</dd>
+      <dt>Latencia</dt><dd id="hfLatency">—</dd>
+      <dt>Micro</dt><dd><span class="meter"><div id="vuLevel"></div></span> <span id="vuDb">—</span></dd>
+      <dt>Voz (VAD)</dt><dd><span class="meter"><div id="vuSpeech" class="speech"></div></span> <span id="vuProb">—</span> · audio <span id="vuCtx">—</span></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Botón</h2>
+    <p>Pulsa para grabar, pulsa otra vez para enviar.</p>
+    <button id="rec">🎙 Grabar</button>
+    <p id="status"></p>
+    <h3 id="mission"></h3>
+    <button id="send" hidden></button>
+  </section>
+
+  <section>
+    <p><b>Orden:</b> <span id="order">—</span></p>
+    <pre id="result"></pre>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/bundle.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const FINAL = ["FINISHED", "FAILED", "REJECTED"];
+    const MIN_SAMPLES = 16000 * 0.3;  // descarta frases de menos de 300 ms
+    let config = { wakeWord: "tonto", confirmWord: "adelante", armWindowS: 5, confirmWindowS: 5 };
+    let lastOrder = null;  // {orderId, fleet} de la última order enviada desde esta página
+
+    fetch("/api/config").then((r) => r.json()).then((c) => {
+      config = c;
+      $("wakeHint").textContent = c.wakeWord;
+      $("confirmHint").textContent = c.confirmWord;
+    });
+
+    // ---------- salud de whisper ----------
+    async function checkHealth() {
+      let ok = false;
+      try { ok = (await (await fetch("/health")).json()).whisper === "ok"; } catch {}
+      $("health").textContent = ok ? "ok" : "caído";
+      $("health").className = "badge " + (ok ? "listening" : "error");
+    }
+    checkHealth();
+    setInterval(checkHealth, 5000);
+
+    // ---------- orders al Fleet Manager (comunes al botón y a manos libres) ----------
+    const fleet = () => $("fleet").value;
+
+    function showOrder(o) {
+      $("order").textContent = `${o.orderId}: ${o.status}` +
+        (o.serial ? ` · ${o.serial}` : "") + (o.description ? ` · ${o.description}` : "");
+    }
+
+    async function sendMission(mission) {
+      const f = fleet();
+      $("order").textContent = `Enviando ${mission} a la flota ${f === "real" ? "REAL" : "virtual"}…`;
+      const resp = await fetch(`/api/missions/${mission}?fleet=${f}`, { method: "POST" });
+      let order = await resp.json();
+      if (!resp.ok) { $("order").textContent = "Error " + resp.status + ": " + order.detail; return; }
+      lastOrder = { orderId: order.orderId, fleet: f };
+      showOrder(order);
+      while (!FINAL.includes(order.status)) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const r = await fetch(`/api/orders/${order.orderId}?fleet=${f}`);
+        if (!r.ok) { $("order").textContent += " (estado perdido: " + r.status + ")"; return; }
+        order = await r.json();
+        showOrder(order);
+      }
+    }
+
+    async function stopOrder() {
+      if (!lastOrder) { $("order").textContent = "Nada que parar"; return; }
+      const { orderId, fleet: f } = lastOrder;
+      const resp = await fetch(`/api/orders/${orderId}/cancel?fleet=${f}`, { method: "POST" });
+      const data = await resp.json();
+      $("order").textContent = resp.ok ? `Parando ${orderId} (${data.serial})…` : "Error al parar: " + data.detail;
+    }
+
+    // ---------- log de depuración (consola, prefijo [MM]) ----------
+    const DEBUG = true;
+    const dbg = (...a) => DEBUG && console.log("%c[MM]", "color:#7c3aed;font-weight:bold", ...a);
+    const dbgStats = { worklet: 0, frames: 0, maxProb: 0, maxDb: -Infinity };
+    let statsTimer = null;
+    let lastCtxTime = 0;
+    window.addEventListener("error", (e) => dbg("ERROR global:", e.message, e.error));
+    window.addEventListener("unhandledrejection", (e) => dbg("ERROR promesa sin capturar:", e.reason));
+    dbg("página cargada", { vad: typeof vad, ort: typeof ort, ortVersion: typeof ort !== "undefined" ? ort.env?.versions : null,
+      secureContext: window.isSecureContext, crossOriginIsolated: window.crossOriginIsolated, userAgent: navigator.userAgent });
+
+    function startStats() {
+      clearInterval(statsTimer);
+      statsTimer = setInterval(() => {
+        dbg(`VAD 2s → worklet msgs=${dbgStats.worklet} frames=${dbgStats.frames} maxProb=${dbgStats.maxProb.toFixed(2)} ` +
+            `maxDb=${dbgStats.maxDb === -Infinity ? "—" : dbgStats.maxDb.toFixed(0)} ctx=${vadCtx?.state} reloj=${vadCtx ? (vadCtx.currentTime - lastCtxTime).toFixed(2) + "s" : "—"} estado=${hfState}`);
+        if (vadCtx && vadCtx.currentTime - lastCtxTime < 0.1) dbg("⚠ el reloj del AudioContext del VAD no avanza");
+        lastCtxTime = vadCtx ? vadCtx.currentTime : 0;
+        if (dbgStats.worklet === 0) dbg("⚠ el worklet no envía audio: el micro no llega al VAD");
+        else if (dbgStats.frames === 0) dbg("⚠ llegan frames del worklet pero el modelo no los procesa");
+        Object.assign(dbgStats, { worklet: 0, frames: 0, maxProb: 0, maxDb: -Infinity });
+      }, 2000);
+    }
+
+    // Cuenta los mensajes crudos del worklet y captura los errores al procesarlos
+    function instrumentWorklet(instance) {
+      const port = instance._vadNode?.port;
+      if (!port) { dbg("no hay _vadNode.port (procesador:", instance._audioProcessorAdapterType, ")"); return; }
+      const original = port.onmessage;
+      port.onmessage = async (ev) => {
+        dbgStats.worklet++;
+        try { await original(ev); } catch (err) { dbg("ERROR procesando frame:", err); }
+      };
+    }
+
+    // ---------- manos libres ----------
+    let vadInstance = null;
+    let audioCtx = null;  // para el pitido (necesita los altavoces)
+    let vadCtx = null;    // para el VAD y el medidor: sin salida de audio, así un dispositivo de salida bloqueado no lo congela
+
+    // Chrome mueve el reloj del AudioContext con el dispositivo de salida; si Windows lo bloquea el
+    // contexto dice "running" pero nunca procesa audio. Un contexto con sinkId "none" no necesita salida.
+    function makeVadContext() {
+      try {
+        return new AudioContext({ sinkId: { type: "none" } });
+      } catch (err) {
+        dbg("sinkId 'none' no soportado, uso un AudioContext normal:", err);
+        return new AudioContext();
+      }
+    }
+    let hfState = "off";
+    // Ventana de ARMADO / confirmación: solo cuenta mientras la app te está esperando de verdad,
+    // es decir, se pausa mientras hablas y mientras whisper transcribe
+    const win = { timer: null, remaining: 0, deadline: 0, onExpire: null };
+    let speaking = false;
+    let pendingMission = null;  // misión esperando la palabra de confirmación
+    let inFlight = false;
+    let queued = null;          // como mucho una frase espera mientras otra está en curso
+
+    const STATE_LABEL = {
+      off: "apagado", listening: "escuchando", armed: "ARMADO",
+      confirm: "esperando confirmación", processing: "procesando", error: "error de servidor",
+    };
+
+    function setState(state, info = "") {
+      if (state !== hfState || info) dbg(`estado: ${hfState} → ${state}`, info);
+      clearWindow();
+      hfState = state;
+      $("hfState").textContent = STATE_LABEL[state];
+      $("hfState").className = "badge " + state;
+      $("hfInfo").textContent = info;
+      if (state === "armed") {
+        startWindow(config.armWindowS, () => setState("listening", "tiempo agotado"));
+      } else if (state === "confirm") {
+        startWindow(config.confirmWindowS, () => discard("tiempo agotado"));
+      }
+    }
+
+    function startWindow(seconds, onExpire) {
+      win.remaining = seconds * 1000;
+      win.onExpire = onExpire;
+      resumeWindow();
+    }
+
+    function clearWindow() {
+      clearTimeout(win.timer);
+      Object.assign(win, { timer: null, onExpire: null });
+    }
+
+    function pauseWindow(reason) {
+      if (!win.timer) return;
+      clearTimeout(win.timer);
+      win.timer = null;
+      win.remaining = Math.max(0, win.deadline - performance.now());
+      dbg(`ventana en pausa (${reason}), quedan ${(win.remaining / 1000).toFixed(1)} s`);
+    }
+
+    function resumeWindow() {
+      if (!win.onExpire || win.timer || speaking || inFlight) return;
+      win.deadline = performance.now() + win.remaining;
+      win.timer = setTimeout(() => {
+        const onExpire = win.onExpire;
+        clearWindow();
+        dbg("ventana agotada");
+        onExpire();
+      }, win.remaining);
+      dbg(`ventana en marcha: ${(win.remaining / 1000).toFixed(1)} s`);
+    }
+
+    // Nivel del micro + probabilidad de voz del VAD, con cada frame que procesa el VAD
+    function onFrame(probs, frame) {
+      let sum = 0;
+      for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+      const db = 20 * Math.log10(Math.sqrt(sum / frame.length) + 1e-8);
+      dbgStats.frames++;
+      dbgStats.maxProb = Math.max(dbgStats.maxProb, probs.isSpeech);
+      dbgStats.maxDb = Math.max(dbgStats.maxDb, db);
+      $("vuLevel").style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + "%";
+      $("vuDb").textContent = db.toFixed(0) + " dB";
+      $("vuSpeech").style.width = Math.round(probs.isSpeech * 100) + "%";
+      $("vuProb").textContent = probs.isSpeech.toFixed(2);
+      $("vuCtx").textContent = vadCtx ? vadCtx.state : "—";
+    }
+
+    function beep(freq = 880, ms = 150) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.value = 0.2;
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + ms / 1000);
+    }
+
+    function discard(reason) {
+      pendingMission = null;
+      $("hfOrder").textContent = "orden descartada (" + reason + ")";
+      setState("listening");
+    }
+
+    function handleCommand(r) {
+      if (r.kind === "stop") {
+        $("hfOrder").textContent = "parar";
+        setState("listening");
+        stopOrder();
+      } else if (r.kind === "mission") {
+        pendingMission = r.mission;
+        $("hfOrder").textContent = `${r.mission} (${r.actionType}): di "${config.confirmWord}"`;
+        beep(660);
+        setState("confirm", `${r.actionType}?`);
+      } else {
+        $("hfOrder").textContent = "no entendido";
+        setState("listening");
+      }
+    }
+
+    function handleResult(r) {
+      dbg("resultado:", { estado: hfState, texto: r.transcription, wake: r.wake, comando: r.command, kind: r.kind, mision: r.mission, confirm: r.confirm });
+      if (hfState === "confirm") {
+        if (r.confirm) {
+          const mission = pendingMission;
+          pendingMission = null;
+          $("hfOrder").textContent = `${mission}: enviada`;
+          beep(1200);
+          setState("listening");
+          sendMission(mission);
+          return;
+        }
+        discard("sin confirmación");
+        if (!r.wake) return;  // una frase de activación nueva se trata abajo como siempre
+      }
+      if (hfState === "armed") {
+        if (r.wake && !r.command) { beep(); setState("armed"); return; }
+        handleCommand(r);
+        return;
+      }
+      if (!r.wake) { setState("listening", "ignorada (sin palabra de activación)"); return; }
+      if (!r.command) { beep(); setState("armed"); return; }
+      handleCommand(r);
+    }
+
+    function enqueue(samples) {
+      const ms = Math.round(samples.length / 16);
+      if (samples.length < MIN_SAMPLES) { dbg(`frase descartada: ${ms} ms < 300 ms`); resumeWindow(); return; }
+      dbg(`frase capturada: ${ms} ms` + (inFlight ? " (en cola: hay una petición en vuelo)" : "") + (queued ? " (reemplaza a la pendiente)" : ""));
+      queued = samples;  // solo se guarda la frase más reciente
+      if (!inFlight) processQueue();
+    }
+
+    async function processQueue() {
+      while (queued) {
+        const samples = queued;
+        queued = null;
+        pauseWindow("transcribiendo");
+        inFlight = true;
+        const prevState = hfState;
+        $("hfState").textContent = STATE_LABEL.processing;
+        $("hfState").className = "badge processing";
+        const form = new FormData();
+        form.append("audio", encodeWAV(samples), "phrase.wav");
+        const t0 = performance.now();
+        dbg(`POST /api/voice (${Math.round(samples.length / 16)} ms de audio)`);
+        try {
+          const resp = await fetch("/api/voice", { method: "POST", body: form, signal: AbortSignal.timeout(20000) });
+          const data = await resp.json();
+          dbg(`respuesta ${resp.status} en ${Math.round(performance.now() - t0)} ms`);
+          if (hfState === "off") return;  // se apagó mientras esperaba
+          $("hfLatency").textContent = Math.round(performance.now() - t0) + " ms";
+          if (!resp.ok) throw new Error(data.detail || resp.status);
+          $("hfText").textContent = data.transcription || "(vacío)";
+          $("result").textContent = JSON.stringify(data, null, 2);
+          hfState = prevState;
+          handleResult(data);
+        } catch (err) {
+          dbg("ERROR petición /api/voice:", err);
+          if (hfState === "off") return;
+          $("hfLatency").textContent = Math.round(performance.now() - t0) + " ms";
+          pendingMission = null;
+          setState("error", String(err.message || err));
+        } finally {
+          inFlight = false;
+        }
+      }
+      resumeWindow();  // nada pendiente: reanuda la ventana si el estado aún la tiene
+    }
+
+    // Float32Array (16 kHz mono) -> Blob WAV PCM de 16 bits
+    function encodeWAV(samples, rate = 16000) {
+      const buf = new ArrayBuffer(44 + samples.length * 2);
+      const v = new DataView(buf);
+      const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      str(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); str(8, "WAVE");
+      str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      str(36, "data"); v.setUint32(40, samples.length * 2, true);
+      for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return new Blob([buf], { type: "audio/wav" });
+    }
+
+    $("handsfree").addEventListener("change", async (e) => {
+      dbg("casilla Manos libres:", e.target.checked ? "ACTIVADA" : "desactivada");
+      if (e.target.checked) {
+        // los dos se crean en el clic, así Chrome los deja arrancar
+        audioCtx = audioCtx || new AudioContext();
+        vadCtx = vadCtx || makeVadContext();
+        audioCtx.resume().catch(() => {});  // sin await: con la salida bloqueada puede no resolverse nunca
+        await vadCtx.resume();
+        lastCtxTime = vadCtx.currentTime;
+        dbg("AudioContext VAD:", { state: vadCtx.state, sampleRate: vadCtx.sampleRate, sinkId: JSON.stringify(vadCtx.sinkId) },
+            "· pitido:", { state: audioCtx.state });
+        setState("processing", "cargando VAD…");
+        try {
+          vadInstance = await vad.MicVAD.new({
+            model: "v5",
+            baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/",
+            onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+            minSpeechMs: 300,
+            startOnLoad: false,
+            audioContext: vadCtx,
+            onFrameProcessed: onFrame,
+            onSpeechStart: () => { speaking = true; dbg("VAD: inicio de voz"); pauseWindow("hablando"); },
+            onSpeechRealStart: () => dbg("VAD: voz confirmada (supera minSpeechMs)"),
+            onVADMisfire: () => { speaking = false; dbg("VAD: falsa alarma (voz demasiado corta)"); resumeWindow(); },
+            onSpeechEnd: (audio) => { speaking = false; dbg("VAD: fin de voz"); enqueue(audio); },
+          });
+          dbg("MicVAD creado");
+          await vadInstance.start();
+          const track = vadInstance._stream?.getAudioTracks()[0];
+          dbg("MicVAD escuchando", { procesador: vadInstance._audioProcessorAdapterType, micro: track?.label,
+            pista: track?.readyState, muted: track?.muted, ajustes: track?.getSettings() });
+          instrumentWorklet(vadInstance);
+          startStats();
+          setState("listening");
+        } catch (err) {
+          dbg("ERROR iniciando micro/VAD:", err);
+          e.target.checked = false;
+          vadInstance = null;
+          setState("error", "micrófono/VAD: " + (err.message || err));
+        }
+      } else {
+        clearInterval(statsTimer);
+        if (vadInstance) await vadInstance.destroy();
+        vadInstance = null;
+        $("vuLevel").style.width = $("vuSpeech").style.width = "0";
+        $("vuDb").textContent = $("vuProb").textContent = "—";
+        queued = null;
+        speaking = false;
+        pendingMission = null;
+        setState("off");
+      }
+    });
+
+    // ---------- botón pulsar para hablar (flujo de siempre) ----------
+    const btn = $("rec");
+    let recorder = null;
+    let chunks = [];
+    let buttonMission = null;
+
+    btn.addEventListener("click", async () => {
+      if (recorder && recorder.state === "recording") {
+        recorder.stop();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorder = new MediaRecorder(stream);
+        chunks = [];
+        recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+        recorder.onstop = async () => {
+          stream.getTracks().forEach((t) => t.stop());
+          btn.classList.remove("recording");
+          btn.textContent = "🎙 Grabar";
+          await sendRecording(new Blob(chunks, { type: recorder.mimeType }));
+        };
+        recorder.start();
+        btn.classList.add("recording");
+        btn.textContent = "⏹ Parar";
+        $("status").textContent = "Grabando…";
+      } catch (err) {
+        $("status").textContent = "Error de micrófono: " + err.message;
+      }
+    });
+
+    async function sendRecording(blob) {
+      const ext = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+      const form = new FormData();
+      form.append("audio", blob, "voice." + ext);
+      btn.disabled = true;
+      $("status").textContent = "Transcribiendo…";
+      try {
+        const resp = await fetch("/api/voice", { method: "POST", body: form });
+        const data = await resp.json();
+        $("status").textContent = resp.ok ? "Hecho" : "Error " + resp.status;
+        $("result").textContent = JSON.stringify(data, null, 2);
+        const isMission = resp.ok && data.kind === "mission";
+        $("mission").textContent = resp.ok ? (data.mission ? "Misión: " + data.mission : "Ninguna misión") : "";
+        buttonMission = isMission ? data.mission : null;
+        $("send").hidden = !isMission;
+        $("send").textContent = isMission ? `Enviar ${data.mission} (${data.actionType})` : "";
+      } catch (err) {
+        $("status").textContent = "Fallo de la petición: " + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    $("send").addEventListener("click", async () => {
+      if (!buttonMission) return;
+      $("send").disabled = true;
+      $("send").hidden = true;
+      const mission = buttonMission;
+      buttonMission = null;
+      try { await sendMission(mission); }
+      catch (err) { $("order").textContent = "Fallo de la petición: " + err.message; }
+      finally { $("send").disabled = false; }
+    });
+  </script>
+</body>
+</html>

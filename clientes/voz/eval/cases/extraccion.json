@@ -1,0 +1,22 @@
+[
+  {"id": "E1",  "text": "trae la caja",                               "mission": "mission_2", "object": "caja",        "quantity": 1,    "zone": null,               "note": "sin parámetros"},
+  {"id": "E2",  "text": "trae de la estantería dos diferenciales",    "mission": "mission_2", "object": "diferencial", "quantity": 2,    "zone": "estantería",       "note": "zona antes del objeto"},
+  {"id": "E3",  "text": "trae de la estantería 2 diferenciales",      "mission": "mission_2", "object": "diferencial", "quantity": 2,    "zone": "estantería",       "note": "número en cifra"},
+  {"id": "E4",  "text": "trae 3 ruedas del almacén",                  "mission": "mission_2", "object": "rueda",       "quantity": 3,    "zone": "almacén",          "note": "plural → singular"},
+  {"id": "E5",  "text": "coge el motor de la mesa",                   "mission": "mission_2", "object": "motor",       "quantity": 1,    "zone": "mesa",             "note": "sinónimo coger"},
+  {"id": "E6",  "text": "tráeme cinco tornillos del banco de trabajo", "mission": "mission_2", "object": "tornillo",   "quantity": 5,    "zone": "banco de trabajo", "note": "zona de varias palabras"},
+  {"id": "E7",  "text": "trae dos cajas",                             "mission": "mission_2", "object": "caja",        "quantity": 2,    "zone": null,               "note": "sin zona"},
+  {"id": "E8",  "text": "del almacén trae seis cajas",                "mission": "mission_2", "object": "caja",        "quantity": 6,    "zone": "almacén",          "note": "orden de palabras cambiado"},
+  {"id": "E9",  "text": "trae la pieza que está en la mesa",          "mission": "mission_2", "object": "pieza",       "quantity": 1,    "zone": "mesa",             "note": "zona en subordinada"},
+  {"id": "E10", "text": "coge dos piezas de la zona de carga",        "mission": "mission_2", "object": "pieza",       "quantity": 2,    "zone": "zona de carga",    "note": "coger + zona larga"},
+  {"id": "E11", "text": "trae diez tornillos",                        "mission": "mission_2", "object": "tornillo",    "quantity": 10,   "zone": null,               "note": "número de dos cifras"},
+  {"id": "E12", "text": "deja la caja en la mesa",                    "mission": "mission_1", "object": "caja",        "quantity": 1,    "zone": "mesa",             "note": "zona = destino"},
+  {"id": "E13", "text": "deja las cuatro piezas en la zona de carga", "mission": "mission_1", "object": "pieza",       "quantity": 4,    "zone": "zona de carga",    "note": "artículo + número"},
+  {"id": "E14", "text": "deja el diferencial en la estantería",       "mission": "mission_1", "object": "diferencial", "quantity": 1,    "zone": "estantería",       "note": ""},
+  {"id": "E15", "text": "deja 2 motores en el almacén",               "mission": "mission_1", "object": "motor",       "quantity": 2,    "zone": "almacén",          "note": "número en cifra"},
+  {"id": "E16", "text": "en el banco de trabajo deja la rueda",       "mission": "mission_1", "object": "rueda",       "quantity": 1,    "zone": "banco de trabajo", "note": "orden de palabras cambiado"},
+  {"id": "E17", "text": "deja aquí la caja",                          "mission": "mission_1", "object": "caja",        "quantity": 1,    "zone": null,               "note": "\"aquí\" no es una zona"},
+  {"id": "E18", "text": "déjalo en la mesa",                          "mission": "mission_1", "object": null,          "quantity": null, "zone": "mesa",             "note": "objeto implícito (clítico)"},
+  {"id": "E19", "text": "trae un destornillador de la mesa",          "mission": "mission_2", "object": null,          "quantity": null, "zone": "mesa",             "note": "objeto fuera del vocabulario: no inventar"},
+  {"id": "E20", "text": "deja tres cajas en la cocina",               "mission": "mission_1", "object": "caja",        "quantity": 3,    "zone": null,               "note": "zona fuera del vocabulario: no inventar"}
+]

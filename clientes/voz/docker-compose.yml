@@ -1,0 +1,40 @@
+services:
+  # Espera a que el servidor whisper externo responda en WHISPER_HEALTH_URL
+  whisper-check:
+    image: curlimages/curl:latest
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for whisper at $$WHISPER_HEALTH_URL"
+        for i in $$(seq 1 60); do
+          if curl -fsS "$$WHISPER_HEALTH_URL" > /dev/null; then
+            echo "whisper is up"; exit 0
+          fi
+          echo "attempt $$i: not ready"; sleep 2
+        done
+        echo "whisper not reachable"; exit 1
+
+  app:
+    build: .
+    env_file: .env
+    # Corre con el usuario del host para que los archivos de ./logs no sean de root
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      whisper-check:
+        condition: service_completed_successfully
+    volumes:
+      - ./missions.json:/app/missions.json:ro
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
