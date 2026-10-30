@@ -2570,8 +2570,8 @@ robot ocupado no deja; libre, quita `MIR.UR.26.27_1`
 (`…-mission000-01-0001-007`) de mir-2 y el catálogo no cambia (mir-1 la
 sigue teniendo); (d) baja de mir-2, «Reiniciar el FM ahora», alta otra
 vez eligiendo sus actions y reinicio → el FM vuelve con los dos. Falta:
-corregir con el robot ocupado (debe bloquearse) y retirar algo de prueba de
-la flota.
+corregir con el robot ocupado (debe bloquearse). Retirar de la flota,
+también hecho (abajo, tras la #29).
 
 **#18 Atraque de mir-1 en marcadores calibrados con mir-2: hecho.** Orders
 dirigidas `recoger_pieza target_pos=<marcador>` a mir-1: `H2D1-VL`,
@@ -2579,6 +2579,35 @@ dirigidas `recoger_pieza target_pos=<marcador>` a mir-1: `H2D1-VL`,
 catálogo (los de mir-2), según el usuario, que lo vio en el sitio. No hace
 falta un offset por robot. Queda aparte el caso inverso (`MESA_TKNIKA` con
 mir-2, #18b).
+
+**#29 VL-marker real: hecho** (probado por el usuario). Desde Crear, con
+mir-1 delante de un marcador: `prueba-vl` (`…-position00-01-0001-027`,
+VL-marker) en la pose del robot; re-detectado en la web del MiR y
+capturado con su offset ajustado (x −0,919, y 0,133, 6,6°) y su entrada
+(`…-028`); desplegado en el otro robot, que atraca bien en él.
+Después se borró desde Crear («Borrar»: libera el número, sin
+`retirados.json`, como debe).
+
+**#22, retirar de la flota: hecho.** Position de prueba `prueba-retirar`
+(`…-position00-01-0001-027`, el número que dejó libre `prueba-vl`) en
+mir-1, retirada desde Sincronización: 404 en los dos robots, fuera del
+catálogo y apuntada en `catalog/retirados.json`; la siguiente position de
+ese mapa sería la `…-028` (se salta la retirada).
+
+## 2026-10-30 — Buscador en el catálogo de Sincronización
+
+Con el catálogo creciendo cuesta encontrar algo, sobre todo sin saber en
+qué sección está (pedido por el usuario).
+
+139. **Buscador de texto encima del catálogo** (pestaña Sincronización).
+     Filtra por nombre, GUID y detalle, sin tildes ni mayúsculas y con
+     varias palabras (todas deben aparecer); abre solo las secciones con
+     aciertos, y el título de cada una («Positions de suberri_mirur»,
+     «Missions de mirur-tknika») dice dónde está. Respeta el site de la
+     flota, pero cuenta los aciertos de otros sites y remite a «Ver todo el
+     catálogo» (no se despliega por descuido algo de otro site). «Todo» y
+     las casillas de sección marcan solo lo que se ve. Esc lo vacía. Solo
+     en la UI; Guía al día.
 
 ## Pendiente (a 2026-10-29)
 
@@ -2742,16 +2771,10 @@ las del FM son placeholders y no hay tiempos que medir.
     día se lleva a mir-2.
 - **#22** **Configurador y pestañas de administración con el FM real.**
     Hecho el 2026-10-30: actions en caliente, desplegar (crear) con el robot
-    ocupado, quitar un sobrante, y baja y alta de un MiR con «Reiniciar el
-    FM ahora» (decisión 108). Falta: con el robot ocupado, que **corregir**
-    se bloquee (decisión 103); retirar algo de prueba de la flota (decisión
-    105, p. ej. el marcador de la #29). Ya probado antes por el usuario:
+    ocupado, quitar un sobrante, baja y alta de un MiR con «Reiniciar el
+    FM ahora» (decisión 108) y retirar de la flota (decisión 105). Falta:
+    con el robot ocupado, que **corregir** se bloquee (decisión 103). Ya probado antes por el usuario:
     crear, abrir en la web del MiR, capturar y borrar (decisiones 100–104).
-
-- **#29** **Probar con un marcador real** crear un VL-marker desde la
-    pestaña Crear (decisión 119): crear delante del marcador, re-detectarlo
-    en la web, capturar y desplegar en el otro robot. Cuando haya un
-    marcador nuevo que poner (o con uno de prueba que luego se borra).
 
 **Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 

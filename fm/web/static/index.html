@@ -238,6 +238,9 @@
   .cat-list { list-style: none; margin: 6px 0 0; padding: 0 0 0 26px; display: grid; gap: 6px; font-size: 14px;
     max-height: 320px; overflow: auto; }
   .cat-list label { cursor: pointer; }
+  .cat-search { margin: 4px 0 8px; }
+  .cat-search input { width: 100%; max-width: 32em; }
+  .cat-search .hint { margin-top: 4px; }
   input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; vertical-align: -2px; }
   .sync-robots { display: grid; gap: 6px; }
   .sync-robot { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line);
@@ -1350,6 +1353,16 @@
           <button class="btn" id="sync-none" @click="selectAll(false)">Nada</button>
           <span class="feedback">{{ nSelected }} seleccionados</span>
         </div>
+        <!-- Buscador: por nombre, GUID o detalle, sin tildes ni mayúsculas. Abre
+             solo las secciones con resultados; su título dice dónde está cada cosa. -->
+        <div class="field cat-search">
+          <input type="search" id="sync-search" v-model="syncState.q" placeholder="Buscar en el catálogo (nombre o GUID)…"
+                 aria-label="Buscar en el catálogo" autocomplete="off" @keydown.esc="syncState.q = ''">
+          <p class="hint" v-if="syncState.q.trim()">
+            {{ catMatches.here }} {{ catMatches.here === 1 ? 'resultado' : 'resultados' }}<template v-if="catMatches.elsewhere">
+            · {{ catMatches.elsewhere }} más en otros sites (marca «Ver todo el catálogo» arriba)</template>.
+            «Todo» y las casillas de sección marcan solo lo que se ve.</p>
+        </div>
         <p class="empty" v-if="!syncCatalog.length">El catálogo está vacío o ningún robot ofrece sincronización.</p>
         <details v-for="sec in catSections" :key="sec.key" class="cat-sec" :open="sec.open">
           <summary>
@@ -1518,7 +1531,8 @@
               que no está en el catálogo (una position o una sub-mission sin capturar), te dice qué falta: captúralo antes.
               Si la vuelves a editar en el MiR, «Volver a capturar».</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>Márcala en el catálogo (sus dependencias se añaden solas), elige el robot, «Vista previa» y «Desplegar».
+            <p>Márcala en el catálogo (el buscador de arriba la encuentra por nombre o GUID aunque no sepas en qué sección
+              está; sus dependencias se añaden solas), elige el robot, «Vista previa» y «Desplegar».
               Un robot por vez. Si el robot está ocupado solo se despliega lo que hay que crear.</p></li>
           <li><b>Darla de alta como action</b><a class="where" href="#configurador">→ Configurador</a>
             <p>«Editar» → «Nueva action»: nombre (el <code>actionType</code>, no se puede renombrar después), la mission y qué
@@ -2009,7 +2023,7 @@ createApp({
 
     // ---------------- sincronización (docs/plan-admin.md §3)
     const syncState = reactive({ catalog: [], robots: [], reports: {}, sel: {}, target: '', ops: [], opsKey: '',
-                                 replace: {}, msg: '', loading: false, rm: { text: '', cls: '' } });
+                                 replace: {}, msg: '', loading: false, rm: { text: '', cls: '' }, q: '' });
     // "hace 3 min": un reloj que avanza solo para que el texto no se quede viejo.
     const clock = reactive({ now: Date.now() });
     setInterval(() => { clock.now = Date.now(); }, 15000);
@@ -2028,12 +2042,28 @@ createApp({
     }
     // Secciones del catálogo: positions por mapa y missions por grupo. Las
     // entradas de marcadores/cargadores no se eligen: van con su marcador.
+    // Buscador: sin tildes ni mayúsculas, sobre nombre, GUID y detalle.
+    const fold = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const catHit = it => {
+      const q = fold(syncState.q).trim();
+      if (!q) return true;
+      const text = fold([it.name, it.guid, it.extra, it.origin_group].join(' '));
+      return q.split(/\s+/).every(w => text.includes(w));
+    };
+    // Cuántos aciertos hay en el site de la flota y fuera (estos no se ven sin «Ver todo el catálogo»).
+    const catMatches = computed(() => {
+      const hits = syncState.catalog.filter(i => !i.auto && catHit(i));
+      const here = hits.filter(i => inSite(i.site)).length;
+      return { here, elsewhere: hits.length - here };
+    });
     const catSections = computed(() => {
       const items = syncState.catalog.filter(i => inSite(i.site));
+      const searching = !!syncState.q.trim();
       const secs = [], add = (key, label, list, open = false) => {
+        list = list.filter(catHit);
         if (!list.length) return;
         const n = list.filter(i => syncState.sel[i.guid]).length;
-        secs.push({ key, label, items: list, all: n === list.length, some: n > 0, open });
+        secs.push({ key, label, items: list, all: n === list.length, some: n > 0, open: open || searching });
       };
       add('session', 'Sites', items.filter(i => i.kind === 'session'));
       // Los mapas, por site: así se ve dónde queda cada uno (un mapa capturado o subido va al site elegido).
@@ -2907,7 +2937,7 @@ createApp({
     return { fleet, ui, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
-             syncState, syncCatalog, targetInfo, catSections, nSelected, selectSection, selectAll, previewFresh, opCounts,
+             syncState, syncCatalog, targetInfo, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh, opCounts,
              canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
