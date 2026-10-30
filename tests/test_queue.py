@@ -241,3 +241,16 @@ def test_memory_store_poda_terminadas():
         t = Task(Order(f"o{i}", 0, [], []), "coger", float(i), status=FINISHED)
         store.add(t); store.save(t)
     assert store.find("o0") is None and store.find("o3") is not None
+
+
+def test_el_final_se_publica_antes_de_dar_la_siguiente():
+    # Decisión 165: sin esto, el state del tick ya llevaba la order nueva y
+    # el FINISHED de la anterior no se publicaba nunca.
+    disp, robots, bus, clock = _setup({"mir-1": {"coger"}})
+    seen = []
+    disp.publish_state = lambda r: seen.append((r.orders.active.order.orderId, r.orders.active.job_status))
+    send(disp, "o1"); send(disp, "o2")
+    finish(robots["mir-1"])
+    seen.clear()
+    disp.tick()
+    assert seen[:2] == [("o1", "FINISHED"), ("o2", "WAITING")]

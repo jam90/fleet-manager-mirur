@@ -190,6 +190,21 @@ do not need to know the robot.
 | `404` | This FM has not seen that order |
 | `409` | Cannot be cancelled: already finished, a directed order (cancel it with `POST /api/robots/{serial}/instant`), or the FM did not find it (`detail` says why) |
 
+#### `POST /api/orders/{orderId}/requeue?wait=N` — retry an order in doubt
+
+Only for an order that `GET /api/queue` lists as `ASSIGNING` (in doubt
+after an FM restart), and only after checking on the robot that it does
+**not** have it (the robot's mission queue entry carries the `orderId` in its
+description). The order goes back to the queue in its place, and its waiting
+time starts again. If the robot did have it, it will run twice.
+
+| Code | Meaning |
+|---|---|
+| `200` | Back in the queue: `status: "QUEUED"` (order object) |
+| `202` | Sent, no answer yet: poll `GET /api/orders/{orderId}` |
+| `404` | This FM has not seen that order and it is not in the queue |
+| `409` | Not in doubt, or already finished (`detail` says why) |
+
 #### `GET /api/queue`
 
 Fleet orders waiting for a robot, in order (the next one first):
@@ -197,7 +212,7 @@ Fleet orders waiting for a robot, in order (the next one first):
 `waiting` is why no robot has taken it yet. `status` is `QUEUED`, or
 `ASSIGNING` (with `serial`) for an order in doubt after an FM restart: the FM
 does not know yet whether that robot received it, and retries every 30 s;
-cancelling it discards it. `503` until the FM has published
+cancelling it discards it, `…/requeue` retries it. `503` until the FM has published
 its queue (a few seconds after it starts).
 
 ### Robot status

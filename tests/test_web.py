@@ -690,3 +690,35 @@ def test_cola_desde_el_espejo():
               "receivedAt": "2026-10-30T11:01:21.918Z", "waiting": "sim-1: ocupado"}]
     srv.mirror("vda5050/v3/imperial_fleet/fleet/queue", {"tasks": tasks})
     assert c.get("/api/queue").json() == tasks
+
+
+def test_relanzar_una_en_duda_desde_la_api():
+    # Decisión 163. Tras reiniciar el FM, el historial de la API está vacío:
+    # la order en duda solo se conoce por fleet/queue, y aun así se puede
+    # relanzar o descartar.
+    srv, bus = _server()
+    c = TestClient(srv.app)
+    doubt = {"orderId": "q-9", "orderUpdateId": 0, "actionType": "coger", "status": "ASSIGNING",
+             "serial": "sim-1", "receivedAt": "2026-10-30T11:01:21.918Z", "waiting": "en duda: sim-1 no responde"}
+    srv.mirror("vda5050/v3/imperial_fleet/fleet/queue", {"tasks": [doubt]})
+    assert c.post("/api/orders/otra/requeue").status_code == 404
+    publish = bus.publish
+    answer = {}
+
+    def publish_and_answer(serial, subtopic, body, retain=False):
+        out = publish(serial, subtopic, body, retain)
+        if subtopic == "instantActions" and serial == "fleet":
+            assert body["actions"][0]["actionType"] == "requeueOrder"
+            threading.Thread(target=srv.mirror, args=(RESP, _verdict("q-9", **answer))).start()
+        return out
+
+    bus.publish = publish_and_answer
+    answer.update(status="REQUEUE_FAILED", errorType="INVALID_INSTANT_ACTION", errorDescription="no está en duda")
+    r = c.post("/api/orders/q-9/requeue?wait=2")
+    assert r.status_code == 409 and "no está en duda" in r.json()["detail"]
+    answer.clear(); answer.update(status="QUEUED", queuePosition=1, description="relanzada")
+    r = c.post("/api/orders/q-9/requeue?wait=2")
+    assert r.status_code == 200 and r.json()["status"] == "QUEUED" and r.json()["queuePosition"] == 1
+    # Ya en QUEUED, otro relanzar no se da por bueno con lo de antes: espera la respuesta nueva.
+    bus.publish = publish
+    assert c.post("/api/orders/q-9/requeue?wait=0.1").status_code == 202

@@ -60,7 +60,7 @@ RETRYABLE = frozenset({FAILED, CANCELLED, EXPIRED})
 class Task:
     order: Order
     action_type: str
-    received_at: float                 # epoch (s); orden de llegada y caducidad
+    received_at: float                 # epoch (s): espera y caducidad; al relanzarla, cuándo se relanzó
     status: str = QUEUED
     announced: bool = False            # ya se publicó `QUEUED` al emisor
     serial: str | None = None          # robot, desde ASSIGNED
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     announced   INTEGER NOT NULL DEFAULT 0,    -- ya se respondió QUEUED al emisor
     serial      TEXT,                          -- robot, desde ASSIGNING
     job_id      TEXT,                          -- id del driver (mission_queue del MiR)
-    received_at REAL    NOT NULL,              -- epoch UTC
+    received_at REAL    NOT NULL,              -- epoch UTC (al relanzarla, cuándo se relanzó)
     assigned_at REAL,
     finished_at REAL,
     result      TEXT    NOT NULL DEFAULT '',   -- motivo de FAILED / CANCELLED / EXPIRED
@@ -164,7 +164,7 @@ CREATE INDEX IF NOT EXISTS tasks_order ON tasks(order_id);
 
 # Columnas que cambian a lo largo de la vida de una tarea (`save`).
 _MUTABLE = ("update_id", "action_type", "payload", "status", "announced", "serial", "job_id",
-            "assigned_at", "finished_at", "result", "waiting")
+            "received_at", "assigned_at", "finished_at", "result", "waiting")
 
 
 class SqliteTaskStore:
@@ -204,9 +204,9 @@ class SqliteTaskStore:
 
     def add(self, task: Task) -> None:
         cur = self.db.execute(
-            "INSERT INTO tasks (order_id, received_at, " + ", ".join(_MUTABLE) + ") VALUES "
-            "(?, ?, " + ", ".join("?" * len(_MUTABLE)) + ")",
-            (task.order_id, task.received_at, *self._values(task)))
+            "INSERT INTO tasks (order_id, " + ", ".join(_MUTABLE) + ") VALUES "
+            "(?, " + ", ".join("?" * len(_MUTABLE)) + ")",
+            (task.order_id, *self._values(task)))
         self.db.commit()
         task.id = cur.lastrowid
         if task.alive:
@@ -243,7 +243,8 @@ class SqliteTaskStore:
     @staticmethod
     def _values(t: Task) -> tuple:
         return (t.update_id, t.action_type, json.dumps(t.raw, ensure_ascii=False), t.status,
-                int(t.announced), t.serial, t.job_id, t.assigned_at, t.finished_at, t.result, t.waiting)
+                int(t.announced), t.serial, t.job_id, t.received_at, t.assigned_at, t.finished_at,
+                t.result, t.waiting)
 
     @staticmethod
     def _task(r: sqlite3.Row) -> Task:

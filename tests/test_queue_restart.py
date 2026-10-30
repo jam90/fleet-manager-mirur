@@ -8,7 +8,10 @@ from fm.fleet import DOUBT_RETRY_S, Dispatcher
 from fm.robot import Robot
 from fm.tasks import ASSIGNED, ASSIGNING, CANCELLED, FAILED, FINISHED, QUEUED, SqliteTaskStore
 from test_fleet import FakeBus
-from test_queue import CancelDriver, Clock, cancel, finish, last_queue, responses, send
+import json
+
+from fm.vda5050.header import HeaderCounter, make_header, topic
+from test_queue import FLEET_MAN, CancelDriver, Clock, cancel, finish, last_queue, responses, send
 
 
 class RecoverDriver(CancelDriver):
@@ -191,3 +194,51 @@ def test_robot_que_no_corre_en_este_fm_no_se_toca(world):
     fm = fm.restart(drivers, clock, running=("mir-1",))  # run_fm.py --robot mir-1
     fm.disp.tick()
     assert fm.store.find("o2").status == ASSIGNED and responses(fm.bus, "o2") == []
+
+
+def requeue(disp, order_id):
+    params = [{"key": "orderId", "value": order_id}] if order_id else []
+    disp.handle(topic(FLEET_MAN, "fleet", "instantActions"), json.dumps({
+        **make_header(HeaderCounter(), FLEET_MAN, "fleet", "instantActions"),
+        "actions": [{"actionType": "requeueOrder", "actionId": "r1", "blockingType": "NONE",
+                     "actionParameters": params}]}))
+
+
+def test_una_en_duda_se_relanza_y_vuelve_a_su_sitio(world):
+    # Decisión 163: alguien comprueba en el robot que no la tiene y la relanza.
+    fm, drivers, clock = world
+    send(fm.disp, "o0")                                  # mir-1 ocupado
+    drivers["mir-2"] = CrashDriver(receives=False)
+    fm.robots["mir-2"].driver = drivers["mir-2"]
+    with pytest.raises(Crash):
+        send(fm.disp, "o1")                              # a mir-2, y cae el FM
+    drivers["mir-2"] = RecoverDriver(fail_find=True)     # al volver, mir-2 no contesta
+    fm = fm.restart(drivers, clock)
+    send(fm.disp, "o2"); send(fm.disp, "o3")             # o2 → mir-2; o3 espera
+    assert fm.store.find("o1").status == ASSIGNING
+    old_tag = fm.store.find("o1").tag
+    clock.t += 600                                       # diez minutos en duda
+    requeue(fm.disp, "o1")
+    r = responses(fm.bus, "o1")[-1]
+    assert r["status"] == QUEUED and r["queuePosition"] == 1          # delante de o3: llegó antes
+    assert "no la tenía" in r["description"]
+    assert [t["orderId"] for t in last_queue(fm.bus)] == ["o1", "o3"]
+    t1 = fm.store.find("o1")
+    assert t1.received_at == clock.t and t1.tag != old_tag   # cuenta desde ahora; otra etiqueta
+    finish(fm.robots["mir-2"])
+    fm.disp.tick()
+    assert responses(fm.bus, "o1")[-1]["assignedSerial"] == "mir-2"
+    assert [t["orderId"] for t in last_queue(fm.bus)] == ["o3"]
+
+
+def test_requeue_solo_para_una_en_duda(world):
+    fm, drivers, clock = world
+    send(fm.disp, "o1"); send(fm.disp, "o2"); send(fm.disp, "o3")      # o3 en la cola
+    for oid in ("o3", "o1", "nada"):
+        requeue(fm.disp, oid)
+        r = responses(fm.bus)[-1]
+        assert r["status"] == "REQUEUE_FAILED" and r["errorType"] == "INVALID_INSTANT_ACTION"
+        assert "no está en duda" in r["errorDescription"]
+    requeue(fm.disp, None)
+    assert "orderId" in responses(fm.bus)[-1]["errorDescription"]
+    assert fm.store.find("o1").status == ASSIGNED and fm.store.find("o3").status == QUEUED

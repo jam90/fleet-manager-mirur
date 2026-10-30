@@ -290,6 +290,7 @@ recibir varios: `QUEUED` al llegar y `ASSIGNED` cuando un robot queda libre.
 | `CANCELLED` | cancelada con `fleet/instantActions` | `description` |
 | `EXPIRED` | más de `queue.max_wait_s` esperando robot | `description` |
 | `CANCEL_FAILED` | `cancelOrder` de algo que no está en la cola ni en curso | `errorType`, `errorDescription` |
+| `REQUEUE_FAILED` | `requeueOrder` de algo que no está en duda | `errorType`, `errorDescription` |
 
 ```json
 { "headerId": 5, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
@@ -354,6 +355,11 @@ robot. La respuesta llega por `order_response` (`CANCELLED` o
                  "actionParameters": [ { "key": "orderId", "value": "fleet-77a1c2e0" } ] } ] }
 ```
 
+Igual, con `requeueOrder` (propia), se relanza una order **en duda** tras un
+reinicio del FM (abajo), cuando alguien ha comprobado que el robot no la
+tiene: vuelve a la cola en su sitio y cuenta desde ese momento. Respuesta:
+`QUEUED` o `REQUEUE_FAILED`. Por HTTP, `POST /api/orders/<orderId>/requeue`.
+
 **La cola sobrevive a un reinicio del FM** (SQLite en
 `data/<nombre del fleet.yaml>.sqlite`; `docs/plan-cola.md` §5). Al volver:
 
@@ -367,7 +373,8 @@ robot. La respuesta llega por `order_response` (`CANCELLED` o
   de su `mission_queue`, que se ve en su web): si la tiene, `ASSIGNED`; si
   no, vuelve a la cola. Si no se puede saber (robot sin red), se queda en
   duda (`ASSIGNING` en `fleet/queue`) y se reintenta cada 30 s; un
-  `cancelOrder` la descarta. Nunca se lanza dos veces a ciegas.
+  `cancelOrder` la descarta y un `requeueOrder` la relanza. Nunca se lanza
+  dos veces a ciegas.
 
 ### `state` (resumen del mapeo)
 
@@ -526,8 +533,10 @@ siguiente mensaje `instantActions`. Un mensaje malformado deja un
 web) para la LAN, sin login. Un fichero (`fm/web/static/index.html`, Vue 3
 incluida en el repo: funciona sin internet) que muestra por robot batería,
 estado, order y `actionStates`, texto de la misión y errores, con botones
-⏸ ▶ ✖, un panel "Enviar a la flota" (action + parámetros, con desplegable de
-positions cuando el driver las conoce) y una lista de eventos.
+⏸ ▶ ✖, la "Cola de la flota" (las orders que esperan robot, con quitar, y
+las que quedan en duda tras un reinicio, con relanzar o descartar), un panel
+"Enviar a la flota" (action + parámetros, con desplegable de positions
+cuando el driver las conoce) y una lista de eventos.
 
 La UI es **un cliente VDA más**: recibe por WebSocket (`/ws`) exactamente lo
 que el FM publica por MQTT (`{topic, payload}`), y lo que envía
@@ -610,6 +619,7 @@ lista para usar en `scripts/api.http`.
 | `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest` |
 | `GET` | `/api/orders?limit=` · `/api/orders/<orderId>` | seguimiento de orders (últimas 200, en RAM) |
 | `POST` | `/api/orders/<orderId>/cancel?wait=N` | cancela una fleet order, en la cola o en curso (200 `CANCELLED`, 409 si no se puede) |
+| `POST` | `/api/orders/<orderId>/requeue?wait=N` | relanza una fleet order en duda tras reiniciar el FM (200 `QUEUED`, 409 si no está en duda) |
 | `GET` | `/api/queue` | fleet orders esperando robot, en orden (lo de `fleet/queue`) |
 
 `status` de una order: `PENDING` (enviada, sin veredicto) → `ASSIGNED`

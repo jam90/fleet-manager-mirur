@@ -27,8 +27,8 @@ from fm.tasks import (ASSIGNED, ASSIGNING, CANCELLED, EXPIRED, FAILED, FINISHED,
 from fm.vda5050.header import parse_topic, validate_header
 from fm.vda5050.order import Action, Order, OrderRejected, parse_instant_actions, parse_order
 from fm.vda5050.schemas import validation_errors
-from fm.vda5050.state import (E_NO_MOBILE_ROBOT_AVAILABLE, E_NO_ORDER_TO_CANCEL, E_OUTDATED_ORDER_UPDATE,
-                              E_QUEUE_FULL, E_VALIDATION_FAILURE, error_for_order)
+from fm.vda5050.state import (E_INVALID_INSTANT_ACTION, E_NO_MOBILE_ROBOT_AVAILABLE, E_NO_ORDER_TO_CANCEL,
+                              E_OUTDATED_ORDER_UPDATE, E_QUEUE_FULL, E_VALIDATION_FAILURE, error_for_order)
 
 log = logging.getLogger("fm.fleet")
 
@@ -333,6 +333,11 @@ class Dispatcher:
             task.status, task.result, task.finished_at = status, result, self.clock()
             self.tasks.save(task)
             log.info("[fleet] fleet/order %s en %s: %s %s", task.order_id, task.serial, status, result)
+            # El final se publica YA, antes de que `_dispatch` le dé la tarea
+            # siguiente en este mismo tick: si no, el `state` del tick sale con
+            # la order nueva y el FINISHED de esta no se ve nunca (la API REST
+            # la dejaba en RUNNING; decisión 165).
+            self.publish_state(robot)
 
     def _expire(self) -> None:
         limit = self.cfg.queue.max_wait_s
@@ -439,10 +444,16 @@ class Dispatcher:
 
     # ------------------------------------------------- fleet/instantActions
     def handle_fleet_instant_actions(self, data, invalid: str | None) -> None:
-        """`cancelOrder` con el parámetro `orderId` (decisión 156). Si la
-        tarea espera, sale de la cola; si está en un robot, es el
-        `cancelOrder` de ese robot. El resultado va a `order_response`
-        (`CANCELLED` o `CANCEL_FAILED`): `fleet` no tiene `state`."""
+        """Con el parámetro `orderId`. El resultado va a `order_response`,
+        porque `fleet` no tiene `state`:
+
+        - `cancelOrder` (decisión 156): si la tarea espera, sale de la cola;
+          si está en un robot, es el `cancelOrder` de ese robot; si está en
+          duda, se descarta. → `CANCELLED` o `CANCEL_FAILED`.
+        - `requeueOrder` (propia, decisión 163): una tarea en duda tras un
+          reinicio vuelve a la cola, en su sitio, porque alguien ha
+          comprobado que el robot no la tiene. → `QUEUED` o `REQUEUE_FAILED`.
+        """
         try:
             if invalid:
                 raise OrderRejected(E_VALIDATION_FAILURE, invalid)
@@ -453,9 +464,36 @@ class Dispatcher:
         for a in actions:
             if a.actionType == "cancelOrder":
                 self._cancel(a)
+            elif a.actionType == "requeueOrder":
+                self._requeue(a)
             else:
-                log.warning("[fleet] fleet/instantActions: '%s' no se admite (solo cancelOrder)", a.actionType)
+                log.warning("[fleet] fleet/instantActions: '%s' no se admite (cancelOrder, requeueOrder)",
+                            a.actionType)
         self._publish_queue()
+
+    def _requeue(self, a: Action) -> None:
+        order_id = next((p.value for p in a.actionParameters if p.key == "orderId"), None)
+        task = self.tasks.find(order_id) if isinstance(order_id, str) else None
+        if task is None or task.status != ASSIGNING:
+            why = ("falta el parámetro 'orderId'" if not isinstance(order_id, str)
+                   else f"la order '{order_id}' no está en duda: solo se relanza una que el FM "
+                        "no sabe si llegó al robot")
+            log.warning("[fleet] requeueOrder %s: %s", a.actionId, why)
+            self._respond(order_id if isinstance(order_id, str) else "", task.update_id if task else 0,
+                          "REQUEUE_FAILED", errorType=E_INVALID_INSTANT_ACTION, errorDescription=why)
+            return
+        # Es la palabra de quien lo ha comprobado contra la del FM: si el robot
+        # sí la tenía, se hará dos veces. Por eso solo vale para una en duda.
+        # Vuelve a contar desde ahora (conserva su puesto): el tiempo en duda
+        # no la hace caducar nada más relanzarla, y el nuevo intento lleva
+        # otra etiqueta (`Task.tag`), distinta de la del intento en duda.
+        serial = task.serial
+        task.status, task.serial, task.assigned_at, task.retry_at = QUEUED, None, None, 0.0
+        task.received_at = self.clock()
+        task.waiting = f"relanzada con requeueOrder ({a.actionId}): {serial} no la tenía"
+        self.tasks.save(task)
+        log.warning("[fleet] fleet/order %s: %s", task.order_id, task.waiting)
+        self._announce(task)
 
     def _cancel(self, a: Action) -> None:
         order_id = next((p.value for p in a.actionParameters if p.key == "orderId"), None)

@@ -197,6 +197,16 @@
   .panel { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px;
     display: grid; gap: 12px; align-content: start; }
   .panel h3 { margin: 0; font-size: 18px; font-weight: 700; color: var(--navy); }
+  .panel.wide { grid-column: 1 / -1; }
+  /* Cola de la flota (fleet/queue): una fila por order que espera; las que
+     están en duda tras reiniciar el FM, en rojo y con relanzar / descartar. */
+  .queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+  .queue li { display: grid; grid-template-columns: 3ch minmax(0, 1fr) auto; gap: 10px; align-items: center;
+              padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); }
+  .queue li.doubt { background: var(--bad-bg); border-color: var(--bad); }
+  .queue .pos { font-weight: 700; text-align: right; color: var(--ink-2); }
+  .queue .why { display: block; color: var(--ink-3); }
+  .queue .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .form { display: grid; gap: 10px; }
   .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
   .field input, .field select { font: inherit; font-weight: 400; color: var(--ink); background: var(--surface);
@@ -757,6 +767,31 @@
     </section>
 
     <section class="panels">
+      <!-- Cola de la flota (docs/plan-cola.md): lo de fleet/queue. -->
+      <div class="panel wide" id="cola">
+        <h3>Cola de la flota <small class="muted" v-if="fleetQueue.tasks.length">· {{ fleetQueue.tasks.length }} esperando</small></h3>
+        <ol class="queue" v-if="fleetQueue.tasks.length">
+          <li v-for="t in fleetQueue.tasks" :key="t.orderId" :class="{ doubt: t.status === 'ASSIGNING' }">
+            <span class="pos num">{{ queuePos(t) }}</span>
+            <span><code>{{ t.orderId }}</code> <b>{{ t.actionType }}</b>
+              <template v-if="t.status === 'ASSIGNING'"> · <b>en duda</b> ({{ t.serial }})</template>
+              · {{ waitedFor(t.receivedAt) }}
+              <span class="why">{{ t.waiting }}</span></span>
+            <span class="acts">
+              <button class="btn" v-if="t.status === 'ASSIGNING'" :id="'requeue-' + t.orderId"
+                      :disabled="queueBusy[t.orderId]" @click="queueAction(t, 'requeue')">↻ Relanzar</button>
+              <button class="btn danger" :id="'discard-' + t.orderId" :disabled="queueBusy[t.orderId]"
+                      @click="queueAction(t, 'cancel')">✖ {{ t.status === 'ASSIGNING' ? 'Descartar' : 'Quitar' }}</button>
+            </span>
+          </li>
+        </ol>
+        <p class="empty" v-else>No hay orders esperando. Si llega una fleet/order con todos los robots ocupados, aparece aquí hasta que uno quede libre.</p>
+        <p class="hint" v-if="fleetQueue.tasks.some(t => t.status === 'ASSIGNING')">
+          <b>En duda</b>: el FM se reinició mientras la mandaba a ese robot y no puede saber si le llegó (si es porque el robot no responde, lo vuelve a mirar solo cada 30 s).
+          Mira la cola de missions del robot en su web: la entrada lleva el orderId en la descripción. Si no está, «Relanzar»;
+          si está, «Descartar» (el robot la hace igual).</p>
+      </div>
+
       <div class="panel">
         <h3>Enviar a la flota</h3>
         <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, entre varios, el de más batería. Si están todos ocupados, la order espera en la cola y va al primero que quede libre.</p>
@@ -1864,6 +1899,29 @@
         </ol>
       </details>
 
+      <!-- Cola de fleet/order (docs/plan-cola.md, decisiones 154–163). -->
+      <details class="guide-sec" id="guia-cola">
+        <summary>La cola de la flota
+          <span class="hint">Orders que esperan robot, sus límites y qué hacer con una que queda «en duda».</span></summary>
+        <ol class="steps">
+          <li><b>Cómo funciona</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Una fleet/order que llega con todos los robots ocupados espera en «Cola de la flota» y va al primer robot que quede
+              libre, por orden de llegada. Cada fila dice cuánto lleva esperando y por qué («mir-1: ocupado»…). «Quitar» la saca de
+              la cola sin que llegue a hacerse. La cola se guarda en disco: sobrevive a reiniciar el FM.</p></li>
+          <li><b>Ajustar los límites</b><a class="where" href="#configurador">→ Configurador</a>
+            <p>Bloque <code>queue:</code> (opcional): <code>max_size</code> (cuántas pueden esperar; 50), <code>max_wait_s</code>
+              (segundos antes de darla por caducada; vacío = sin límite) y <code>keep_days</code> (días que se guarda el
+              histórico; 30). Se editan a mano: el Configurador avisa de que <code>fleet.yaml</code> ha cambiado y «Aplicar el
+              fichero» los pone en marcha sin reiniciar (<code>keep_days</code> se usa al arrancar el FM).</p></li>
+          <li><b>Una order «en duda»</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Sale en rojo si el FM se reinició justo cuando la mandaba a un robot y no sabe si le llegó (normalmente lo averigua
+              solo al volver; si el robot no responde, lo intenta cada 30 s). Abre la web de ese MiR, «Missions» → cola: la
+              entrada lleva el orderId en la descripción. <b>Si no está</b>, «Relanzar»: vuelve a la cola en su sitio.
+              <b>Si está</b>, «Descartar»: el FM la olvida y el robot la hace igual. Relanzar una que el robot sí tenía la hace
+              dos veces.</p></li>
+        </ol>
+      </details>
+
     </div>
   </main>
 </div>
@@ -1949,6 +2007,7 @@ createApp({
       if (!pt) return;
       if (pt.serial === 'fleet') {
         if (pt.subtopic === 'order_response') onOrderResponse(payload);
+        else if (pt.subtopic === 'queue') fleetQueue.tasks = payload.tasks || [];
         return;
       }
       const r = live[pt.serial] || (live[pt.serial] = { state: null, connection: null, feedback: '' });
@@ -1983,9 +2042,9 @@ createApp({
     }
 
     function onOrderResponse(resp) {
-      // CANCEL_FAILED no cambia la order: solo dice que no se pudo cancelar.
+      // CANCEL_FAILED / REQUEUE_FAILED no cambian la order: solo dicen que no se pudo.
       const mine = fleetOrders.find(o => o.orderId === resp.orderId);
-      if (mine && resp.status !== 'CANCEL_FAILED') Object.assign(mine, resp);
+      if (mine && !resp.status.endsWith('_FAILED')) Object.assign(mine, resp);
       const text = resp.status === 'ASSIGNED' ? `→ ${resp.assignedSerial}`
         : resp.status === 'QUEUED' ? `en cola (puesto ${resp.queuePosition})`
         : `${resp.status}${resp.errorType ? ' ' + resp.errorType : ''}: ${resp.errorDescription || resp.description || ''}`;
@@ -2054,6 +2113,37 @@ createApp({
       if (!r.ok) { addEvent('ui', 'no se pudo enviar: ' + (await r.json()).detail); return; }
       fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null });
       if (fleetOrders.length > 5) fleetOrders.pop();
+    }
+
+    // ---------------- cola de la flota (fleet/queue, docs/plan-cola.md)
+    const fleetQueue = reactive({ tasks: [] });
+    const queueBusy = reactive({});              // orderId → petición en curso
+    // Puesto entre las que esperan de verdad; una en duda no tiene puesto.
+    function queuePos(t) {
+      return t.status === 'ASSIGNING' ? '?' : fleetQueue.tasks.filter(x => x.status !== 'ASSIGNING').indexOf(t) + 1;
+    }
+    function waitedFor(iso) {
+      const m = Math.floor((clock.now - new Date(iso)) / 60000);
+      return m < 1 ? 'esperando menos de 1 min' : `esperando ${m} min`;
+    }
+    // Quitar / descartar (cancelOrder, decisión 156) o relanzar una en duda
+    // (requeueOrder, decisión 163). El resultado llega por fleet/queue y
+    // order_response, como el de cualquier otro cliente.
+    async function queueAction(t, what) {
+      const msg = what === 'requeue'
+        ? `¿Relanzar ${t.orderId}?\n\nSolo si has comprobado en la web de ${t.serial} que NO tiene esta mission en su cola ` +
+          `(su descripción empieza por «${t.orderId}@»). Si la tiene y la relanzas, se hará dos veces.`
+        : t.status === 'ASSIGNING'
+          ? `¿Descartar ${t.orderId}?\n\nEl FM la olvida. Si ${t.serial} la llegó a recibir, la hará igual.`
+          : `¿Quitar ${t.orderId} de la cola? No llegará a hacerse.`;
+      if (!confirm(msg)) return;
+      queueBusy[t.orderId] = true;
+      try {
+        const r = await fetch(`/api/orders/${encodeURIComponent(t.orderId)}/${what}?wait=3`, { method: 'POST' });
+        if (!r.ok) addEvent('ui', `no se pudo ${what === 'requeue' ? 'relanzar' : 'quitar'} ${t.orderId}: ` + (await r.json()).detail);
+      } finally {
+        delete queueBusy[t.orderId];
+      }
     }
 
     // Saca de la cola del FM una order que aún espera robot (decisión 156).
@@ -3123,7 +3213,7 @@ createApp({
     loadFleet();
     connect();
     return { fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere,
-             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, cancelFleetOrder, hasRange,
+             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, cancelFleetOrder, fleetQueue, queueBusy, queuePos, waitedFor, queueAction, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh, opCounts,

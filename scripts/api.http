@@ -53,6 +53,9 @@ GET {{host}}/api/queue
 ### Cancelar una fleet order, en la cola o en curso (200 = CANCELLED, 409 = no se puede)
 POST {{host}}/api/orders/prueba-001/cancel?wait=5
 
+### Relanzar una en duda tras reiniciar el FM (status ASSIGNING en /api/queue), solo si el robot NO la tiene
+POST {{host}}/api/orders/prueba-001/requeue?wait=5
+
 ### Últimas orders vistas (la más nueva primero)
 GET {{host}}/api/orders?limit=10
 

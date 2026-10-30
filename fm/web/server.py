@@ -271,17 +271,18 @@ class WebServer:
             return               # rechazo de un mensaje sin orderId: nada que seguir
         with self._orders_lock:
             status = p.get("status")
-            if status == "CANCEL_FAILED":
-                # No se pudo cancelar: la order sigue como estaba (quizá en
-                # curso). Se apunta para `POST /api/orders/<id>/cancel`.
+            if status in ("CANCEL_FAILED", "REQUEUE_FAILED"):
+                # No se pudo cancelar / relanzar: la order sigue como estaba.
+                # Se apunta para `POST /api/orders/<id>/cancel` o `/requeue`.
                 rec = self.orders.get(order_id)
                 if rec is not None:
-                    rec["cancelError"] = {"errorType": p.get("errorType"),
-                                          "description": p.get("errorDescription")}
+                    key = "cancelError" if status == "CANCEL_FAILED" else "requeueError"
+                    rec[key] = {"errorType": p.get("errorType"), "description": p.get("errorDescription")}
             else:
                 rec = self._order(order_id, target="fleet")
                 rec["orderUpdateId"] = p.get("orderUpdateId", 0)
                 rec["updated"] = p.get("timestamp")
+                rec["responses"] = rec.get("responses", 0) + 1     # order_response recibidos
                 if status != QUEUED:
                     rec.pop("queuePosition", None)      # ya no está en la cola
                 if status == ASSIGNED:
@@ -862,19 +863,26 @@ class WebServer:
         log.info("[web] %s/order %s %s %s", serial, order_id, action_type, params or "")
         return order_id
 
-    def send_fleet_cancel(self, order_id: str) -> str:
-        """`fleet/instantActions` con `cancelOrder` de esa order (cola del FM,
-        decisión 156): sale de la cola, o es el cancelOrder de su robot."""
+    def send_fleet_instant(self, action_type: str, order_id: str) -> str:
+        """`fleet/instantActions` sobre una order de la cola del FM:
+        `cancelOrder` (decisión 156: sale de la cola, o es el cancelOrder de
+        su robot) o `requeueOrder` (decisión 163: una en duda vuelve a la
+        cola). La respuesta llega por `order_response`."""
         with self._orders_lock:
             rec = self.orders.get(order_id)
-            if rec is not None:
-                rec.pop("cancelError", None)         # la respuesta que cuenta es la de ahora
+            if rec is not None:                      # la respuesta que cuenta es la de ahora
+                rec.pop("cancelError" if action_type == "cancelOrder" else "requeueError", None)
         action_id = f"ui-{uuid.uuid4().hex[:8]}"
         self.bus.publish(FLEET, "instantActions", {
-            "actions": [{"actionType": "cancelOrder", "actionId": action_id, "blockingType": "NONE",
+            "actions": [{"actionType": action_type, "actionId": action_id, "blockingType": "NONE",
                          "actionParameters": [{"key": "orderId", "value": order_id}]}]})
-        log.info("[web] fleet/instantActions cancelOrder %s", order_id)
+        log.info("[web] fleet/instantActions %s %s", action_type, order_id)
         return action_id
+
+    def queued_tasks(self) -> list[dict] | None:
+        """Lo último de `fleet/queue` (None si aún no se ha publicado)."""
+        msg = self.last.get(topic(self.cfg.mqtt.fleet_manufacturer, FLEET, "queue"))
+        return None if msg is None else msg["tasks"]
 
     def send_instant(self, serial: str, action_type: str) -> str:
         action_id = f"ui-{uuid.uuid4().hex[:8]}"
@@ -1085,31 +1093,56 @@ class WebServer:
                 raise HTTPException(404, f"order '{order_id}' no vista por este FM")
             return rec
 
-        @app.post("/api/orders/{order_id}/cancel", summary="Cancelar una fleet order, en la cola o en curso")
-        async def cancel_order(order_id: str, wait: float = wait_q):
+        def fleet_order_or_error(order_id: str) -> dict:
+            """Seguimiento de una fleet order viva, o el error HTTP. Una que
+            está en `fleet/queue` vale aunque el historial (en RAM) no la
+            tenga: p. ej. una en duda tras reiniciar el FM."""
             rec = self.order_info(order_id)
             if rec is None:
-                raise HTTPException(404, f"order '{order_id}' no vista por este FM")
+                if any(t["orderId"] == order_id for t in self.queued_tasks() or []):
+                    with self._orders_lock:
+                        rec = dict(self._order(order_id, target="fleet"))
+                else:
+                    raise HTTPException(404, f"order '{order_id}' no vista por este FM")
             if rec["target"] != "fleet":
                 raise HTTPException(409, f"'{order_id}' es una order dirigida: se cancela con "
                                          f"POST /api/robots/{rec['serial']}/instant (cancelOrder)")
             if rec["status"] in FINAL:
                 raise HTTPException(409, f"'{order_id}' ya terminó ({rec['status']})")
-            self.send_fleet_cancel(order_id)
+            return rec
+
+        async def fleet_instant(order_id: str, action_type: str, wait: float, done, err_key: str, verb: str):
+            fleet_order_or_error(order_id)
+            self.send_fleet_instant(action_type, order_id)
             if wait <= 0:
                 return reply(202, self.order_info(order_id))
-            rec = await self._wait_for(order_id, wait,
-                                       lambda r: r["status"] == CANCELLED or "cancelError" in r)
-            if rec.get("cancelError"):
-                raise HTTPException(409, f"no se pudo cancelar '{order_id}': {rec['cancelError']['description']}")
-            return reply(200 if rec["status"] == CANCELLED else 202, rec)
+            rec = await self._wait_for(order_id, wait, lambda r: done(r) or err_key in r)
+            if rec.get(err_key):
+                raise HTTPException(409, f"no se pudo {verb} '{order_id}': {rec[err_key]['description']}")
+            return reply(200 if done(rec) else 202, rec)
+
+        @app.post("/api/orders/{order_id}/cancel", summary="Cancelar una fleet order, en la cola o en curso")
+        async def cancel_order(order_id: str, wait: float = wait_q):
+            return await fleet_instant(order_id, "cancelOrder", wait, lambda r: r["status"] == CANCELLED,
+                                       "cancelError", "cancelar")
+
+        @app.post("/api/orders/{order_id}/requeue",
+                  summary="Relanzar una fleet order en duda tras reiniciar el FM (el robot no la tiene)")
+        async def requeue_order(order_id: str, wait: float = wait_q):
+            # Esperar a QUEUED no basta: si el seguimiento ya decía QUEUED
+            # (la API no sabe de la duda), sería verdad antes de contestar.
+            # Se espera a un order_response nuevo con QUEUED, o al error.
+            before = (self.order_info(order_id) or {}).get("responses", 0)
+            return await fleet_instant(order_id, "requeueOrder", wait,
+                                       lambda r: r["status"] == QUEUED and r.get("responses", 0) > before,
+                                       "requeueError", "relanzar")
 
         @app.get("/api/queue", summary="Fleet orders esperando robot, en orden (fleet/queue)")
         async def queue():
-            msg = self.last.get(topic(self.cfg.mqtt.fleet_manufacturer, FLEET, "queue"))
-            if msg is None:
+            tasks = self.queued_tasks()
+            if tasks is None:
                 raise HTTPException(503, "aún no se ha publicado fleet/queue")
-            return msg["tasks"]
+            return tasks
 
         @app.post("/api/robots/{serial}/instant")
         async def instant(serial: str, body: InstantIn):

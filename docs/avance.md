@@ -2956,6 +2956,51 @@ siguieron y se hicieron; las dos en curso, FAILED (driver `sim`).
   en la `mission_queue` de cada robot, una entrada por order (ninguna
   repetida).
 
+## 2026-10-30 — Cola de `fleet/order` (fase 3): la cola en la web
+
+163. **Relanzar una tarea en duda: `requeueOrder`.** instantAction propia
+     de `fleet/` (con el parámetro `orderId`, como `cancelOrder`) y
+     `POST /api/orders/<id>/requeue` en la API: así la puede usar cualquier
+     cliente, no solo la web (regla de la decisión 145). Solo vale para una
+     tarea en duda (`ASSIGNING` tras un reinicio); con otra, `REQUEUE_FAILED`.
+     Es la palabra de quien ha mirado el robot contra la del FM: si el robot
+     sí la tenía, se hace dos veces, y por eso la web lo pregunta y dice qué
+     mirar. Vuelve a la cola **en su sitio** y **cuenta desde ese momento**:
+     en la primera prueba, con `max_wait_s: 30`, una relanzada que llevaba 4
+     min en duda salió EXPIRED en el tick siguiente. Contar desde ahora
+     además le da otra etiqueta en el robot (`Task.tag` lleva la hora), y el
+     nuevo intento no se confunde con el que quedó en duda. Por eso
+     `received_at` pasa a guardarse en cada `save`.
+164. **Bloque «Cola de la flota» en Operación**, a todo el ancho encima de
+     «Enviar a la flota»: lo de `fleet/queue` (el espejo lo retiene, así que
+     una página nueva lo ve al conectar). Por fila: puesto, orderId, action,
+     cuánto lleva esperando y el motivo, con «Quitar». Las en duda, en rojo,
+     sin puesto, con su robot, «Relanzar» y «Descartar»; las tres acciones
+     piden confirmación. Las rutas de cancelar y relanzar de la API aceptan
+     una order que está en `fleet/queue` aunque su historial (en RAM) no la
+     tenga: una en duda tras un reinicio no está en él. Guía: «La cola de la
+     flota».
+165. **El final de una tarea se publica antes de dar la siguiente.** Visto
+     con los MiR (seis `prueba_cola` para ver el bloque): la API dejaba en
+     RUNNING las cuatro primeras, ya terminadas. En el mismo tick en que el
+     FM ve que el robot ha acabado le da la siguiente de la cola, y el
+     `state` del tick salía ya con la order nueva: el FINISHED de la
+     anterior no se publicaba nunca (sin cola no pasaba: entre una order y
+     la siguiente siempre había algún tick). Ahora `_follow_assigned`
+     publica el `state` del robot al cerrar la tarea. Afectaba a cualquiera
+     que siga las orders por el `state` (la API REST, la pasarela de voz,
+     que esperaría para siempre un estado final).
+
+Probado: `pytest` 332. Con la flota simulada (Mosquitto aparte): una tarea
+`ASSIGNING` metida a mano en el SQLite, el FM la deja en duda al arrancar
+(el driver `sim` no sabe buscarla); captura de Operación con Chromium sin
+interfaz (en duda en rojo, dos en cola con su puesto y motivo); «Relanzar»
+por la API → `QUEUED` en el puesto 1, `RUNNING` en sim-1 a los 3 s y
+`FINISHED`. Tres orders seguidas a un solo robot: las tres FINISHED en la
+API (antes del arreglo 165, las dos primeras se quedaban en RUNNING). Con
+los MiR, el bloque se vio con seis `prueba_cola` (dos en marcha, cuatro en
+cola), con el `site:` quitado un rato.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2988,14 +3033,23 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
-- **Estado al cerrar (2026-10-30):** el FM real corre con el código del
-    día salvo la orientación de las positions en «Flota» (el servidor la
-    manda desde después del último reinicio): al reiniciarlo, sus flechas
-    apuntan bien. Los dos robots en `suberri_mirur`, libres. En
-    `mirur-instalacion`, el `fleet.yaml` del disco está sin `idle_return`
-    (quitada por el usuario para las pruebas; no se commitea: en git sigue
-    activada). `prueba-pregunta` (`…-mission000-01-0001-013`) sigue en mir-1
-    y en el catálogo: borrarla en Crear cuando no haga falta.
+- **Estado al cerrar (2026-10-30, tarde):** cola de `fleet/order` con las
+    fases 1–3 hechas, probadas con los MiR y subidas (`docs/plan-cola.md`;
+    queda la fase 4 en #39). El FM real (arrancado a las 13:21) tiene la
+    fase 3 pero **no el arreglo 165**: reiniciarlo. Su cola está en
+    `data/fleet.sqlite` (con el histórico de las pruebas de hoy; se purga
+    solo a los 30 días). Los dos robots, libres pero en mapas de otro
+    proyecto: con `site: suberri_mirur`, el FM no les da orders hasta que
+    vuelvan a ese site (para probar sin moverlos, quitar el `site:` un rato
+    y usar `prueba_cola`, como hoy). La mission `prueba-cola` (10 s de
+    espera, grupo `mirur-tknika`, no está en el catálogo) sigue en los dos
+    robots: en Sincronización sale como sobrante. En `mirur-instalacion`,
+    el `fleet.yaml` del disco está sin `idle_return` (quitada por el usuario
+    para las pruebas; no se commitea: en git sigue activada) y sin
+    `prueba_cola` (se quita al acabar cada prueba). `prueba-pregunta`
+    (`…-mission000-01-0001-013`) sigue en mir-1 y en el catálogo: borrarla
+    en Crear cuando no haga falta. `clientes/voz/` es del compañero: solo se
+    toca si un cambio del FM la rompe.
 - **#33** **Copiar un mapa del catálogo** con imagen, origen, positions y
     zonas (GUIDs nuevos de ese mapa). Primer uso: rehacer `mapa-pruebas`
     como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que
@@ -3025,8 +3079,6 @@ las del FM son placeholders y no hay tiempos que medir.
     desplegar).
 
 - **#39** **Cola de `fleet/order`, lo que falta** (`docs/plan-cola.md` §8).
-    Fase 3: bloque Cola en la web (ya hay «Quitar de la cola» en las
-    enviadas y `GET /api/queue`) y relanzar o descartar una tarea en duda.
     Fase 4: `expected_s` con el histórico y sacar del dock (D6). La mission
     `prueba-cola` (10 s de espera) sigue en los dos robots para probar;
     borrarla cuando no haga falta.

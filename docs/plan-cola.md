@@ -1,10 +1,11 @@
 # Plan: cola de tareas en el FM (`fleet/order` con late binding)
 
-Estado (2026-10-30): **fases 1 y 2 hechas**. Fase 1: cola, contrato MQTT,
+Estado (2026-10-30): **fases 1, 2 y 3 hechas**. Fase 1: cola, contrato MQTT,
 cancelar, caducidad y tamaño máximo, también por la API REST; probada con
 los MiR. Fase 2: SQLite y recuperación tras reinicio (también de las tareas
 en curso, que el plan dejaba para la fase 4); probadas las dos con los
-MiR (§8). Faltan las fases 3 y 4. Decisiones 154–162 de
+MiR (§8). Fase 3: bloque «Cola de la flota» en la web, con relanzar
+una tarea en duda (`requeueOrder`). Falta la fase 4. Decisiones 154–162 de
 `docs/avance.md`.
 
 ## 1. Qué cambia
@@ -77,6 +78,7 @@ estaba en la cola, `FAILED`.
 | `FAILED` | estaba en la cola y el robot no la aceptó al lanzarla; o, tras reiniciar el FM, no se pudo retomar | `errorType`, `errorDescription` o `description` |
 | `CANCELLED` / `EXPIRED` | salió de la cola sin ejecutarse | `description` |
 | `CANCEL_FAILED` | `cancelOrder` de algo que no está en la cola ni en curso | `errorType`, `errorDescription` |
+| `REQUEUE_FAILED` | `requeueOrder` de algo que no está en duda | `errorType`, `errorDescription` |
 
 Si llega una order y hay un robot libre, sale `ASSIGNED` directamente, sin
 pasar por `QUEUED`. Para quien solo mira `ASSIGNED`/`REJECTED` no cambia
@@ -100,7 +102,11 @@ Cancelar (D3): `fleet/instantActions` con `cancelOrder` y el parámetro
 `orderId`. Si la tarea espera, sale de la cola; si está en un robot, es el
 `cancelOrder` de ese robot (`driver.cancel`). La respuesta va a
 `order_response` (`CANCELLED` o `CANCEL_FAILED`), porque `fleet` no tiene
-`state`. Otras instantActions en `fleet/` se ignoran con un aviso en el log.
+`state`. `requeueOrder` (propia, decisión 163), con el mismo parámetro,
+relanza una tarea en duda (§5.4): vuelve a la cola en su sitio y cuenta
+desde ese momento (espera, caducidad y etiqueta nueva en el robot);
+respuesta `QUEUED` o `REQUEUE_FAILED`. Otras instantActions en `fleet/` se
+ignoran con un aviso en el log.
 
 ```json
 { "headerId": 1, "timestamp": "…", "version": "3.0.0",
@@ -243,22 +249,24 @@ se añade si algún día hace falta.
 - **En RAM**: una copia de las tareas vivas, para no consultar el fichero en
   cada tick. El fichero manda: la copia se rehace desde él al arrancar.
 
-## 6. Web del FM (fase 3)
+## 6. Web del FM (fase 3, hecha)
 
-Fase 1: el bloque `fleet/order` y los eventos ya enseñan `QUEUED` (con su
-puesto), `CANCELLED`, `EXPIRED` y `FAILED`, y las orders enviadas que esperan
-tienen «Quitar de la cola». API REST (decisión 158): `GET /api/queue` y
-`POST /api/orders/<id>/cancel`; la pasarela de voz para con esta última
-(decisión 159).
+En Operación, encima de «Enviar a la flota», el bloque **Cola de la flota**
+(lo de `fleet/queue`):
 
-Fase 3, en la pestaña de operación, un bloque "Cola" con:
+- Una fila por order que espera: puesto, orderId, action, cuánto lleva
+  esperando y por qué (lo que dice `assign()` de cada robot: "ocupado",
+  "batería 17% < 20%"…), con «Quitar» (`cancelOrder`).
+- Las que están en duda tras un reinicio (D9), en rojo, sin puesto y con su
+  robot: «Relanzar» (`requeueOrder`) y «Descartar» (`cancelOrder`). Las dos
+  piden confirmación y dicen qué mirar antes en la web del MiR.
+- Todo por la API REST (`POST /api/orders/<id>/cancel` y `/requeue`), que
+  publica en el broker como cualquier cliente. Las dos aceptan una order que
+  está en `fleet/queue` aunque el historial de la API (en RAM) no la tenga.
 
-- Las tareas pendientes en orden (`fleet/queue`), con tiempo de espera y
-  por qué no se asignan (lo que dice `assign()` de cada robot: "ocupado",
-  "batería 17% < 20%"…).
-- Un botón de cancelar.
-- Las tareas en duda tras un reinicio (D9), con relanzar / descartar.
-  Descartar ya se puede (`cancelOrder`, decisión 162); relanzar, no.
+Además, «Quitar de la cola» en las orders enviadas desde la página que
+esperan, y en la Guía, «La cola de la flota». La pasarela de voz para con
+`POST /api/orders/<id>/cancel` (decisión 159).
 
 ## 7. Decisiones (acordadas el 2026-10-30)
 
@@ -278,8 +286,8 @@ Fase 3, en la pestaña de operación, un bloque "Cola" con:
   usa para pruebas y casos puntuales. Nada que cambiar.
 - **D8. Histórico**: `queue.keep_days`, 30 días. Hecho.
 - **D9. Tarea en duda al arrancar**: bloqueada y reintentando; sale en
-  `fleet/queue` y se descarta con `cancelOrder`. Hecho; el aviso y
-  "relanzar" en la web, fase 3.
+  `fleet/queue`, en la web en rojo, y se descarta (`cancelOrder`) o se
+  relanza (`requeueOrder`). Hecho.
 
 ## 8. Fases
 
@@ -293,7 +301,12 @@ Fase 3, en la pestaña de operación, un bloque "Cola" con:
    `ASSIGNED` al arrancar, duplicados tras reinicio y purga del histórico
    (D8). `tests/test_tasks.py`, `tests/test_queue_restart.py` y prueba con
    la flota simulada y `kill -9`.
-3. **Web**: bloque Cola, cancelar y tareas en duda (relanzar).
+3. **Hecha (2026-10-30). Web**: bloque «Cola de la flota» con quitar,
+   relanzar y descartar (§6); `requeueOrder` y `POST /api/orders/<id>/requeue`.
+   Probada con la flota simulada (captura con Chromium sin interfaz) y una
+   tarea en duda metida a mano en el SQLite, y vista con los MiR. Salió y se
+   arregló que el FINISHED de una tarea no se publicaba si el robot cogía
+   la siguiente en el mismo tick (decisión 165).
 4. Histórico → `expected_s` y D6 (sacar del dock).
 5. **Hecha (2026-10-30). Prueba con los dos MiR** (mission `prueba-cola`):
    el MiR guarda el `description` del POST y `find_job` lo encuentra;

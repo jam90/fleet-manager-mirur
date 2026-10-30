@@ -72,13 +72,14 @@
   y se cancela si llega una order (`Robot.execute`). Con `zone` (decisión
   138) solo si el robot está fuera de esa zona del mapa (gancho `in_zone`
   del driver).
-- **Cola de `fleet/order`** (`fm/tasks.py`, decisiones 154–162,
+- **Cola de `fleet/order`** (`fm/tasks.py`, decisiones 154–165,
   `docs/plan-cola.md`): con todos los robots ocupados la order espera
   (`QUEUED`) y va al primero que quede libre, por orden de llegada
   (`Dispatcher.tick()`). En SQLite (`data/<fleet>.sqlite`, `FM_DATA`),
   detrás de `TaskStore`; al arrancar, `Dispatcher.recover()` retoma las de
-  antes del reinicio (ganchos `find_job`/`adopt_job` del driver). Lo que
-  falta, en #39.
+  antes del reinicio (ganchos `find_job`/`adopt_job` del driver). En la
+  web, bloque «Cola de la flota» en Operación (quitar; relanzar o
+  descartar una en duda). Lo que falta, en #39.
 - **Datos de la instalación fuera de este repo** (decisión 135, el repo es
   público): `fleet.yaml` y `catalog/` viven en el repo privado
   `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los
