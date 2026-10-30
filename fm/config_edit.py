@@ -165,7 +165,7 @@ def plan(text: str, edits: dict) -> list[Op]:
         else:
             idle = _idle("idle_return", idle)
             now = current.get("idle_return") or {}
-            for key in ("action", "after_s", "params"):
+            for key in ("action", "after_s", "params", "zone"):
                 if key in idle and now.get(key, ...) != idle[key]:
                     ops.append(Op(("idle_return", key), idle[key]))
                 elif key not in idle and key in now:
@@ -185,11 +185,11 @@ def plan(text: str, edits: dict) -> list[Op]:
 
 
 def _idle(where: str, value) -> dict:
-    """`{action, after_s, params}` de la UI → lo que se escribe, en ese
-    orden y sin `params` vacíos. El resto (que la action exista y esté
-    habilitada) lo comprueba el cargador al guardar."""
-    if not isinstance(value, dict) or set(value) - {"action", "after_s", "params"}:
-        raise EditError(f"{where}: se espera {{action, after_s, params}}")
+    """`{action, after_s, params, zone}` de la UI → lo que se escribe, en ese
+    orden y sin `params` ni `zone` vacíos. El resto (que la action exista y
+    esté habilitada) lo comprueba el cargador al guardar."""
+    if not isinstance(value, dict) or set(value) - {"action", "after_s", "params", "zone"}:
+        raise EditError(f"{where}: se espera {{action, after_s, params, zone}}")
     action = value.get("action")
     if not isinstance(action, str) or not ACTION_NAME.match(action):
         raise EditError(f"{where}.action: elige una action del catálogo")
@@ -203,6 +203,11 @@ def _idle(where: str, value) -> dict:
     params = {k: v for k, v in params.items() if v != ""}
     if params:
         out["params"] = params
+    zone = value.get("zone")
+    if zone not in (None, ""):
+        if not isinstance(zone, str) or not zone.strip():
+            raise EditError(f"{where}.zone: elige una zona del mapa")
+        out["zone"] = zone.strip()
     return out
 
 

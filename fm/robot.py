@@ -105,7 +105,7 @@ class Robot:
         t = self.last_telemetry
         self.idle.tick(self.driver, busy=self.busy,
                        ready=(t.available and t.operating_mode == "AUTOMATIC" and not t.paused
-                              and not self.outside_site))
+                              and not self.outside_site), telemetry=t)
         return self.last_telemetry
 
     def overlay(self):

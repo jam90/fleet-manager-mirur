@@ -2483,6 +2483,52 @@ mande a los robots a la espera, con el tiempo y la mission configurables.
      vea también cualquier cliente MQTT. En Operación la fila solo sale
      mientras cuenta o va.
 
+## 2026-10-30 — Pruebas con robot
+
+- **#11 Robot que se enciende con el FM en marcha: hecho.** El FM arrancó
+  con los dos MiR apagados y los cogió solos al encenderlos. El usuario lo
+  ve también a diario: arranca el FM sin la VPN del taller y, al
+  conectarla, los dos robots se conectan sin tocar nada.
+- Al encender un MiR hay que pulsar el botón azul físico. El Error 10101
+  de mir-2 siguió tras apagarlo y encenderlo: el usuario lo quitó a mano.
+- Un robot en Pause cuenta como disponible a propósito: se reanuda desde
+  el FM (`stopPause`), sin ir al robot.
+
+## 2026-10-30 — La vuelta a la espera mira la zona
+
+Primera prueba con robot de la #35: al reiniciar el FM, mir-2 ya estaba en
+la zona de espera y salió a hacer la mission igual (al arrancar, el FM da a
+todos por «recién hecho algo»). El usuario pide que dependa también de la
+posición: de la zona de espera que ya hay en el mapa.
+
+138. **`idle_return.zone`: solo se manda a la espera a un robot que esté
+     fuera de esa zona del mapa.** Dentro, ni cuenta ni va (no hay
+     contador), y no gasta el «una vez»: si lo sacan de la zona sin hacer
+     nada más, cuenta y vuelve. La zona es la del mapa (elegida por el
+     usuario frente a una lista de positions con un radio): ya existe,
+     cubre los dos puntos de espera y se ve en la web del MiR. Se guarda
+     por GUID (el del catálogo es el mismo en toda la flota y sobrevive a
+     un cambio de nombre) y el driver la busca en el mapa activo por GUID
+     y, si no, por nombre. Gancho opcional `in_zone(zone, telemetry)` del
+     driver (`fm/adapters/base.py`); el de MiR lee el polígono del robot
+     (`maps/<mapa>/zones`, `zones/<guid>`) desde el hilo de poll y lo
+     guarda 60 s (`ZONE_TTL_S`), así que redibujarla en la web se nota
+     sin reiniciar; dentro o fuera lo decide `point_in_polygon` (puro).
+     Si no se sabe (la zona no está en el mapa activo, sin pose, sin red
+     la primera vez), se hace como sin zona y se avisa en el log: es lo
+     que hacía antes. Se hereda de la flota como `after_s`, salvo con otra
+     action (lleva a otro sitio), como los `params`. En el Configurador,
+     un desplegable con las zonas del catálogo del site de la flota y el
+     texto del panel explica las dos condiciones (tiempo y zona); Guía al
+     día. Comprobado contra los dos robots (solo lectura): los dos dentro
+     de «zona de espera».
+
+Probado por el usuario con el FM nuevo (#35): con la zona puesta, los
+robots que ya están dentro no salen; una order lanzada mientras un robot iba
+a la espera la cancela y la hace él, y 30 s después de terminarla vuelve a
+la espera. Con los dos fuera a la vez, `Ir a zona de espera MIRUR` los
+reparte entre los dos puntos de espera. #35 hecho.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2500,11 +2546,11 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
 
 **En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
 
-1. **2026-10-30: pruebas con robot.** La vuelta a la espera (#35) y el
-   bloque «Probar con robot» de abajo. Antes, reiniciar el FM real (coge
+1. **2026-10-30: pruebas con robot.** La vuelta a la espera (#35, hecha
+   el 2026-10-30) y el bloque «Probar con robot» de abajo. Antes, reiniciar el FM real (coge
    la retirada de mapas, los grupos, los datos en `mirur-instalacion` y
-   la vuelta a la espera) y quitar el Error de mir-2 (ver «Estado al
-   cerrar»).
+   la vuelta a la espera). El Error de mir-2 ya está quitado
+   (2026-10-30).
 2. **Pestaña Robot:** #24, #26 y #27 (abajo, en su bloque).
 3. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
    sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
@@ -2521,7 +2567,8 @@ las del FM son placeholders y no hay tiempos que medir.
     actions que van a positions fijas de `suberri_mirur` (decisión 131), y
     si se elige `suberri_mirur` como site de la flota, ninguno recibe
     orders hasta cambiar su mapa. mir-2 quedó en Error (10101) por una
-    mission de `suberri_mirur` lanzada en `suberri`: quitarlo en su web.
+    mission de `suberri_mirur` lanzada en `suberri`; quitado el
+    2026-10-30.
 - **Sin commitear en el catálogo** (`mirur-instalacion/catalog/`, del usuario): `mapa-pruebas`
     (`…-map0000000-01-0001-002`, subido con origen (12,5; 12,5) en vez del
     de `suberri_mirur`, (−13,825; −3,275), y ya desplegado en los dos
@@ -2534,10 +2581,6 @@ las del FM son placeholders y no hay tiempos que medir.
     fijas (decisión 131): copiarlas apuntando a las positions copiadas o
     pasarlas a recibir la position como input.
 
-- **#35** **Probar con robot la vuelta a la espera** (decisión 136): activarla
-    con `ir_a_espera` y 30 s, mandar una order y ver que vuelve una sola
-    vez; mandar otra mientras va (se cancela y hace la order); con los dos
-    robots, que `Ir a zona de espera MIRUR` reparte los puntos de espera.
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 
@@ -2648,11 +2691,6 @@ las del FM son placeholders y no hay tiempos que medir.
 - **#8** `required_inputs` (parámetro de texto): no hay mission que lo use.
 - **#9** Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
 - **#10** Order update (`orderUpdateId > 0`) sobre una order terminada.
-- **#11** Robot que se apaga y vuelve a encenderse con el FM en marcha.
-    2026-10-12: probado solo con los dos MiR apagados desde el arranque
-    (backoff 1-2-4-8 s, `state` con `ROBOT_UNREACHABLE`, `fleet/order` →
-    `REJECTED NO_MOBILE_ROBOT_AVAILABLE`). Falta encenderlos con el FM en
-    marcha: ver que el primer `connect()` carga los índices (decisión 70).
 - **#18** **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
     `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
     mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día

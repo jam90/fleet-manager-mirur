@@ -150,3 +150,57 @@ def test_cambiarla_se_aplica_en_caliente(tmp_path):
     old = _load(tmp_path)
     new = _load(tmp_path, "idle_return: { action: ir_a_espera }", r1=", idle_return: { after_s: 10 }")
     assert restart_reasons(old, new, {}) == []
+
+
+# --------------------------------------------- zona de espera (decisión 138)
+class _ZoneSim(SimDriver):
+    """Sim con el gancho `in_zone`: `inside` dice si está en la zona (None =
+    no se sabe, p. ej. la zona no está en su mapa)."""
+    inside: bool | None = False
+
+    def in_zone(self, zone, t):
+        self.asked = zone
+        return self.inside
+
+
+def _zone_robot(inside, idle=IdleReturnConfig("ir_a_espera", 30.0, {}, zone="zona de espera")):
+    t = {"now": 0.0}
+    d = _ZoneSim(SimRobotConfig("sim-1", {"ir_a_espera"}, battery=90, drain_pct_per_s=0.0), clock=lambda: t["now"])
+    d.inside = inside
+    rc = RobotConfig("sim-1", battery_min=25, action_types=frozenset({"ir_a_espera"}), idle_return=idle)
+    r = Robot(rc, d, clock=lambda: t["now"])
+    r.connect()
+    return r, d, t
+
+
+def test_ya_en_la_zona_de_espera_ni_cuenta_ni_va():
+    r, d, t = _zone_robot(inside=True)
+    _run(r, t, 120)
+    assert _parks(d) == [] and r.idle.remaining() is None and d.asked == "zona de espera"
+    assert r.overlay().information == []                # sin contador en la web
+    d.inside = False                                    # lo sacan de la zona (sin hacer nada más)
+    _run(r, t, 32)
+    assert len(_parks(d)) == 1
+
+
+def test_fuera_de_la_zona_o_sin_saberlo_va_como_siempre():
+    for inside in (False, None):
+        r, d, t = _zone_robot(inside)
+        _run(r, t, 32)
+        assert len(_parks(d)) == 1
+    r, d, t = _zone_robot(True, IdleReturnConfig("ir_a_espera", 30.0, {}))   # sin zona: no se pregunta
+    _run(r, t, 32)
+    assert len(_parks(d)) == 1 and not hasattr(d, "asked")
+
+
+def test_config_zona_se_hereda_salvo_con_otra_action(tmp_path):
+    fleet = "idle_return: { action: ir_a_espera, zone: imperialfleet-zone000000-01-0001-001 }"
+    cfg = _load(tmp_path, fleet, r1=", idle_return: { after_s: 10 }")
+    assert cfg.idle_return.zone == "imperialfleet-zone000000-01-0001-001"
+    assert cfg.robots["sim-1"].idle_return.zone == "imperialfleet-zone000000-01-0001-001"
+    cfg = _load(tmp_path, fleet, r1=", idle_return: { action: ir_a }")
+    assert cfg.robots["sim-1"].idle_return.zone is None              # otra action, otro sitio
+    cfg = _load(tmp_path, fleet, r1=", idle_return: { zone: null }")
+    assert cfg.robots["sim-1"].idle_return.zone is None              # la quita a propósito
+    with pytest.raises(ConfigError, match="zone"):
+        _load(tmp_path, "idle_return: { action: ir_a_espera, zone: 3 }")

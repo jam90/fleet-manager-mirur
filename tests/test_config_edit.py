@@ -278,6 +278,16 @@ def test_idle_return_de_la_flota_y_de_un_robot():
     assert apply_edits(back, {"idle_return": None, "robots": {"mir-2": {"idle_return": None}}}) == text
 
 
+def test_idle_return_zona():
+    """La zona de espera (decisión 138): se escribe con el resto y vacía se quita."""
+    con = apply_edits(YAML, {"idle_return": {"action": "coger", "after_s": 30, "zone": "imperialfleet-zone000000-01-0001-001"}})
+    assert con.endswith("idle_return:\n  action: coger\n  after_s: 30\n  zone: imperialfleet-zone000000-01-0001-001\n")
+    sin = apply_edits(con, {"idle_return": {"action": "coger", "after_s": 30, "zone": ""}})
+    assert "zone:" not in sin and sin.endswith("  after_s: 30\n")
+    robot = apply_edits(YAML, {"robots": {"sim-1": {"idle_return": {"action": "coger", "zone": "z"}}}})
+    assert "    idle_return: {action: coger, zone: z}\n" in robot
+
+
 def test_idle_return_errores():
     with pytest.raises(EditError, match="elige una action"):
         apply_edits(YAML, {"idle_return": {"after_s": 30}})

@@ -54,6 +54,22 @@ def position_map_id(p: dict) -> str:
     return str(p.get("map", "")).rsplit("/", 1)[-1]
 
 
+def point_in_polygon(x: float, y: float, polygon: list[dict]) -> bool:
+    """¿El punto (x, y) cae dentro del polígono `[{x, y}, ...]` de una zona
+    del MiR? Ray casting: se cuenta cuántos lados corta una semirrecta
+    horizontal desde el punto; impar = dentro. Vale para polígonos no
+    convexos, que es como se dibujan las zonas en la web."""
+    inside = False
+    n = len(polygon)
+    for i in range(n):
+        a, b = polygon[i], polygon[(i + 1) % n]
+        if (a["y"] > y) != (b["y"] > y):
+            cross_x = a["x"] + (y - a["y"]) * (b["x"] - a["x"]) / (b["y"] - a["y"])
+            if x < cross_x:
+                inside = not inside
+    return inside
+
+
 class MirApiError(RuntimeError):
     """Error HTTP del MiR con el motivo que devuelve en el body.
 
@@ -240,6 +256,12 @@ class MirClient:
 
     def maps_map_id_get(self, map_guid: str) -> dict:
         return self._req("GET", f"maps/{map_guid}")
+
+    def maps_map_id_zones_get(self, map_guid: str) -> list[dict]:
+        return self._req("GET", f"maps/{map_guid}/zones")
+
+    def zones_zone_id_get(self, zone_guid: str) -> dict:
+        return self._req("GET", f"zones/{zone_guid}")
 
     def sessions_session_id_get(self, session_guid: str) -> dict:
         return self._req("GET", f"sessions/{session_guid}")

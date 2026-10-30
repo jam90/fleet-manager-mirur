@@ -24,6 +24,7 @@ class _FakeClient(MirClient):
         self.posted: list[dict] = []
         self.deleted: list[int] = []
         self.site_reads = 0
+        self.zone_reads = 0
         self.extra_positions: list[dict] = []
         self.actions: dict[str, list[dict]] = {}     # missions/<guid>/actions a medida
 
@@ -61,6 +62,12 @@ class _FakeClient(MirClient):
             return {"guid": "m", "session_id": "s-1"}
         if method == "GET" and path == "sessions/s-1":
             return {"guid": "s-1", "name": "planta"}
+        if method == "GET" and path == "maps/m/zones":     # zona de espera (decisión 138)
+            self.zone_reads += 1
+            return [{"guid": "z-1", "name": "zona de espera"}, {"guid": "z-2", "name": "otra"}]
+        if method == "GET" and path == "zones/z-1":
+            return {"guid": "z-1", "polygon": [{"x": 34.4, "y": 7.2}, {"x": 36.2, "y": 7.2},
+                                               {"x": 36.2, "y": 9.8}, {"x": 34.4, "y": 9.8}]}
         if method == "PUT" and path == "status":
             self.status["state_id"] = json["state_id"]
             return self.status
@@ -258,3 +265,28 @@ def test_las_positions_fijas_de_una_sub_mission_tambien_atan():
         {"parameters": [{"id": "mission_id", "value": "m-coger", "input_name": None}]}]   # ciclo
     d.poll()
     assert d.connect() and d.mission_maps["m-coger"] == {"m-otro"}
+
+
+def test_point_in_polygon():
+    from fm.adapters.mir.client import point_in_polygon
+    ele = [{"x": 0, "y": 0}, {"x": 4, "y": 0}, {"x": 4, "y": 1}, {"x": 1, "y": 1}, {"x": 1, "y": 4}, {"x": 0, "y": 4}]
+    assert point_in_polygon(0.5, 3, ele) and point_in_polygon(3, 0.5, ele)
+    assert not point_in_polygon(3, 3, ele) and not point_in_polygon(-1, 0.5, ele)   # el hueco de la L y fuera
+
+
+def test_in_zone_por_guid_o_nombre_y_lo_guarda_un_rato():
+    from fm.adapters.base import Telemetry
+    t = {"now": 0.0}
+    c = _FakeClient()
+    d = MirDriver(CFG, c, clock=lambda: t["now"])
+    dentro = Telemetry(70.0, pose=(35.2, 9.0, 0.0), map_id="m")      # Punto espera 1
+    fuera = Telemetry(70.0, pose=(31.4, 7.8, 0.0), map_id="m")
+    assert d.in_zone("z-1", dentro) is True and d.in_zone("z-1", fuera) is False
+    assert d.in_zone("zona de espera", dentro) is True
+    assert c.zone_reads == 2                         # una por (mapa, zona), no una por tick
+    t["now"] += 61
+    d.in_zone("z-1", dentro)
+    assert c.zone_reads == 3                         # pasado ZONE_TTL_S se relee
+    # Sin saberlo: zona que no está en el mapa, otro mapa sin zonas, sin pose.
+    assert d.in_zone("no-existe", dentro) is None
+    assert d.in_zone("z-1", Telemetry(70.0, map_id="m")) is None

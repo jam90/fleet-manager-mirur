@@ -1073,9 +1073,16 @@
          flota y, por robot, la misma, otra o ninguna. -->
     <div class="panel" id="cfg-idle">
       <h3>Vuelta a la espera</h3>
-      <p class="hint">Si un robot lleva un rato <b>parado</b> (en automático, sin pausa, en el site de la flota y sin nada que
-        hacer), el FM le manda esta action <b>una vez</b>, para que no estorbe donde acabó. Una order que llegue mientras va,
-        la cancela. <code>idle_return</code></p>
+      <p class="hint">El FM manda esta action a un robot <b>una vez</b>, para que no estorbe donde acabó, cuando se cumplen
+        las dos condiciones:</p>
+      <ul class="hint">
+        <li><b>Tiempo:</b> lleva esos segundos <b>parado</b> (en automático, sin pausa, en el site de la flota y sin nada
+          que hacer). Si deja de estarlo, la cuenta vuelve a cero.</li>
+        <li><b>Zona:</b> está <b>fuera</b> de la zona elegida (la de espera). Si ya está dentro, ni cuenta ni va. Sin zona,
+          va desde cualquier sitio. Si el mapa activo del robot no tiene esa zona, va como si no hubiera zona.</li>
+      </ul>
+      <p class="hint">No repite hasta que el robot haga otra cosa. Una order que llegue mientras va, la cancela.
+        <code>idle_return</code></p>
       <h4>Toda la flota</h4>
       <template v-if="!cfgEdit.on">
         <p v-if="cfgState.idle_return">{{ idleText(cfgState.idle_return) }}</p>
@@ -1089,6 +1096,10 @@
               <option v-for="a in viewActions.filter(x => x.status !== 'borrada')" :key="a.name" :value="a.name">{{ a.name }}</option></select></label>
           <label class="field">Tras (segundos parado)
             <input class="num-in" type="number" id="idle-after" min="1" step="5" v-model.number="cfgEdit.draft.idle.fleet.after_s"></label>
+          <label class="field">Solo si está fuera de la zona
+            <select id="idle-zone" v-model="cfgEdit.draft.idle.fleet.zone">
+              <option value="">(sin zona: desde cualquier sitio)</option>
+              <option v-for="z in idleZones(cfgEdit.draft.idle.fleet.zone)" :key="z.guid" :value="z.guid">{{ zoneLabel(z) }}</option></select></label>
           <label class="field" v-for="k in idleParamKeys(cfgEdit.draft.idle.fleet.action)" :key="k.key">{{ k.key }}
             <input :type="k.kind === 'number' ? 'number' : 'text'" :list="k.kind === 'position' ? 'idle-positions' : null"
                    v-model="cfgEdit.draft.idle.fleet.params[k.key]" autocomplete="off"></label>
@@ -1112,6 +1123,10 @@
                   <option v-for="a in cfgEdit.draft.robots[r.serial].actions" :key="a" :value="a">{{ a }}</option></select></label>
               <label class="field">Tras (segundos; vacío = los de la flota)
                 <input class="num-in" type="number" min="1" step="5" v-model.number="cfgEdit.draft.idle.robots[r.serial].own.after_s"></label>
+              <label class="field">Solo si está fuera de la zona
+                <select v-model="cfgEdit.draft.idle.robots[r.serial].own.zone">
+                  <option value="">(sin zona: desde cualquier sitio)</option>
+                  <option v-for="z in idleZones(cfgEdit.draft.idle.robots[r.serial].own.zone)" :key="z.guid" :value="z.guid">{{ zoneLabel(z) }}</option></select></label>
               <label class="field" v-for="k in idleParamKeys(cfgEdit.draft.idle.robots[r.serial].own.action)" :key="k.key">{{ k.key }}
                 <input :type="k.kind === 'number' ? 'number' : 'text'" :list="k.kind === 'position' ? 'idle-positions' : null"
                        v-model="cfgEdit.draft.idle.robots[r.serial].own.params[k.key]" autocomplete="off"></label>
@@ -1716,17 +1731,21 @@
             <p>Una action del catálogo que lleve al robot a su sitio de espera, habilitada en los robots que volverán (p. ej.
               <code>ir_a_espera</code>). Si los dos comparten zona, que la mission elija un punto libre (prueba uno y, si está
               ocupado, va a otro) o da a cada robot el suyo con un parámetro.</p></li>
+          <li><b>Tener la zona de espera en el mapa</b><a class="where" href="#crear">→ Crear</a>
+            <p>Una zona que cubra los puntos de espera, en el catálogo y en los robots (pestaña Crear, «zona del mapa»). Así el
+              FM no manda a la espera a un robot que ya está en ella.</p></li>
           <li><b>Activarla para la flota</b><a class="where" href="#configurador">→ Configurador</a>
             <p>«Editar» → «Vuelta a la espera»: marca la casilla, elige la action, los <b>segundos parado</b> (deja tiempo a que
-              llegue la order siguiente: 30 s suele bastar) y sus parámetros, y «Guardar». Se aplica en caliente.</p></li>
+              llegue la order siguiente: 30 s suele bastar), la <b>zona de espera</b> y sus parámetros, y «Guardar». Se aplica
+              en caliente.</p></li>
           <li><b>Ajustar por robot</b><a class="where" href="#configurador">→ Configurador</a>
             <p>En «Por robot»: «como la flota», «otra action» (con sus segundos y parámetros, p. ej. su propio punto de espera)
               o «desactivada».</p></li>
           <li><b>Verlo funcionar</b><a class="where" href="#operacion">→ Operación</a>
             <p>Al acabar una order, el robot espera esos segundos (la cuenta atrás se ve en su tarjeta, «A la espera: en 12 s»,
               y en su pestaña) y sale «a la espera». Solo cuenta si está en automático, sin
-              pausa, en el site de la flota y sin nada que hacer; y va <b>una vez</b>: no repite hasta hacer otra cosa. Una order
-              que llegue mientras va lo cancela y la hace él.</p></li>
+              pausa, en el site de la flota, sin nada que hacer y <b>fuera de la zona de espera</b>; y va <b>una vez</b>: no
+              repite hasta hacer otra cosa. Una order que llegue mientras va lo cancela y la hace él.</p></li>
         </ol>
       </details>
 
@@ -2495,14 +2514,24 @@ createApp({
     const say = (msg, cls = '') => { cfgEdit.msg = msg; cfgEdit.msgCls = cls; };
     // ---- vuelta a la espera (decisión 136)
     const IDLE_MODES = { fleet: 'como la flota', own: 'otra action', off: 'desactivada' };
-    const idleCopy = c => ({ action: c.action || '', after_s: c.after_s ?? null, params: { ...(c.params || {}) } });
+    const idleCopy = c => ({ action: c.action || '', after_s: c.after_s ?? null, params: { ...(c.params || {}) },
+                             zone: c.zone || '' });
     // Lo que se guarda: sin params vacíos ni after_s sin poner (= el de la flota).
     function idleClean(c) {
       const out = { action: c.action || '' };
       if (c.after_s !== null && c.after_s !== '' && c.after_s !== undefined) out.after_s = c.after_s;
       const params = Object.fromEntries(Object.entries(c.params || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined));
       if (Object.keys(params).length) out.params = params;
+      if (c.zone) out.zone = c.zone;
       return out;
+    }
+    // Zonas del catálogo para elegir la de espera (decisión 138): las del site
+    // de la flota, y la elegida aunque sea de otro (para no perderla de vista).
+    const idleZones = current => (cfgChoices.value.zones || []).filter(z => inSite(z.site) || z.guid === current);
+    const zoneLabel = z => z.map ? `${z.name} (${z.map})` : z.name;
+    function zoneName(guid) {
+      const z = (cfgChoices.value.zones || []).find(x => x.guid === guid || x.name === guid);
+      return z ? z.name : guid;
     }
     // Los parámetros que pide la definición de una action, con su tipo.
     function idleParamKeys(name) {
@@ -2513,7 +2542,8 @@ createApp({
               ...keys(d.number_inputs).map(key => ({ key, kind: 'number' })),
               ...keys(d.required_inputs).map(key => ({ key, kind: 'text' }))];
     }
-    const idleText = c => `${c.action}${Object.keys(c.params || {}).length ? ' (' + Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(', ') + ')' : ''} tras ${c.after_s} s parado`;
+    const idleText = c => `${c.action}${Object.keys(c.params || {}).length ? ' (' + Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(', ') + ')' : ''} tras ${c.after_s} s parado`
+      + (c.zone ? ` y fuera de «${zoneName(c.zone)}»` : ', desde cualquier sitio');
     function startEdit() {
       cfgEdit.draft = {
         actions: {},                  // nombre → { definition, comments } | null (borrar)
@@ -2881,7 +2911,7 @@ createApp({
              canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
-             cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, idleParamKeys, idleText, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
              capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,

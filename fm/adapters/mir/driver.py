@@ -8,10 +8,12 @@ La traducción pura está en `translate.py`; aquí solo la parte con red.
 from __future__ import annotations
 
 import logging
+import time
+from typing import Callable
 
 from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, RobotSpec, Telemetry
 from fm.adapters.mir.client import (STATE_PAUSE, STATE_READY, MirClient, MirStatus, fixed_position_maps,
-                                    loaded_missions, mission_input_names, position_map_id)
+                                    loaded_missions, mission_input_names, point_in_polygon, position_map_id)
 from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, render_message, to_telemetry
 from fm.vda5050.order import Action, OrderRejected
@@ -36,12 +38,18 @@ MIR250_SPEC = RobotSpec("MiR250", kinematics="DIFF", robot_class="CARRIER", max_
                         width=0.58, length=0.80, height=0.30,
                         description="MiR250 vía REST API v2.0.0; cada actionType es una mission de la web")
 
+# Cada cuánto se vuelve a leer el polígono de una zona (`in_zone`): si se
+# redibuja en la web del MiR, el FM lo ve en como mucho este tiempo.
+ZONE_TTL_S = 60.0
+
 
 class MirDriver:
     manufacturer = "MiR"
 
-    def __init__(self, cfg: MirRobotConfig, client: MirClient | None = None):
+    def __init__(self, cfg: MirRobotConfig, client: MirClient | None = None,
+                 clock: Callable[[], float] = time.monotonic):
         self.cfg = cfg
+        self.clock = clock
         self.serial = cfg.serial
         self.client = client or MirClient(cfg.host, cfg.auth)
         # Prefijo [serial] en cada línea para poder filtrar el log por robot.
@@ -65,6 +73,8 @@ class MirDriver:
         self._launched_ids: set[int] = set()
         # mapa → (site, nombre del site): `_site_of`.
         self._map_sites: dict[str, tuple[str | None, str | None]] = {}
+        # (mapa, zona) → (cuándo se leyó, polígono o None si no está): `in_zone`.
+        self._zones: dict[tuple[str, str], tuple[float, list[dict] | None]] = {}
         # `message` de mission_queue/<id> al terminar: el MiR pone `Aborted`
         # tanto si se para a mano como si falla, y solo el message lo distingue.
         self._job_results: dict[str, str] = {}
@@ -170,6 +180,38 @@ class MirDriver:
                 return None, None
             self._map_sites[map_id] = (session, name)
         return self._map_sites[map_id]
+
+    def in_zone(self, zone: str, t: Telemetry) -> bool | None:
+        """¿La pose de `t` cae dentro de la zona `zone` (GUID, o nombre) de su
+        mapa activo? Para la vuelta a la espera (decisión 138). None si no hay
+        pose o la zona no está en ese mapa."""
+        if t.pose is None or not t.map_id:
+            return None
+        polygon = self._zone_polygon(t.map_id, zone)
+        return None if polygon is None else point_in_polygon(t.pose[0], t.pose[1], polygon)
+
+    def _zone_polygon(self, map_id: str, zone: str) -> list[dict] | None:
+        """Polígono de la zona en ese mapa, leído del robot y guardado
+        `ZONE_TTL_S`. Se busca primero por GUID (el del catálogo es el mismo en
+        toda la flota) y si no, por nombre. Si falla la red se conserva lo que
+        hubiera: un corte no debe cambiar la decisión."""
+        key = (map_id, zone)
+        read_at, polygon = self._zones.get(key, (None, None))
+        if read_at is not None and self.clock() - read_at < ZONE_TTL_S:
+            return polygon
+        try:
+            rows = self.client.maps_map_id_zones_get(map_id)
+            row = (next((z for z in rows if z.get("guid") == zone), None)
+                   or next((z for z in rows if z.get("name") == zone), None))
+            polygon = self.client.zones_zone_id_get(row["guid"]).get("polygon") if row else None
+        except Exception as e:
+            self.log.warning("no se pudo leer la zona %r del mapa %s: %s", zone, map_id, e)
+            return polygon
+        if polygon is None and read_at is None:
+            self.log.warning("la zona %r no está en el mapa activo (%s): la vuelta a la espera no la tiene en cuenta",
+                             zone, self.map_names.get(map_id, map_id))
+        self._zones[key] = (self.clock(), polygon or None)
+        return polygon or None
 
     # ----------------------------------------------------------------- jobs
     def translate(self, action: Action) -> Job:

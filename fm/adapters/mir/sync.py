@@ -801,8 +801,15 @@ class MirSync:
         for g, d in cat.items.items():
             if cat.kind(g) == "position" and not d.get("creada_por_mir"):
                 position_sites.setdefault(d["name"], set()).add(cat.site_of(g))
+        # Zonas, para la de la vuelta a la espera (decisión 138): por GUID, que
+        # es el mismo en todos los robots, con su mapa para distinguirlas.
+        zones = sorted(({"guid": g, "name": d["name"], "site": cat.site_of(g),
+                         "map": cat.items.get(d.get("map_id"), {}).get("name", "")}
+                        for g, d in cat.items.items() if cat.kind(g) == "zone"),
+                       key=lambda z: (z["map"].lower(), z["name"].lower()))
         return {"missions": missions, "positions": sorted(position_sites),
-                "position_sites": {n: sorted(s for s in v if s) for n, v in position_sites.items()}}
+                "position_sites": {n: sorted(s for s in v if s) for n, v in position_sites.items()},
+                "zones": zones}
 
     def preview(self, selected: Iterable[str], replace: Iterable[str] = ()) -> tuple[Catalog, list[Op]]:
         cat = self.catalog()

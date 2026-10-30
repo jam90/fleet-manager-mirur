@@ -20,6 +20,7 @@ una order tarda más (`OrderTracker.watch_duration`).
 robot lleva un rato parado (ir a la zona de espera). Se define para la flota
 y cada robot puede usar otra o desactivarla; la action tiene que estar
 habilitada en el robot, porque la traduce su driver como la de una order.
+Con `zone` (decisión 138) solo se manda a un robot que esté fuera de esa zona.
 """
 from __future__ import annotations
 
@@ -54,10 +55,12 @@ class ConfigError(ValueError):
 class IdleReturnConfig:
     """Vuelta a la espera (decisión 136): tras `after_s` segundos parado, el
     FM lanza la action `action` (del catálogo, con `params`). Sin action,
-    desactivada."""
+    desactivada. Con `zone` (GUID o nombre de una zona del mapa, decisión
+    138), solo si el robot está fuera de ella."""
     action: str | None = None
     after_s: float = 30.0
     params: dict[str, Any] = field(default_factory=dict)
+    zone: str | None = None
 
     @property
     def enabled(self) -> bool:
@@ -208,13 +211,13 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
     return cfg
 
 
-IDLE_KEYS = {"action", "after_s", "params"}
+IDLE_KEYS = {"action", "after_s", "params", "zone"}
 
 
 def _idle_return(where: str, raw, base: IdleReturnConfig) -> IdleReturnConfig:
     """Bloque `idle_return` (de la flota o de un robot) sobre `base`: lo que
-    no dice se hereda. Si cambia de action, sus parámetros no se heredan
-    (serían los de otra action)."""
+    no dice se hereda. Si cambia de action, sus parámetros y su zona no se
+    heredan (serían los de otra action, que lleva a otro sitio)."""
     if raw is None:
         return base
     if not isinstance(raw, dict):
@@ -231,7 +234,11 @@ def _idle_return(where: str, raw, base: IdleReturnConfig) -> IdleReturnConfig:
     params = raw.get("params", base.params if action == base.action else {}) or {}
     if not isinstance(params, dict) or not all(isinstance(k, str) for k in params):
         raise ConfigError(f"{where}.params: un mapping parámetro → valor (p. ej. {{target_pos: Espera}})")
-    return IdleReturnConfig(action.strip() if action else None, float(after), dict(params))
+    zone = raw["zone"] if "zone" in raw else base.zone if action == base.action else None
+    if zone is not None and (not isinstance(zone, str) or not zone.strip()):
+        raise ConfigError(f"{where}.zone: el GUID (o el nombre) de una zona del mapa, o nada")
+    return IdleReturnConfig(action.strip() if action else None, float(after), dict(params),
+                            zone.strip() if zone else None)
 
 
 def _robot_idle_return(serial: str, r: dict, enabled: list[str], fleet: IdleReturnConfig) -> IdleReturnConfig:

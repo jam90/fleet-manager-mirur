@@ -14,6 +14,10 @@ Reglas:
   en modo automático, sin pausa, en el site de la flota y sin nada vivo:
   ni order, ni carga, ni una mission lanzada desde la web. Si deja de
   cumplirse, la cuenta vuelve a empezar.
+- **Fuera de la zona** (decisión 138, opcional): con `zone`, un robot que ya
+  está dentro de esa zona del mapa (la de espera) no cuenta ni va: ya está
+  donde lo mandaría la action. Si el driver no sabe decirlo (zona que no está
+  en el mapa, sin pose), se hace como sin zona.
 - **Una vez:** tras lanzarla, no se repite hasta que el robot haga otra
   cosa (una order, una carga, una mission de la web). Si no, al llegar a
   la espera volvería a estar parado y se mandaría en bucle. Al arrancar el
@@ -33,7 +37,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from fm.adapters.base import JOB_ALIVE, Job, JobStatus, RobotDriver, job_result
+from fm.adapters.base import JOB_ALIVE, Job, JobStatus, RobotDriver, Telemetry, in_zone, job_result
 from fm.config import IdleReturnConfig
 from fm.vda5050.order import Action, ActionParameter
 from fm.vda5050.state import I_IDLE_RETURN, I_IDLE_RETURN_IN, Info
@@ -67,10 +71,11 @@ class IdleGuard:
         return max(0.0, self.cfg.after_s - (self.clock() - self.idle_since))
 
     # ------------------------------------------------------------------ tick
-    def tick(self, driver: RobotDriver, busy: bool, ready: bool) -> None:
+    def tick(self, driver: RobotDriver, busy: bool, ready: bool, telemetry: Telemetry | None = None) -> None:
         """Cada tick tras `driver.poll()`. `busy`: tiene algo vivo que no es
         esta mission (order, carga, mission de la web); `ready`: disponible,
-        en automático, sin pausa y en el site de la flota. Nunca lanza."""
+        en automático, sin pausa y en el site de la flota; `telemetry`, para
+        saber si ya está en la zona de espera. Nunca lanza."""
         if self.active:
             self._follow(driver)
             return
@@ -79,6 +84,9 @@ class IdleGuard:
             return
         if not (self.cfg.enabled and self.armed and ready):
             self.idle_since = None
+            return
+        if self.cfg.zone and in_zone(driver, self.cfg.zone, telemetry):
+            self.idle_since = None       # ya está en la espera: ni cuenta ni va
             return
         now = self.clock()
         if self.idle_since is None:

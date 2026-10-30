@@ -69,7 +69,9 @@
 - **Vuelta a la espera** (`fm/idle.py`, decisión 136): `idle_return` en
   `fleet.yaml` (flota y por robot) y en el Configurador; tras `after_s` s
   parado, el FM lanza esa action del catálogo una vez; no ocupa al robot
-  y se cancela si llega una order (`Robot.execute`).
+  y se cancela si llega una order (`Robot.execute`). Con `zone` (decisión
+  138) solo si el robot está fuera de esa zona del mapa (gancho `in_zone`
+  del driver).
 - **Datos de la instalación fuera de este repo** (decisión 135, el repo es
   público): `fleet.yaml` y `catalog/` viven en el repo privado
   `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los

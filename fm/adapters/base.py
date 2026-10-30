@@ -182,6 +182,12 @@ class RobotDriver(Protocol):
     def extra_state(self, s: State) -> None:
         """Gancho opcional: campos del `state` que el core no puede deducir."""
 
+    def in_zone(self, zone: str, t: Telemetry) -> bool | None:
+        """Gancho opcional: ¿está el robot (la pose de `t`) dentro de la zona
+        `zone` (GUID o nombre) de su mapa activo? None = no se sabe (la zona
+        no está en ese mapa, sin pose, sin red). Lo usa la vuelta a la espera
+        (decisión 138). Se llama desde el hilo de poll: puede usar la red."""
+
     def describe_actions(self) -> list[ActionInfo]:
         """Gancho opcional: actionTypes que acepta y sus parámetros (UI,
         factsheet). Sin él, el core usa solo los nombres de `actions:`."""
@@ -226,3 +232,10 @@ def describe_actions(driver: RobotDriver, action_types) -> list[ActionInfo]:
     gancho, solo los nombres de `actions:` de fleet.yaml, sin parámetros."""
     fn = getattr(driver, "describe_actions", None)
     return fn() if fn is not None else [ActionInfo(t) for t in sorted(action_types or ())]
+
+
+def in_zone(driver: RobotDriver, zone: str, t: Telemetry | None) -> bool | None:
+    """¿El robot está dentro de `zone`? None si el driver no lo sabe o no
+    tiene el gancho (gancho opcional)."""
+    fn = getattr(driver, "in_zone", None)
+    return fn(zone, t) if fn is not None and t is not None else None
