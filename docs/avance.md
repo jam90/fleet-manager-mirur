@@ -2541,6 +2541,38 @@ fuera de la allowlist; mir-2: ocupado»). Ojo con ese `errorType`: sale el
 del único robot que falló al traducir, aunque el otro solo estaba ocupado
 y reintentando más tarde sí se haría.
 
+**#9 Header ≠ topic: hecho**, sin mover robots. `fleet/order` con
+`manufacturer: Otro` → `REJECTED VALIDATION_FAILURE` («manufacturer del
+header ('Otro') no coincide con el del topic ('imperial_fleet')»); con
+`serialNumber: mir-2` → igual, por el serial. Una order en
+`MiR/mir-2/order` con el header de mir-1 → `VALIDATION_FAILURE` en
+`state.errors` de mir-2, sin postear nada.
+
+**#10 Order update sobre una order terminada: hecho**, con mir-2 y
+`ir_a_espera` (orders dirigidas a `MiR/mir-2/order`):
+1. `prueba10/0 [a1]` → RUNNING → FINISHED.
+2. La misma `prueba10/0` otra vez → ignorada (sin errores ni mission).
+3. `prueba10/1 [a1]` → `VALIDATION_FAILURE` «la order no contiene ninguna
+   action que ejecutar» (a1 ya FINISHED); sigue en `orderUpdateId` 0.
+4. `prueba10/2 [a1, a2]` → acepta y ejecuta **solo a2**; `actionStates`
+   lleva a1 FINISHED y a2 RUNNING.
+5. `prueba10/3` mientras a2 va → `VALIDATION_FAILURE` «v1 no admite
+   ampliar una order en curso».
+6. `prueba10/1` → `OUTDATED_ORDER_UPDATE` «orderUpdateId 1 < activo 2».
+Al final, a1 y a2 FINISHED. Los rechazos se quedan en `state.errors`
+hasta la siguiente order aceptada.
+
+**#22 Configurador y administración con el FM real (en parte), probado por
+el usuario:** (a) quitar `abrir_puerta` a mir-1 en caliente → reindexa y el
+asignador la manda a mir-2; (b) desplegar en mir-2 ocupado: quitar y volver
+a desplegar una mission (solo crear) → ok; (c) quitar un sobrante: con el
+robot ocupado no deja; libre, quita `MIR.UR.26.27_1`
+(`…-mission000-01-0001-007`) de mir-2 y el catálogo no cambia (mir-1 la
+sigue teniendo); (d) baja de mir-2, «Reiniciar el FM ahora», alta otra
+vez eligiendo sus actions y reinicio → el FM vuelve con los dos. Falta:
+corregir con el robot ocupado (debe bloquearse) y retirar algo de prueba de
+la flota.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2699,18 +2731,16 @@ las del FM son placeholders y no hay tiempos que medir.
 **Probar con robot (hecho, solo con tests o con simulación)**
 
 - **#8** `required_inputs` (parámetro de texto): no hay mission que lo use.
-- **#9** Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
-- **#10** Order update (`orderUpdateId > 0`) sobre una order terminada.
 - **#18** **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
     `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
     mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día
     se lleva a mir-2.
-- **#22** **Configurador y pestañas de administración con el FM real:** cambiar
-    en caliente las actions de un MiR y ver que reindexa y que el
-    asignador lo tiene en cuenta; desplegar con el robot ocupado (solo
-    crear, decisión 103); quitar un sobrante de un robot y retirar algo de
-    prueba de la flota (decisiones 105–106); alta de un MiR real y
-    «Reiniciar el FM ahora» con los robots (decisión 108). Ya probado por el usuario:
+- **#22** **Configurador y pestañas de administración con el FM real.**
+    Hecho el 2026-10-30: actions en caliente, desplegar (crear) con el robot
+    ocupado, quitar un sobrante, y baja y alta de un MiR con «Reiniciar el
+    FM ahora» (decisión 108). Falta: con el robot ocupado, que **corregir**
+    se bloquee (decisión 103); retirar algo de prueba de la flota (decisión
+    105, p. ej. el marcador de la #29). Ya probado antes por el usuario:
     crear, abrir en la web del MiR, capturar y borrar (decisiones 100–104).
 
 - **#29** **Probar con un marcador real** crear un VL-marker desde la
