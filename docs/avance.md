@@ -2573,6 +2573,13 @@ vez eligiendo sus actions y reinicio → el FM vuelve con los dos. Falta:
 corregir con el robot ocupado (debe bloquearse) y retirar algo de prueba de
 la flota.
 
+**#18 Atraque de mir-1 en marcadores calibrados con mir-2: hecho.** Orders
+dirigidas `recoger_pieza target_pos=<marcador>` a mir-1: `H2D1-VL`,
+`H2D2-VL` y `toolchanger-vl` atracan bien con los docking offsets del
+catálogo (los de mir-2), según el usuario, que lo vio en el sitio. No hace
+falta un offset por robot. Queda aparte el caso inverso (`MESA_TKNIKA` con
+mir-2, #18b).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2731,10 +2738,8 @@ las del FM son placeholders y no hay tiempos que medir.
 **Probar con robot (hecho, solo con tests o con simulación)**
 
 - **#8** `required_inputs` (parámetro de texto): no hay mission que lo use.
-- **#18** **Comprobar con mir-1 el atraque en los marcadores** `H2D1-VL`,
-    `H2D2-VL` y `toolchanger-vl`: sus docking offsets se calibraron con
-    mir-2 (la pestaña lo avisa). Y al revés con `MESA_TKNIKA` si algún día
-    se lleva a mir-2.
+- **#18b** Atraque de mir-2 en `MESA_TKNIKA` (calibrado con mir-1), si algún
+    día se lleva a mir-2.
 - **#22** **Configurador y pestañas de administración con el FM real.**
     Hecho el 2026-10-30: actions en caliente, desplegar (crear) con el robot
     ocupado, quitar un sobrante, y baja y alta de un MiR con «Reiniciar el
