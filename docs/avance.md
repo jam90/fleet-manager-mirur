@@ -2609,6 +2609,30 @@ qué sección está (pedido por el usuario).
      las casillas de sección marcan solo lo que se ve. Esc lo vacía. Solo
      en la UI; Guía al día.
 
+**#24 Formato de `user_prompt`: verificado** con mir-1 y una mission de
+prueba (`prueba-pregunta`, solo «Prompt user»). `/status` da `{guid,
+user_group, question, timeout, options}` (el `timeout`, segundos que
+quedan); el supuesto de la decisión 111 era bueno: el FM publica
+`USER_PROMPT` «cómo se ve esto [Yes / No]» y lo quita al contestar o
+agotarse (la mission acaba `Done`). Test con el JSON real.
+
+Al probarlo: la pregunta solo le sale en la web del MiR a un usuario del
+grupo elegido en «Prompt user» (aquí «Alumno»); con otro usuario no hay
+nada que pulsar. Y en el FM el aviso solo se veía en la pestaña Robot de
+ese robot. El usuario pide llamar la atención desde cualquier sitio (no
+contestar desde el FM: eso sigue en la web o la tablet del robot).
+
+140. **Aviso de pregunta pendiente en toda la interfaz.** Con un
+     `USER_PROMPT` en el `state` de cualquier robot: franja de aviso bajo
+     la cabecera en todas las pestañas («Dejavu (mir-1) espera una
+     respuesta: … · ver el robot»), salvo en la pestaña Robot de ese mismo
+     robot, que ya lo enseña en grande; punto de aviso en «Robot» de la
+     cabecera (y el enlace lleva al robot que pregunta); «— espera
+     respuesta» en el selector de robot; fila «Pregunta» en su tarjeta de
+     Operación; y `(1) ¿?` delante del título de la página, que se ve con
+     la pestaña del navegador en segundo plano. Solo UI: el dato ya venía
+     en el `state`.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2631,7 +2655,7 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
    la retirada de mapas, los grupos, los datos en `mirur-instalacion` y
    la vuelta a la espera). El Error de mir-2 ya está quitado
    (2026-10-30).
-2. **Pestaña Robot:** #24, #26 y #27 (abajo, en su bloque).
+2. **Pestaña Robot:** #26 y #27 (abajo, en su bloque; #24 hecha el 2026-10-30).
 3. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
    sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
    publicando telemetría. Falta decidir qué pasa con las orders dirigidas
@@ -2661,6 +2685,26 @@ las del FM son placeholders y no hay tiempos que medir.
     fijas (decisión 131): copiarlas apuntando a las positions copiadas o
     pasarlas a recibir la position como input.
 
+
+- **#37** **Crear: no dejar repetir el nombre de una position** (pedido el
+    2026-10-30). La web del MiR lista en el editor de missions las positions
+    de **todos** los mapas, sin decir de cuál es cada una, y hoy hay
+    nombres repetidos entre `suberri` (de otros proyectos) y
+    `suberri_mirur` (Area_calidad, Columna, Deshecho, Entrada zona
+    espera…): al editar `prueba-pregunta` en mir-1 se eligió sin querer
+    `Area_calidad` de `suberri` (`d0baeafd-…`). Al crear una position desde
+    el FM, rechazar un nombre que ya tenga cualquier position del robot
+    (en cualquier mapa) o del catálogo. Lo que ya está repetido no se
+    arregla así (`suberri` no se toca). Ojo con #33 (copiar un mapa): copia
+    las positions con sus nombres, así que choca con esta regla; decidir
+    cómo nombrar las copias.
+- **#38** **Capturar una mission con «Prompt user»** (visto el 2026-10-30
+    con `prueba-pregunta`). La acción guarda el GUID de un grupo de
+    usuarios del robot (`8f8af10e-…`, «Alumno» en mir-1) y la captura lo
+    rechaza porque no está en el catálogo. Los grupos de usuarios son de
+    cada robot y no están en el catálogo: decidir si se añaden o si ese
+    parámetro se trata como propio de cada robot (resolverlo por nombre al
+    desplegar).
 
 **Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
 
@@ -2778,9 +2822,6 @@ las del FM son placeholders y no hay tiempos que medir.
 
 **Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 
-- **#24** Verificar el formato real de `user_prompt` (decisión 111): lanzar
-    una mission con pregunta al operario y mirar `/status`. (La velocidad de
-    giro ya está verificada: grados/s.)
 - **#26** Sección Fleet arriba, con mapa de todos los robots.
 - **#27** Cámara: decidir la fuente (el MiR no da imagen por REST).
 

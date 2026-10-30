@@ -369,6 +369,12 @@
   .prompt { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--radius);
     padding: 12px 16px; display: grid; gap: 2px; font-size: 15px; }
   .prompt small { color: var(--ink-2); }
+  /* El mismo aviso en todas las pestañas: un robot preguntando no debe pasar desapercibido. */
+  .prompt-banner { background: var(--warn-bg); border-bottom: 1px solid var(--warn-line); padding: 8px 24px;
+    font-size: 14px; display: grid; gap: 4px; }
+  .prompt-banner a { font-weight: 700; }
+  .topnav .ask { display: inline-block; min-width: 8px; height: 8px; border-radius: 50%; background: var(--warn-line);
+    margin-left: 6px; vertical-align: 1px; }
   .missions h4 { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
   .mrun { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 8px;
     background: var(--surface-2); }
@@ -417,8 +423,9 @@
     <h1>Fleet Manager</h1>
     <span class="sub">VDA 5050 v3 · flota <code>{{ fleet.fleet_manufacturer || '…' }}</code></span>
     <nav class="topnav" aria-label="Secciones">
-      <a :href="robotHash(robotSel)" :class="{ active: section === 'robot' }"
-         :aria-current="section === 'robot' ? 'page' : null">Robot</a>
+      <a :href="robotHash(prompts.length ? prompts[0].serial : robotSel)" :class="{ active: section === 'robot' }"
+         :aria-current="section === 'robot' ? 'page' : null">Robot<i class="ask" v-if="prompts.length"
+         :title="prompts.length === 1 ? 'Un robot espera una respuesta' : prompts.length + ' robots esperan una respuesta'"></i></a>
       <a :href="'#' + lastFmTab" :class="{ active: section === 'fm' }"
          :aria-current="section === 'fm' ? 'page' : null">Fleet Manager</a>
     </nav>
@@ -431,6 +438,14 @@
     <span class="conn"><i class="dot" :class="wsOk ? 'ok' : 'bad'"></i>{{ wsOk ? 'conectado al FM' : 'sin conexión con el FM' }}</span>
   </header>
   <div class="banner" v-if="!wsOk">No hay conexión con el Fleet Manager. Reintentando… (¿está arrancado <code>run_fm.py</code>?)</div>
+  <!-- Pregunta de una mission al operario (decisión 140): se ve en cualquier
+       pestaña, salvo en la del propio robot, que ya la enseña en grande. -->
+  <div class="prompt-banner" role="status" v-if="promptsElsewhere.length">
+    <div v-for="r in promptsElsewhere" :key="r.serial">
+      <b>{{ r.name ? r.name + ' (' + r.serial + ')' : r.serial }} espera una respuesta:</b> {{ r.prompt }}
+      · <a :href="robotHash(r.serial)">ver el robot</a>
+    </div>
+  </div>
 
   <!-- ===== Robot (decisión 112): todo lo que se sabe de UN robot, para
        entenderlo; mandar sigue en Operación. Solo lee el `state` VDA que ya
@@ -441,7 +456,7 @@
       <label class="field inline">Robot
         <select id="robot-select" :value="robotSel" @change="pickRobot($event.target.value)">
           <option v-for="r in robotsView" :key="r.serial" :value="r.serial">
-            {{ r.name ? r.name + ' (' + r.serial + ')' : r.serial }}
+            {{ r.name ? r.name + ' (' + r.serial + ')' : r.serial }}{{ r.prompt ? ' — espera respuesta' : '' }}
           </option>
         </select>
       </label>
@@ -621,6 +636,9 @@
         <p class="empty" v-else>Sin telemetría todavía.</p>
 
         <dl class="kv" v-if="r.state">
+          <template v-if="r.prompt">
+            <dt>Pregunta</dt><dd class="warnline">{{ r.prompt }} · <a :href="robotHash(r.serial)">ver</a></dd>
+          </template>
           <template v-if="r.idleIn != null || r.idleGoing">
             <dt>A la espera</dt><dd :class="{ num: r.idleIn != null }">{{ idleLabel(r) }}</dd>
           </template>
@@ -2004,6 +2022,7 @@ createApp({
       const mission = s && (s.information || []).find(i => i.infoType === 'MISSION');
       const name = s && (s.information || []).find(i => i.infoType === 'ROBOT_NAME');
       const idleIn = s && (s.information || []).find(i => i.infoType === 'IDLE_RETURN_IN');
+      const prompt = s && (s.information || []).find(i => i.infoType === 'USER_PROMPT');
       return {
         serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
         name: name ? name.infoDescriptor : '',   // el de la web del robot ("Dejavu"), si el driver lo da
@@ -2016,6 +2035,7 @@ createApp({
         // Vuelta a la espera (decisión 136): segundos que faltan, o que ya va.
         idleIn: idleIn ? Number(idleIn.infoDescriptor) : null,
         idleGoing: !!s && (s.information || []).some(i => i.infoType === 'IDLE_RETURN'),
+        prompt: prompt ? prompt.infoDescriptor : '',   // pregunta al operario (decisión 140)
         errors: s ? (s.errors || []).slice(-3) : [],
         canPause: reachable && !s.paused, canResume: reachable && s.paused, canCancel: reachable && alive,
       };
@@ -2894,6 +2914,12 @@ createApp({
     }, { immediate: true });
     // «A la espera»: el contador, que ya va, o nada.
     const idleLabel = r => r.idleGoing ? 'yendo ahora' : r.idleIn != null ? `en ${r.idleIn} s si sigue parado` : '—';
+    // Robots esperando respuesta del operario (decisión 140). El aviso de
+    // arriba omite el robot que ya se está viendo en su pestaña.
+    const prompts = computed(() => robotsView.value.filter(r => r.prompt));
+    const promptsElsewhere = computed(() => prompts.value.filter(r => !(ui.tab === 'robot' && r.serial === robotSel.value)));
+    // También en el título: se ve con la pestaña del navegador en segundo plano.
+    watch(() => prompts.value.length, n => { document.title = (n ? `(${n}) ¿? ` : '') + 'Fleet Manager'; }, { immediate: true });
     // infoType propios que no se pintan en su sitio sino como aviso.
     const ALERTS = ['MANUAL_DRIVE', 'SAFETY_MUTED', 'MAP_UNSAVED'];
     const rd = computed(() => {
@@ -2934,7 +2960,7 @@ createApp({
 
     loadFleet();
     connect();
-    return { fleet, ui, form, fleetOrders, events, robotsView, actionCatalog, currentParams, instant, sendOrder, hasRange,
+    return { fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh, opCounts,

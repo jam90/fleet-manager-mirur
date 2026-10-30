@@ -99,9 +99,10 @@ def _unavailable_reason(st: MirStatus) -> str:
 
 
 def _prompt_text(prompt) -> str:
-    """`user_prompt` de /status → texto. Formato SIN VERIFICAR con un robot
-    preguntando (decisión 111): se espera un objeto con `question` y
-    `options`; si viene otra cosa se publica tal cual para no perderlo."""
+    """`user_prompt` de /status → texto. Formato comprobado con mir-1 el
+    2026-10-30 (decisión 111): `{guid, user_group, question, timeout,
+    options}`; se usan `question` y `options`. Si viene otra cosa se publica
+    tal cual para no perderlo."""
     if isinstance(prompt, dict):
         q = str(prompt.get("question") or "").strip()
         opts = [str(o) for o in prompt.get("options") or []]

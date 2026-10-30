@@ -111,7 +111,7 @@ class MirStatus:
     distance_to_next_target: float = 0.0     # m
     moved: float = 0.0                       # odómetro total, m
     uptime: int = 0                          # s
-    user_prompt: Any = None                  # pregunta de una mission al operario, o None
+    user_prompt: Any = None                  # {question, options, timeout, …} de una mission, o None
     joystick_active: bool = False            # alguien lo conduce desde la web
     safety_system_muted: bool = False
     unloaded_map_changes: bool = False

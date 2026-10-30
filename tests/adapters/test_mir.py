@@ -96,7 +96,11 @@ def test_avisos_y_user_prompt():
     info = _info(t)
     assert info["USER_PROMPT"] == "¿Pieza cargada? [Sí / No]"
     assert {"MANUAL_DRIVE", "SAFETY_MUTED", "MAP_UNSAVED"} <= set(info)
-    # Formato sin verificar (decisión 111): si no es el esperado se publica tal cual
+    # Formato real, leído de mir-1 el 2026-10-30 con una mission «Prompt user»
+    real = {"guid": "d92e60ec-cfa3-44e8-8951-769ad7f44b0a", "user_group": "8f8af10e-a82e-11f1-b8b5-000e8eb69199",
+            "question": "cómo se ve esto", "timeout": 52.191711746, "options": ["Yes", "No"]}
+    assert _info(to_telemetry(_st(user_prompt=real)))["USER_PROMPT"] == "cómo se ve esto [Yes / No]"
+    # Si algún día no es el esperado, se publica tal cual en vez de perderlo
     assert _info(to_telemetry(_st(user_prompt="texto suelto")))["USER_PROMPT"] == "texto suelto"
 
 
