@@ -2633,11 +2633,41 @@ contestar desde el FM: eso sigue en la web o la tablet del robot).
      la pestaña del navegador en segundo plano. Solo UI: el dato ya venía
      en el `state`.
 
+## 2026-10-30 — Sección Flota: el mapa con todos los robots (#26)
+
+141. **Sección «Flota» arriba** (`#flota`, junto a Robot y Fleet Manager):
+     el mapa del catálogo con los robots encima, en vivo. El mapa sale del
+     catálogo (`MirSync.fleet_maps`, sin red: resolución, origen y tamaño
+     del PNG, más sus positions y zonas; `GET /api/fleet/maps` y
+     `/api/fleet/maps/<guid>.png`, que solo sirve mapas del catálogo por
+     GUID) y la pose de cada robot de su `state` (`mobileRobotPosition`,
+     con `mapId` = GUID del catálogo). Metros → píxeles: origen en la
+     esquina inferior izquierda y la y invertida (comprobado pintando las
+     positions de `suberri_mirur` sobre su PNG: caen en los pasillos). El
+     robot, a escala (largo × ancho de su ficha, `describe_robot`), con su
+     orientación y el color de su estado; clic → su pestaña Robot. Zonas
+     (activadas) y positions (desactivadas) con casillas. El PNG se recorta
+     en el navegador a lo explorado (el MiR deja mucho margen gris). Por
+     defecto, el mapa del site de la flota con más robots; los que no están
+     en él se listan con el motivo («en mapa-pruebas», «sin posición»).
+     Solo lectura: mandar sigue en Operación. **Estética del mapa de la web
+     del MiR** (pedido por el usuario, con captura): libre en blanco, sin
+     explorar en gris muy claro (`brightness` sobre el PNG: 200 → 238, el
+     negro y el blanco no cambian), paredes negras, zonas en caqui sin
+     rótulo (el nombre, al pasar el ratón), positions como en el MiR
+     (círculo azul con flecha de orientación; marcadores y cargadores en
+     cuadrado gris) y el robot en gris con el **borde** del color de su
+     estado. Claro también con el tema oscuro, como el MiR.
+     **Ojo, plantilla en el HTML:** el navegador pasa a minúsculas los
+     atributos, así que `:viewBox` llegaba como `viewbox` y el SVG lo
+     ignoraba (mapa todo gris); un atributo SVG en camelCase enlazado con
+     Vue va con `.camel` (`:view-box.camel`).
+
 ## 2026-10-07 — docker-compose con Mosquitto
 
 > Entrada escrita en otra copia del repo (sin commitear) e integrada el 2026-10-30
 > con la rama `migracion/pasarela-voz`: por eso va aquí y sus decisiones se
-> renumeraron de 51–57 a 141–147.
+> renumeraron de 51–57 a 142–148.
 
 El FM no arranca sin broker (`MqttBus.start()` falla con TimeoutError;
 también lo usan la web y `scripts/*`), y hasta ahora Mosquitto se instalaba
@@ -2665,12 +2695,12 @@ a mano en el host (`localhost:1883` sin auth). Se añade compose para que
 
 ### Decisiones nuevas
 
-141. **Un `Dockerfile.fm` para ambos perfiles**: `fleet` y `fleet-sim` usan
+142. **Un `Dockerfile.fm` para ambos perfiles**: `fleet` y `fleet-sim` usan
     la misma imagen y solo cambian `command` (`--config`) y puerto. Menos
     deriva que dos Dockerfiles.
-142. **`fleet-sim` con perfil `sim`**: `up` a secas levanta solo lo real
+143. **`fleet-sim` con perfil `sim`**: `up` a secas levanta solo lo real
     (evita publicar dos FM contra el mismo broker por despiste en clase).
-143. **Sin auth en el broker de compose**, igual que el de desarrollo. Si algún
+144. **Sin auth en el broker de compose**, igual que el de desarrollo. Si algún
     día se expone a la LAN del taller, añadir usuario/clave en
     `mosquitto.conf` y `MQTT_USERNAME/PW` (hoy `mqtt_bus.py` no los soporta).
 
@@ -2678,7 +2708,7 @@ a mano en el host (`localhost:1883` sin auth). Se añade compose para que
 
 > Entrada escrita en otra copia del repo (sin commitear) e integrada el 2026-10-30
 > con la rama `migracion/pasarela-voz`: por eso va aquí y sus decisiones se
-> renumeraron de 51–57 a 141–147.
+> renumeraron de 51–57 a 142–148.
 
 Hasta ahora el estado de los robots y el veredicto del asignador solo
 llegaban por MQTT o por el WebSocket de la UI: un cliente HTTP simple podía
@@ -2705,18 +2735,18 @@ mandar una `fleet/order` pero no saber si se asignó ni cómo iba.
 
 ### Decisiones nuevas
 
-144. **La API lee del espejo, no de `Robot`.** Todo lo que devuelve un GET es
+145. **La API lee del espejo, no de `Robot`.** Todo lo que devuelve un GET es
     algo que el FM ya publicó por MQTT: un cliente HTTP y uno MQTT ven lo
     mismo, y el hilo web no toca el estado del hilo principal. El historial
     `orders` lo escribe el hilo principal y lo leen las peticiones: Lock
     (como `HeaderCounter`).
-145. **`?wait=` con futures, no con polling.** El POST registra un future
+146. **`?wait=` con futures, no con polling.** El POST registra un future
     antes de publicar; el espejo lo despierta (`call_soon_threadsafe`) en
     cuanto hay veredicto. Sin espera, o si no llega a tiempo, el cliente
     consulta `GET /api/orders/<orderId>` (202 = sigue PENDING).
-146. **Historial de orders en RAM, acotado a 200** y sin persistencia (§1).
+147. **Historial de orders en RAM, acotado a 200** y sin persistencia (§1).
     Incluye las orders que llegan por MQTT, no solo las de la API.
-147. **`orderId` del cliente admitido**: el sistema aguas arriba puede usar
+148. **`orderId` del cliente admitido**: el sistema aguas arriba puede usar
     sus ids y reintentar con el mismo (idempotencia VDA, §5.4).
 
 ## 2026-10-29 — Pasarela de voz en `clientes/` y modelos en un repo aparte
@@ -2728,22 +2758,22 @@ Trae su intérprete experimental y sus benchmarks (`clientes/voz/eval/`, antes
 
 ### Decisiones nuevas
 
-148. **Mismo repo, distinto servicio.** La voz es un cliente del FM por la API
+149. **Mismo repo, distinto servicio.** La voz es un cliente del FM por la API
     REST, como un MES: proceso y contenedor propios. En el mismo proceso, un
     fallo o reinicio de la voz pararía la flota y borraría el historial de
-    orders (RAM, decisión 146). Un solo repo evita tener la config de acciones y
+    orders (RAM, decisión 147). Un solo repo evita tener la config de acciones y
     la documentación repartidas.
-149. **`fm/` nunca importa `clientes/`** (`tests/test_independencia.py`), por el
+150. **`fm/` nunca importa `clientes/`** (`tests/test_independencia.py`), por el
     mismo motivo que el core no importa drivers: el FM debe poder desplegarse
     solo y seguir siendo un servicio VDA 5050 genérico.
-150. **Modelos fuera: repo `inferencia`.** Whisper y el LLM (provisión,
+151. **Modelos fuera: repo `inferencia`.** Whisper y el LLM (provisión,
     descarga, carga y servicio) viven en otro repo y exponen APIs genéricas
     (whisper `/inference`, OpenAI `/v1`). La lógica de dominio (palabra de
     activación, `missions.json`, prompts, vetos) se queda en la pasarela, así
     cambiar de modelo no toca el FM ni la pasarela.
-151. **La voz va con perfil `voz`**: `docker compose up` a secas sigue
+152. **La voz va con perfil `voz`**: `docker compose up` a secas sigue
     levantando solo mosquitto + flota real, como antes.
-152. **Mismas convenciones que el FM**: castellano en comentarios, docs, logs y
+153. **Mismas convenciones que el FM**: castellano en comentarios, docs, logs y
     tests; identificadores en inglés. El contrato HTTP de la voz (`/api/voice`,
     campos JSON) no cambia.
 
@@ -2769,7 +2799,7 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
    la retirada de mapas, los grupos, los datos en `mirur-instalacion` y
    la vuelta a la espera). El Error de mir-2 ya está quitado
    (2026-10-30).
-2. **Pestaña Robot:** #26 y #27 (abajo, en su bloque; #24 hecha el 2026-10-30).
+2. **Pestaña Robot:** #27 (abajo, en su bloque; #24 y #26 hechas el 2026-10-30).
 3. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
    sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
    publicando telemetría. Falta decidir qué pasa con las orders dirigidas
@@ -2779,19 +2809,14 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
-- **Estado al cerrar:** el FM real hay que reiniciarlo para que coja la
-    retirada de mapas (decisión 133). Los dos robots están en el mapa
-    `suberri` (de otros proyectos): con el reinicio, el FM ya rechaza las
-    actions que van a positions fijas de `suberri_mirur` (decisión 131), y
-    si se elige `suberri_mirur` como site de la flota, ninguno recibe
-    orders hasta cambiar su mapa. mir-2 quedó en Error (10101) por una
-    mission de `suberri_mirur` lanzada en `suberri`; quitado el
-    2026-10-30.
-- **Sin commitear en el catálogo** (`mirur-instalacion/catalog/`, del usuario): `mapa-pruebas`
-    (`…-map0000000-01-0001-002`, subido con origen (12,5; 12,5) en vez del
-    de `suberri_mirur`, (−13,825; −3,275), y ya desplegado en los dos
-    robots), la zona «zona de carga» (`…-zone000000-01-0001-001`) y los
-    borradores `cuadro_electrico` (mission y position).
+- **Estado al cerrar (2026-10-30):** el FM real corre con el código del
+    día salvo la orientación de las positions en «Flota» (el servidor la
+    manda desde después del último reinicio): al reiniciarlo, sus flechas
+    apuntan bien. Los dos robots en `suberri_mirur`, libres. En
+    `mirur-instalacion`, el `fleet.yaml` del disco está sin `idle_return`
+    (quitada por el usuario para las pruebas; no se commitea: en git sigue
+    activada). `prueba-pregunta` (`…-mission000-01-0001-013`) sigue en mir-1
+    y en el catálogo: borrarla en Crear cuando no haga falta.
 - **#33** **Copiar un mapa del catálogo** con imagen, origen, positions y
     zonas (GUIDs nuevos de ese mapa). Primer uso: rehacer `mapa-pruebas`
     como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que
@@ -2936,7 +2961,6 @@ las del FM son placeholders y no hay tiempos que medir.
 
 **Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 
-- **#26** Sección Fleet arriba, con mapa de todos los robots.
 - **#27** Cámara: decidir la fuente (el MiR no da imagen por REST).
 
 **Entorno**

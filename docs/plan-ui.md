@@ -73,7 +73,7 @@ Endpoints:
 
 Ampliado el 2026-10-09 con una API REST de lectura y seguimiento (estado de
 robots, orders dirigidas, `/api/orders`, `/api/health`, `?wait=`): ver la
-sección "API REST" del README y la decisión 144 de `docs/avance.md`.
+sección "API REST" del README y la decisión 145 de `docs/avance.md`.
 
 `run_fm.py --web-port 8050` (0 = sin web, por defecto 8080). Escucha en
 `0.0.0.0` (LAN). Sin autenticación (decisión del usuario; misma política que

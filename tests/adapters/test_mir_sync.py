@@ -409,3 +409,22 @@ def test_una_mission_esta_atada_al_mapa_de_sus_positions_fijas(tmp_path):
     assert cat.maps_of(M_SUB) == set()
     assert cat.maps_of(M_MAIN) == {MAP}                                # MAIN sigue yendo a VL fijo
     assert "mapa m" in {i["guid"]: i["extra"] for i in cat.summary()}[M_MAIN]
+
+
+def test_fleet_maps_para_la_seccion_flota(tmp_path):
+    """Decisión 141: georreferencia del mapa y lo que se pinta encima, sin red."""
+    from fm.adapters.mir.sync import MirSync
+    from tests.adapters.test_mir_create import _png
+    write_catalog(tmp_path)
+    _zone_catalog(tmp_path)
+    y = MirSync("mir-1", "0.0.0.0", "Basic x", tmp_path)
+    assert y.fleet_maps() == []                      # el PNG del catálogo de prueba es falso: se salta
+    (tmp_path / "maps" / f"{MAP}.png").write_bytes(_png(40, 30))
+    [m] = y.fleet_maps()
+    assert (m["guid"], m["width"], m["height"], m["resolution"], m["origin_x"], m["origin_y"]) == (
+        MAP, 40, 30, 0.05, -1.0, -2.0)
+    # Sin la entrada del marcador (va con él): A, VL (marcador) y B.
+    assert sorted((p["name"], p["type_id"]) for p in m["positions"]) == [("A", 0), ("B", 0), ("VL", 11)]
+    assert [z["name"] for z in m["zones"]] == ["lento"]
+    assert y.map_png(MAP) == tmp_path / "maps" / f"{MAP}.png"
+    assert y.map_png(P_NORMAL) is None and y.map_png("../../etc/passwd") is None
