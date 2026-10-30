@@ -2529,6 +2529,18 @@ a la espera la cancela y la hace él, y 30 s después de terminarla vuelve a
 la espera. Con los dos fuera a la vez, `Ir a zona de espera MIRUR` los
 reparte entre los dos puntos de espera. #35 hecho.
 
+**#7 Asignador, siguiente candidato (decisión 89): hecho.** La mission de
+`recoger_pieza` ya está en los dos robots (el comentario de `fleet.yaml`
+que decía «solo en mir-2» estaba desfasado y se ha quitado), así que para
+que fallara al traducir el de más batería (mir-1, 69 % frente a 39 %) se le
+puso un rato `positions_allowlist: [Punto espera 1]`. `fleet/order`
+`recoger_pieza target_pos=H2D1` → `ASSIGNED` a mir-2, sin nada en la cola
+de mir-1. Con mir-2 ocupado, la misma order → `REJECTED
+NO_ROUTE_TO_TARGET` con el motivo de cada robot («mir-1: position 'H2D1'
+fuera de la allowlist; mir-2: ocupado»). Ojo con ese `errorType`: sale el
+del único robot que falló al traducir, aunque el otro solo estaba ocupado
+y reintentando más tarde sí se haría.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2686,8 +2698,6 @@ las del FM son placeholders y no hay tiempos que medir.
 
 **Probar con robot (hecho, solo con tests o con simulación)**
 
-- **#7** **Asignador, siguiente candidato** (decisión 89): una action cuya
-   mission solo tenga el robot con menos batería.
 - **#8** `required_inputs` (parámetro de texto): no hay mission que lo use.
 - **#9** Header ≠ topic → `REJECTED VALIDATION_FAILURE`.
 - **#10** Order update (`orderUpdateId > 0`) sobre una order terminada.
