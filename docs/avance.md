@@ -3118,6 +3118,13 @@ las del FM son placeholders y no hay tiempos que medir.
     (offset calibrado con mir-1).
 **Funcionalidad nueva**
 
+- **#40** **Estado del robot por websocket, puerto 9090** (pedido el
+    2026-10-30). Comprobar si nos podemos conectar al status del MiR por un
+    websocket en el puerto 9090 y qué da (¿rosbridge?). Hoy el driver lee
+    `GET /status` por REST cada segundo (`fm/adapters/mir/driver.py`): por
+    websocket llegaría al momento y sin sondear. Mirar también si por ahí
+    sale imagen de cámara (#27).
+
 - **#5** **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
    Objetivo: avisar a los operarios cuando una mission tarda más de lo
    normal. Ejemplos: "posible obstáculo / camino bloqueado" si la fase de
