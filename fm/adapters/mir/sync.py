@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import threading
 from dataclasses import asdict, dataclass, field
@@ -44,6 +45,8 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from fm.adapters.mir.client import MirApiError, MirClient
+
+log = logging.getLogger("fm.mir.sync")
 
 PREFIX = "imperialfleet"
 # Tipos de position que el MiR crea solo al crear su madre (entrada de
@@ -778,6 +781,45 @@ class MirSync:
         cat = self.catalog()
         d = created_here(cat, guid)
         return None if d is None else {"guid": guid, "kind": cat.kind(guid), "name": d["name"]}
+
+    def fleet_maps(self) -> list[dict]:
+        """Mapas del catálogo para la sección Flota (decisión 141), sin red:
+        lo necesario para pasar metros a píxeles (resolución, origen en la
+        esquina inferior izquierda y tamaño del PNG) y lo que se puede pintar
+        encima (positions, sin las entradas de los marcadores, y zonas)."""
+        from fm.adapters.mir.create import png_size
+        cat = self.catalog()
+        on_map = lambda kind, m: [d for g, d in sorted(cat.items.items())  # noqa: E731
+                                  if cat.kind(g) == kind and d.get("map_id") == m]
+        out = []
+        for g, d in sorted(cat.items.items()):
+            png = self.map_png(g)
+            if png is None:
+                continue
+            try:
+                width, height = png_size(png.read_bytes())
+            except Exception as e:           # un PNG roto no debe dejar sin mapa a los demás
+                log.warning("mapa %s del catálogo: no se puede leer su imagen (%s)", g, e)
+                continue
+            out.append({
+                "guid": g, "name": d["name"], "site": cat.site_of(g),
+                "resolution": d["resolution"], "origin_x": d["origin_x"], "origin_y": d["origin_y"],
+                "width": width, "height": height,
+                "positions": [{"name": p["name"], "x": p["pos_x"], "y": p["pos_y"], "type_id": p["type_id"],
+                               "theta": p.get("orientation", 0.0)}   # grados, como en el MiR
+                              for p in on_map("position", g) if p.get("type_id") not in AUTO_CHILD_TYPES],
+                "zones": [{"name": z["name"], "type_id": z["type_id"], "polygon": z["polygon"]}
+                          for z in on_map("zone", g)],
+            })
+        return out
+
+    def map_png(self, guid: str) -> Path | None:
+        """El PNG de un mapa del catálogo, o None si `guid` no es uno."""
+        d = self.catalog().items.get(guid)
+        if d is None or Catalog.kind(guid) != "map" or not d.get("base_map"):
+            return None
+        png = self.catalog_dir / FOLDERS["map"] / d["base_map"]
+        return png if png.is_file() else None
 
     def form_choices(self) -> dict:
         """Para el formulario de actions del configurador (sin red): missions

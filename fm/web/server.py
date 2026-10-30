@@ -199,8 +199,12 @@ class WebServer:
         robots = []
         for s, r in self.robots.items():
             actions = [asdict(a) for a in describe_actions(r.driver, r.cfg.action_types)]
+            spec = getattr(r.driver, "describe_robot", None)
+            spec = spec() if spec else None
             robots.append({"serial": s, "manufacturer": r.manufacturer, "driver": r.cfg.driver,
-                           "battery_min": r.cfg.battery_min, "actions": actions})
+                           "battery_min": r.cfg.battery_min, "actions": actions,
+                           # largo × ancho en m, para pintarlo a escala en el mapa (decisión 141)
+                           "size": [spec.length, spec.width] if spec else None})
         return {"robots": robots,
                 "site": self.cfg.site, "sites": self.sites(),
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
@@ -287,6 +291,17 @@ class WebServer:
             y = self.syncs.get(d["robot"])
             d["url"] = y.web_url(d["guid"]) if y is not None else None
         return {"robots": robots, **choices}
+
+    def fleet_maps(self) -> dict:
+        """Mapas del catálogo para la sección Flota (decisión 141). Las
+        posiciones de los robots no van aquí: llegan en su `state`."""
+        first = self._first_creator("fleet_maps")
+        try:
+            maps = first.fleet_maps() if first else []
+        except Exception as e:              # catálogo roto: la sección lo dice y el resto sigue
+            log.warning("[web] no se pudieron leer los mapas del catálogo: %s", e)
+            raise HTTPException(500, f"no se pudieron leer los mapas del catálogo: {e}")
+        return {"maps": maps, "site": self.cfg.site}
 
     def _first_creator(self, capability: str = "create_choices"):
         """El catálogo es común: basta con el primer robot que ofrezca `capability`."""
@@ -642,6 +657,19 @@ class WebServer:
         @app.get("/api/fleet")
         async def fleet():
             return self.fleet_info()
+
+        @app.get("/api/fleet/maps")
+        def fleet_maps():
+            return self.fleet_maps()
+
+        @app.get("/api/fleet/maps/{guid}.png")
+        def fleet_map_png(guid: str):
+            # Solo mapas del catálogo, por su GUID: nada de rutas que lleguen del cliente.
+            first = self._first_creator("map_png")
+            png = first.map_png(guid) if first else None
+            if png is None:
+                raise HTTPException(404, f"{guid} no es un mapa del catálogo con imagen")
+            return FileResponse(png, media_type="image/png")
 
         @app.get("/api/config")
         def config():                       # `def`: lee catalog/ y fleet.yaml del disco

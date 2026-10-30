@@ -2633,6 +2633,36 @@ contestar desde el FM: eso sigue en la web o la tablet del robot).
      la pestaña del navegador en segundo plano. Solo UI: el dato ya venía
      en el `state`.
 
+## 2026-10-30 — Sección Flota: el mapa con todos los robots (#26)
+
+141. **Sección «Flota» arriba** (`#flota`, junto a Robot y Fleet Manager):
+     el mapa del catálogo con los robots encima, en vivo. El mapa sale del
+     catálogo (`MirSync.fleet_maps`, sin red: resolución, origen y tamaño
+     del PNG, más sus positions y zonas; `GET /api/fleet/maps` y
+     `/api/fleet/maps/<guid>.png`, que solo sirve mapas del catálogo por
+     GUID) y la pose de cada robot de su `state` (`mobileRobotPosition`,
+     con `mapId` = GUID del catálogo). Metros → píxeles: origen en la
+     esquina inferior izquierda y la y invertida (comprobado pintando las
+     positions de `suberri_mirur` sobre su PNG: caen en los pasillos). El
+     robot, a escala (largo × ancho de su ficha, `describe_robot`), con su
+     orientación y el color de su estado; clic → su pestaña Robot. Zonas
+     (activadas) y positions (desactivadas) con casillas. El PNG se recorta
+     en el navegador a lo explorado (el MiR deja mucho margen gris). Por
+     defecto, el mapa del site de la flota con más robots; los que no están
+     en él se listan con el motivo («en mapa-pruebas», «sin posición»).
+     Solo lectura: mandar sigue en Operación. **Estética del mapa de la web
+     del MiR** (pedido por el usuario, con captura): libre en blanco, sin
+     explorar en gris muy claro (`brightness` sobre el PNG: 200 → 238, el
+     negro y el blanco no cambian), paredes negras, zonas en caqui sin
+     rótulo (el nombre, al pasar el ratón), positions como en el MiR
+     (círculo azul con flecha de orientación; marcadores y cargadores en
+     cuadrado gris) y el robot en gris con el **borde** del color de su
+     estado. Claro también con el tema oscuro, como el MiR.
+     **Ojo, plantilla en el HTML:** el navegador pasa a minúsculas los
+     atributos, así que `:viewBox` llegaba como `viewbox` y el SVG lo
+     ignoraba (mapa todo gris); un atributo SVG en camelCase enlazado con
+     Vue va con `.camel` (`:view-box.camel`).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -2655,7 +2685,7 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
    la retirada de mapas, los grupos, los datos en `mirur-instalacion` y
    la vuelta a la espera). El Error de mir-2 ya está quitado
    (2026-10-30).
-2. **Pestaña Robot:** #26 y #27 (abajo, en su bloque; #24 hecha el 2026-10-30).
+2. **Pestaña Robot:** #27 (abajo, en su bloque; #24 y #26 hechas el 2026-10-30).
 3. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
    sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
    publicando telemetría. Falta decidir qué pasa con las orders dirigidas
@@ -2665,19 +2695,14 @@ atadas a su mapa, capturar un mapa de un robot y retirar mapas
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
-- **Estado al cerrar:** el FM real hay que reiniciarlo para que coja la
-    retirada de mapas (decisión 133). Los dos robots están en el mapa
-    `suberri` (de otros proyectos): con el reinicio, el FM ya rechaza las
-    actions que van a positions fijas de `suberri_mirur` (decisión 131), y
-    si se elige `suberri_mirur` como site de la flota, ninguno recibe
-    orders hasta cambiar su mapa. mir-2 quedó en Error (10101) por una
-    mission de `suberri_mirur` lanzada en `suberri`; quitado el
-    2026-10-30.
-- **Sin commitear en el catálogo** (`mirur-instalacion/catalog/`, del usuario): `mapa-pruebas`
-    (`…-map0000000-01-0001-002`, subido con origen (12,5; 12,5) en vez del
-    de `suberri_mirur`, (−13,825; −3,275), y ya desplegado en los dos
-    robots), la zona «zona de carga» (`…-zone000000-01-0001-001`) y los
-    borradores `cuadro_electrico` (mission y position).
+- **Estado al cerrar (2026-10-30):** el FM real corre con el código del
+    día salvo la orientación de las positions en «Flota» (el servidor la
+    manda desde después del último reinicio): al reiniciarlo, sus flechas
+    apuntan bien. Los dos robots en `suberri_mirur`, libres. En
+    `mirur-instalacion`, el `fleet.yaml` del disco está sin `idle_return`
+    (quitada por el usuario para las pruebas; no se commitea: en git sigue
+    activada). `prueba-pregunta` (`…-mission000-01-0001-013`) sigue en mir-1
+    y en el catálogo: borrarla en Crear cuando no haga falta.
 - **#33** **Copiar un mapa del catálogo** con imagen, origen, positions y
     zonas (GUIDs nuevos de ese mapa). Primer uso: rehacer `mapa-pruebas`
     como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que
@@ -2822,7 +2847,6 @@ las del FM son placeholders y no hay tiempos que medir.
 
 **Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
 
-- **#26** Sección Fleet arriba, con mapa de todos los robots.
 - **#27** Cámara: decidir la fuente (el MiR no da imagen por REST).
 
 **Entorno**

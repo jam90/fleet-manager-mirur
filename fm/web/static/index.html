@@ -369,6 +369,26 @@
   .prompt { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--radius);
     padding: 12px 16px; display: grid; gap: 2px; font-size: 15px; }
   .prompt small { color: var(--ink-2); }
+  /* Sección Flota (decisión 141): el mapa del catálogo con los robots encima. */
+  /* Con la estética del mapa de la web del MiR, también en tema oscuro: lo
+     libre en blanco, lo sin explorar en gris muy claro, paredes en negro. */
+  .fleet-map { background: #eef0f1; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }
+  .fleet-map svg { display: block; width: 100%; height: auto; max-height: 72vh; }
+  .fleet-map image { image-rendering: pixelated; filter: brightness(1.19); }   /* gris 200 → 238; 0 y 255 no cambian */
+  .fm-zone { fill: rgba(190, 172, 100, .75); }
+  .fm-pos .dot { fill: #a9c4ea; stroke: #fff; }
+  .fm-pos .tile { fill: #5f676f; stroke: #fff; }
+  .fm-pos .arrow { fill: #fff; }
+  .fm-pos text { fill: #2b3a55; paint-order: stroke; stroke: #fff; stroke-linejoin: round; }
+  .fm-robot { cursor: pointer; }
+  .fm-robot .body { fill: #8b9198; stroke: #5ce1e6; }
+  .fm-robot.libre .body { stroke: var(--ok); } .fm-robot.ejecutando .body { stroke: #5ce1e6; }
+  .fm-robot.pausado .body, .fm-robot.cargando .body, .fm-robot.encola .body { stroke: #f0a000; }
+  .fm-robot.error .body, .fm-robot.manual .body, .fm-robot.sinconexion .body { stroke: #e53935; }
+  .fm-robot .nose { fill: #fff; }
+  .fm-robot text { fill: #13265c; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-linejoin: round; }
+  .fm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 13px; color: #2b2f36; }
+  .fm-legend .muted { color: #5b6370; }
   /* El mismo aviso en todas las pestañas: un robot preguntando no debe pasar desapercibido. */
   .prompt-banner { background: var(--warn-bg); border-bottom: 1px solid var(--warn-line); padding: 8px 24px;
     font-size: 14px; display: grid; gap: 4px; }
@@ -423,6 +443,8 @@
     <h1>Fleet Manager</h1>
     <span class="sub">VDA 5050 v3 · flota <code>{{ fleet.fleet_manufacturer || '…' }}</code></span>
     <nav class="topnav" aria-label="Secciones">
+      <a href="#flota" :class="{ active: section === 'flota' }"
+         :aria-current="section === 'flota' ? 'page' : null">Flota</a>
       <a :href="robotHash(prompts.length ? prompts[0].serial : robotSel)" :class="{ active: section === 'robot' }"
          :aria-current="section === 'robot' ? 'page' : null">Robot<i class="ask" v-if="prompts.length"
          :title="prompts.length === 1 ? 'Un robot espera una respuesta' : prompts.length + ' robots esperan una respuesta'"></i></a>
@@ -451,6 +473,64 @@
        entenderlo; mandar sigue en Operación. Solo lee el `state` VDA que ya
        llega por el WebSocket: lo propio de cada marca viene en
        `information[]` con los infoType de fm/vda5050/state.py (I_*). ===== -->
+  <!-- ===== Flota (decisión 141): el mapa del catálogo con todos los robots
+       encima, en vivo (la pose llega en su `state`). Clic en un robot → su
+       pestaña Robot. ===== -->
+  <main v-show="tab === 'flota'">
+    <div class="robot-bar">
+      <label class="field inline">Mapa
+        <select id="fleet-map" v-model="fmap.sel">
+          <option v-for="m in fmapChoices" :key="m.guid" :value="m.guid">{{ m.name }}{{ m.robots ? ' (' + m.robots + ' robot' + (m.robots === 1 ? '' : 's') + ')' : '' }}</option>
+        </select>
+      </label>
+      <label><input type="checkbox" v-model="fmap.zones"> Zonas</label>
+      <label><input type="checkbox" v-model="fmap.positions"> Positions</label>
+    </div>
+    <div class="resp bad" v-if="fmap.msg">{{ fmap.msg }}</div>
+    <p class="empty" v-if="!fmapCur && !fmap.msg">No hay ningún mapa con imagen en el catálogo{{ fleet.site ? ' del site de la flota' : '' }}.</p>
+    <div class="fleet-map" v-if="fmapCur">
+      <svg :view-box.camel="fmapView" role="img" :aria-label="'Mapa ' + fmapCur.name + ' con los robots'">
+        <image :href="'/api/fleet/maps/' + fmapCur.guid + '.png'" x="0" y="0" :width="fmapCur.width" :height="fmapCur.height"/>
+        <g v-if="fmap.zones">
+          <g v-for="z in fmapCur.zones" :key="z.name">
+            <!-- Como en el MiR, sin rótulo (no cabe en zonas estrechas): el nombre, al pasar el ratón. -->
+            <polygon class="fm-zone" :points="z.polygon.map(p => toPx(fmapCur, p.x, p.y).join(',')).join(' ')">
+              <title>{{ z.name }}</title></polygon>
+          </g>
+        </g>
+        <g v-if="fmap.positions">
+          <!-- Como en el MiR: posición del robot en círculo azul con flecha;
+               marcadores y cargadores en cuadrado gris. -->
+          <g class="fm-pos" v-for="p in fmapCur.positions" :key="p.name + p.x">
+            <g :transform="`translate(${toPx(fmapCur, p.x, p.y).join(' ')}) rotate(${-(p.theta || 0)})`">
+              <circle v-if="p.type_id === 0" class="dot" :r="fmapFont * 0.55" :stroke-width="fmapStroke * 1.5"/>
+              <rect v-else class="tile" :x="-fmapFont * 0.55" :y="-fmapFont * 0.55" :width="fmapFont * 1.1" :height="fmapFont * 1.1"
+                    :rx="fmapFont * 0.12" :stroke-width="fmapStroke * 1.5"/>
+              <polygon class="arrow" :points="`${fmapFont * 0.42},0 ${-fmapFont * 0.12},${-fmapFont * 0.3} ${-fmapFont * 0.12},${fmapFont * 0.3}`"/>
+            </g>
+            <text :x="toPx(fmapCur, p.x, p.y)[0] + fmapFont * 0.7" :y="toPx(fmapCur, p.x, p.y)[1] + fmapFont * 0.3"
+                  :font-size="fmapFont * 0.75" :stroke-width="fmapStroke * 2">{{ p.name }}</text>
+          </g>
+        </g>
+        <g v-for="r in fmapRobots" :key="r.serial" class="fm-robot" :class="[r.status.key, { ask: r.prompt }]"
+           @click="pickRobot(r.serial)">
+          <title>{{ r.label }} · {{ r.status.label }}{{ r.prompt ? ' · espera una respuesta' : '' }}</title>
+          <g :transform="`translate(${r.u} ${r.v}) rotate(${r.deg})`">
+            <rect class="body" :x="-r.l / 2" :y="-r.w / 2" :width="r.l" :height="r.w" :rx="r.w * 0.15" :stroke-width="fmapStroke * 2.5"/>
+            <polygon class="nose" :points="`${r.l * 0.42},0 ${r.l * 0.12},${-r.w * 0.28} ${r.l * 0.12},${r.w * 0.28}`"/>
+          </g>
+          <text :x="r.u" :y="r.v - r.w * 0.75 - fmapFont * 0.2" text-anchor="middle" :font-size="fmapFont" :stroke-width="fmapStroke * 2">
+            {{ r.label }}{{ r.prompt ? ' ¿?' : '' }}</text>
+        </g>
+      </svg>
+      <div class="fm-legend">
+        <span v-for="r in fmapRobots" :key="r.serial">
+          <span class="pill" :class="r.status.key">{{ r.status.label }}</span> {{ r.label }}</span>
+        <span v-for="r in fmapAway" :key="r.serial" class="muted">{{ r.label }}: {{ r.why }}</span>
+      </div>
+    </div>
+  </main>
+
   <main v-show="tab === 'robot'">
     <div class="robot-bar">
       <label class="field inline">Robot
@@ -2920,6 +3000,74 @@ createApp({
     const promptsElsewhere = computed(() => prompts.value.filter(r => !(ui.tab === 'robot' && r.serial === robotSel.value)));
     // También en el título: se ve con la pestaña del navegador en segundo plano.
     watch(() => prompts.value.length, n => { document.title = (n ? `(${n}) ¿? ` : '') + 'Fleet Manager'; }, { immediate: true });
+    // ---------------- Flota (decisión 141): mapa del catálogo + robots encima
+    const fmap = reactive({ maps: [], sel: '', zones: true, positions: false, crop: {}, msg: '' });
+    async function loadFleetMaps() {
+      try {
+        const r = await fetch('/api/fleet/maps');
+        if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+        fmap.maps = (await r.json()).maps; fmap.msg = '';
+      } catch (e) { fmap.msg = 'No se pudieron leer los mapas del catálogo: ' + e.message; }
+    }
+    // Metros del mapa → píxeles del PNG: origen en la esquina inferior
+    // izquierda y la y de la imagen crece hacia abajo.
+    const toPx = (m, x, y) => [(x - m.origin_x) / m.resolution, m.height - (y - m.origin_y) / m.resolution];
+    // Los del site de la flota, con cuántos robots tiene cada uno ahora.
+    const fmapChoices = computed(() => fmap.maps.filter(m => inSite(m.site)).map(m => ({ ...m,
+      robots: robotsView.value.filter(r => r.pose && r.pose.mapId === m.guid).length })));
+    // Sin elegir (o si el elegido desaparece): el que tiene más robots.
+    watch(fmapChoices, list => {
+      if (list.length && !list.some(m => m.guid === fmap.sel))
+        fmap.sel = [...list].sort((a, b) => b.robots - a.robots)[0].guid;
+    });
+    const fmapCur = computed(() => fmapChoices.value.find(m => m.guid === fmap.sel) || null);
+    // Recorte al contenido: el PNG del MiR trae mucho margen "sin explorar".
+    // Se mira en el navegador (canvas): lo que no es del color de la esquina.
+    function cropMap(m) {
+      if (fmap.crop[m.guid]) return;
+      fmap.crop[m.guid] = [0, 0, m.width, m.height];
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+        const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0);
+        const px = ctx.getImageData(0, 0, c.width, c.height).data, bg = px[0];
+        let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+        for (let y = 0; y < c.height; y++)
+          for (let x = 0; x < c.width; x++)
+            if (Math.abs(px[(y * c.width + x) * 4] - bg) > 8) {
+              if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+            }
+        if (x1 < 0) return;
+        const pad = 20;
+        x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+        fmap.crop[m.guid] = [x0, y0, Math.min(c.width, x1 + pad) - x0, Math.min(c.height, y1 + pad) - y0];
+      };
+      img.src = '/api/fleet/maps/' + m.guid + '.png';
+    }
+    watch(fmapCur, m => { if (m) cropMap(m); }, { immediate: true });
+    const fmapView = computed(() => (fmap.crop[fmap.sel] || [0, 0, 1, 1]).join(' '));
+    // Tamaños de texto y trazo proporcionales a lo que se ve, para que se lean igual en un mapa grande o pequeño.
+    const fmapFont = computed(() => Math.max(5, (fmap.crop[fmap.sel] || [0, 0, 600])[2] / 95));
+    const fmapStroke = computed(() => fmapFont.value / 10);
+    const robotSize = serial => (fleet.robots.find(x => x.serial === serial) || {}).size || [0.8, 0.58];
+    const fmapRobots = computed(() => {
+      const m = fmapCur.value;
+      if (!m) return [];
+      return robotsView.value.filter(r => r.pose && r.pose.mapId === m.guid).map(r => {
+        const [u, v] = toPx(m, r.pose.x, r.pose.y), [l, w] = robotSize(r.serial);
+        return { serial: r.serial, label: r.name || r.serial, status: r.status, prompt: r.prompt, u, v,
+                 deg: -r.pose.theta * 180 / Math.PI, l: l / m.resolution, w: w / m.resolution };
+      });
+    });
+    // Los que no salen en este mapa, y por qué.
+    const fmapAway = computed(() => {
+      const m = fmapCur.value;
+      return robotsView.value.filter(r => !(m && r.pose && r.pose.mapId === m.guid)).map(r => {
+        const other = r.pose && fmap.maps.find(x => x.guid === r.pose.mapId);
+        return { serial: r.serial, label: r.name || r.serial,
+                 why: !r.pose ? 'sin posición' : other ? 'en ' + other.name : 'en un mapa que no está en el catálogo' };
+      });
+    });
     // infoType propios que no se pintan en su sitio sino como aviso.
     const ALERTS = ['MANUAL_DRIVE', 'SAFETY_MUTED', 'MAP_UNSAVED'];
     const rd = computed(() => {
@@ -2940,27 +3088,30 @@ createApp({
     const tabFromHash = () => {
       const [id, serial] = location.hash.slice(1).split('/');
       if (id === 'robot') { ui.robot = serial || ''; return 'robot'; }
+      if (id === 'flota') return 'flota';
       return TABS.some(t => t.id === id) ? id : TABS[0].id;
     };
-    const section = computed(() => ui.tab === 'robot' ? 'robot' : 'fm');
+    const section = computed(() => ['robot', 'flota'].includes(ui.tab) ? ui.tab : 'fm');
     // "Fleet Manager" arriba vuelve a la última pestaña lateral que se usó.
     const lastFmTab = computed(() => ui.lastFm || TABS[0].id);
-    watch(() => ui.tab, t => { if (t !== 'robot') ui.lastFm = t; });
+    watch(() => ui.tab, t => { if (!['robot', 'flota'].includes(t)) ui.lastFm = t; });
     ui.tab = tabFromHash();
-    if (ui.tab !== 'robot') ui.lastFm = ui.tab;
+    if (!['robot', 'flota'].includes(ui.tab)) ui.lastFm = ui.tab;
     // Al entrar en una pestaña de administración se relee lo que puede haber
     // cambiado: el catálogo (al capturar) y los informes de sincronización.
     function onTab() {
       if (ui.tab === 'crear') loadCreate();
       if (ui.tab === 'sincronizacion' || ui.tab === 'configurador') loadSync();
       if (ui.tab === 'configurador') loadConfig();
+      if (ui.tab === 'flota') loadFleetMaps();
     }
     window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); onTab(); });
     onTab();
 
     loadFleet();
     connect();
-    return { fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere, actionCatalog, currentParams, instant, sendOrder, hasRange,
+    return { fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere,
+             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              section, lastFmTab, robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh, opCounts,
