@@ -12,7 +12,8 @@ from fm.adapters.base import ActionInfo, RobotSpec, describe_actions
 from fm.vda5050.state import drop_none
 
 # instantActions que atiende el core (fm/instant.py)
-INSTANT_ACTIONS = ("startPause", "stopPause", "cancelOrder", "stateRequest", "factsheetRequest")
+INSTANT_ACTIONS = ("startPause", "stopPause", "cancelOrder", "stateRequest", "factsheetRequest",
+                   "startMaintenance", "stopMaintenance")   # las dos últimas, propias (decisión 167)
 
 # Límites del FM, no del robot: los que impone el ciclo de orders (decisiones 10/11).
 PROTOCOL_LIMITS = {

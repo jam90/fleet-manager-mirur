@@ -3070,6 +3070,73 @@ marcadores y cargadores). Un primer intento movió `Pos_clase_centro` en
 el catálogo: el despliegue con el robot ocupado se aceptó, como debe
 (solo había «igual» y «distinta»), y no cambió nada en el robot.
 
+## 2026-11-04 — Modo mantenimiento por robot (punto #36)
+
+Un robot en mantenimiento sigue en `fleet.yaml` y publicando su `state`,
+pero el FM no le manda nada. Las cuatro preguntas abiertas en #36 las
+decidió el usuario (las cuatro, la opción propuesta).
+
+167. **Se activa con dos instantActions propias en `<serial>/instantActions`:
+     `startMaintenance` y `stopMaintenance`** (como `requeueOrder` en
+     `fleet/`, regla de la decisión 145: cualquier cliente, no solo la
+     web). Las dos son idempotentes (pedir lo que ya está es FINISHED, sin
+     cambiar la hora). En la web, botón «Mantenimiento» / «Salir de
+     mantenimiento» en la tarjeta de Operación (entrar pide confirmación),
+     fila «Mantenimiento» en la tarjeta, aviso en la pestaña Robot, pastilla
+     «mantenimiento» y borde gris discontinuo en el mapa de la sección
+     Flota. Van al factsheet y a la API (`POST /api/robots/<serial>/instant`).
+     En el `state`: `operatingMode: SERVICE` (VDA §6.6.6: el gestor de
+     flota no le manda orders ni actions) e `information[]` `MAINTENANCE`
+     con la hora ISO en que se pidió. SERVICE manda sobre lo que diga el
+     robot (la llave en manual, p. ej.).
+168. **Si tiene trabajo del FM en marcha, lo termina** (`Robot.in_service`).
+     VDA pide que al entrar en SERVICE el robot borre su order; aquí no se
+     aborta nada: mientras le quede una order o una carga del FM, el robot
+     está «pendiente» (sigue en AUTOMATIC, con `MAINTENANCE_PENDING` y el
+     motivo) y pasa a SERVICE al acabar. Así nunca se publica SERVICE con
+     una order viva. Sale del reparto en el acto, también estando
+     pendiente. Una mission lanzada desde la web del robot no lo retrasa:
+     no es del FM. Para pararlo ya, «Cancelar order».
+169. **Nada lo mueve: ni orders, ni carga, ni vuelta a la espera.** Una
+     `fleet/order` lo ve no disponible con el motivo («en mantenimiento: no
+     recibe orders hasta que salga»): va a otro robot o espera en la cola.
+     Una order dirigida se rechaza con `MOBILE_ROBOT_NOT_AVAILABLE` (lo que
+     pide VDA para SERVICE). La auto-carga no se lanza aunque la batería
+     baje del suelo (`ChargeGuard.tick(launch=False)`); la que ya estaba
+     se sigue hasta que acaba. La vuelta a la espera se cancela al entrar y
+     no cuenta; al salir se rearma (alguien lo ha movido: si se queda
+     parado fuera de la espera, vuelve a ella). La batería la vigila quien
+     lo interviene.
+170. **Se guarda en SQLite, no en `fleet.yaml`.** Es estado de operación,
+     no configuración: tabla `maintenance` (serial, desde cuándo) en el
+     mismo `data/<flota>.sqlite` que la cola, con su propia conexión
+     (`fm/maintenance.py`). Así sobrevive a reiniciar el FM sin tocar el
+     repo de la instalación. Se carga antes de la primera lectura de los
+     robots (`attach` en `run_fm.py`): si no, uno en mantenimiento con la
+     batería baja recibiría una carga nada más arrancar.
+
+Probado: `pytest` 340 (8 nuevos en `tests/test_maintenance.py`). Con la
+flota simulada (Mosquitto aparte en el 18830, web en el 8051): con sim-1
+ejecutando una order, `startMaintenance` → pendiente, la order acaba
+FINISHED y pasa a SERVICE; la siguiente `fleet/order` va a sim-2, y con
+sim-2 cargando, la otra espera en la cola con «sim-1: en mantenimiento…»;
+una order dirigida a sim-1, REJECTED `MOBILE_ROBOT_NOT_AVAILABLE`; tras
+reiniciar el FM, sim-1 sigue en SERVICE (log «sigue en mantenimiento»); con
+`stopMaintenance`, la siguiente order va a sim-1. Captura de Operación con
+Chromium sin interfaz.
+
+**Con los MiR** (el mismo día, FM real reiniciado con este código; action
+`prueba_cola` habilitada un rato y quitada al acabar): con mir-2 en
+mantenimiento (puesto por el usuario desde la web), seis `prueba_cola` a la
+flota: la primera a mir-1 y cinco `QUEUED` con «mir-1: ocupado; mir-2: en
+mantenimiento: no recibe orders hasta que salga»; mir-1 las fue cogiendo
+de una en una. Al sacar a mir-2 (SERVICE → AUTOMATIC a las 08:18:56) cogió
+la siguiente de la cola en el mismo segundo, y el resto se repartió entre
+los dos. Al final el usuario puso mir-1 en mantenimiento: libre desde las
+08:19:15, no recibió la última, que esperó a mir-2 (08:19:19). Las seis,
+FINISHED. Queda sin ver con robot el caso «pendiente» (entrar con una order
+en curso), probado con la flota simulada.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3089,19 +3156,15 @@ lo que sale de ahí, en #41). Quitado el mismo día, por decisión del
 usuario: #27 (cámara en la pestaña Robot; el MiR no da imagen ni por REST
 ni por el WebSocket). Cerrado el 2026-11-04: #22 (Configurador y
 administración con el FM real: faltaba que corregir se bloquee con el
-robot ocupado).
+robot ocupado) y #36 (modo mantenimiento, decisiones 167–170, probado
+también con los MiR).
 
 **En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
 
 1. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
    y el Configurador con el FM real (#22, 2026-11-04). Lo que queda en el
-   bloque «Probar con robot» de abajo espera a otra cosa: una mission con
-   parámetro de texto (#8) o llevar mir-2 a `MESA_TKNIKA` (#18b).
-2. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
-   sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
-   publicando telemetría. Falta decidir qué pasa con las orders dirigidas
-   a ese robot, la auto-carga, la vuelta a la espera y una order en curso
-   (entrar en mantenimiento no debe abortarla).
+   bloque «Probar con robot» de abajo espera a otra cosa (una mission con
+   parámetro de texto, #8, o llevar mir-2 a `MESA_TKNIKA`, #18b).
 
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.

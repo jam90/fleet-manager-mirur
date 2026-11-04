@@ -9,10 +9,18 @@ Soportadas (slugs literales de la norma, §6.10):
 | `cancelOrder`      | `driver.cancel(job_id)` de la order activa           |
 | `stateRequest`     | publica un `state` ya (fuera del tick)               |
 | `factsheetRequest` | vuelve a publicar el `factsheet` retained             |
+| `startMaintenance` | propia: el robot entra en mantenimiento (decisión 167) |
+| `stopMaintenance`  | propia: sale del mantenimiento                        |
 
 El resultado de cada una va a `state.instantActionStates[]` (FINISHED /
 FAILED) y, si falla, a `state.errors[]` con `errorReferences: actionId`.
 Se conservan hasta el siguiente mensaje `instantActions` (decisión 39).
+
+`startMaintenance` y `stopMaintenance` no son de la norma (como
+`requeueOrder` en `fleet/`): son instantActions para que cualquier cliente
+pueda poner un robot en mantenimiento, no solo la web (regla de la decisión
+145). Las dos son idempotentes: pedir lo que ya está es FINISHED sin
+cambiar nada (un doble clic no debe dar un error).
 """
 from __future__ import annotations
 
@@ -85,6 +93,10 @@ def _apply_one(robot: Robot, a: Action, publish_state: Callable[[Robot], None],
         if publish_factsheet is None:
             raise InstantFailed(E_INVALID_INSTANT_ACTION, "factsheet no disponible")
         publish_factsheet(robot)
+    elif a.actionType == "startMaintenance":
+        robot.start_maintenance()
+    elif a.actionType == "stopMaintenance":
+        robot.stop_maintenance()
     else:
         raise InstantFailed(E_INVALID_INSTANT_ACTION, f"actionType '{a.actionType}' no soportado")
 

@@ -395,6 +395,7 @@
   .fm-robot.libre .body { stroke: var(--ok); } .fm-robot.ejecutando .body { stroke: #5ce1e6; }
   .fm-robot.pausado .body, .fm-robot.cargando .body, .fm-robot.encola .body { stroke: #f0a000; }
   .fm-robot.error .body, .fm-robot.manual .body, .fm-robot.sinconexion .body { stroke: #e53935; }
+  .fm-robot.mantenimiento .body { stroke: #5f6670; stroke-dasharray: 3 2; }
   .fm-robot .nose { fill: #fff; }
   .fm-robot text { fill: #13265c; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-linejoin: round; }
   .fm-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 13px; color: #2b2f36; }
@@ -729,6 +730,9 @@
           <template v-if="r.prompt">
             <dt>Pregunta</dt><dd class="warnline">{{ r.prompt }} · <a :href="robotHash(r.serial)">ver</a></dd>
           </template>
+          <template v-if="r.maint">
+            <dt>Mantenimiento</dt><dd>{{ maintLabel(r) }}</dd>
+          </template>
           <template v-if="r.idleIn != null || r.idleGoing">
             <dt>A la espera</dt><dd :class="{ num: r.idleIn != null }">{{ idleLabel(r) }}</dd>
           </template>
@@ -760,6 +764,7 @@
           <button class="btn" :id="'pause-' + r.serial" :disabled="!r.canPause" @click="instant(r.serial, 'startPause')">⏸ Pausa</button>
           <button class="btn" :id="'resume-' + r.serial" :disabled="!r.canResume" @click="instant(r.serial, 'stopPause')">▶ Reanudar</button>
           <button class="btn danger" :id="'cancel-' + r.serial" :disabled="!r.canCancel" @click="instant(r.serial, 'cancelOrder')">✖ Cancelar order</button>
+          <button class="btn" :id="'maint-' + r.serial" @click="toggleMaintenance(r)">🔧 {{ r.maint ? 'Salir de mantenimiento' : 'Mantenimiento' }}</button>
           <span class="feedback" v-if="r.feedback">{{ r.feedback }}</span>
         </div>
       </article>
@@ -1922,6 +1927,26 @@
         </ol>
       </details>
 
+      <!-- Modo mantenimiento (decisiones 167–170). -->
+      <details class="guide-sec" id="guia-mantenimiento">
+        <summary>Poner un robot en mantenimiento
+          <span class="hint">Para calibrarlo o intervenirlo sin quitarlo de la flota: el FM deja de mandarle nada.</span></summary>
+        <ol class="steps">
+          <li><b>Entrar</b><a class="where" href="#operacion">→ Operación</a>
+            <p>«🔧 Mantenimiento» en la tarjeta del robot (lo pregunta antes). Desde ese momento no recibe orders: las de la flota
+              van a otro robot o esperan en la cola («en mantenimiento»), y una dirigida a él se rechaza. Tampoco se le manda a
+              cargar ni a la espera: <b>la batería la vigila quien lo interviene</b>.</p></li>
+          <li><b>Si estaba trabajando</b><a class="where" href="#operacion">→ Operación</a>
+            <p>No se aborta nada: si tenía una order o una carga del FM, la termina, y mientras tanto su tarjeta dice
+              «Mantenimiento: pasa a mantenimiento al terminar…». Al acabar, la pastilla pasa a «mantenimiento» y en el mapa de
+              la sección Flota sale con el borde gris discontinuo. Si hay que pararlo ya, «Cancelar order».</p></li>
+          <li><b>Salir</b><a class="where" href="#operacion">→ Operación</a>
+            <p>«Salir de mantenimiento»: vuelve a recibir orders, y si se queda parado fuera de la zona de espera, vuelve a ella.
+              El mantenimiento se guarda en disco: si se reinicia el FM, el robot sigue en mantenimiento hasta que alguien lo
+              saque.</p></li>
+        </ol>
+      </details>
+
     </div>
   </main>
 </div>
@@ -2182,6 +2207,8 @@ createApp({
     function statusOf(r, s) {
       if (!s || r.connection === 'CONNECTIONBROKEN' || (s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE'))
         return { key: 'sinconexion', label: 'sin conexión' };
+      // Modo mantenimiento (decisión 167): el FM no le manda nada.
+      if (s.operatingMode === 'SERVICE') return { key: 'mantenimiento', label: 'mantenimiento' };
       if (s.operatingMode !== 'AUTOMATIC')
         return { key: 'manual', label: s.operatingMode === 'INTERVENED' ? 'intervenido' : s.operatingMode.toLowerCase() };
       if (s.safetyState && s.safetyState.activeEmergencyStop !== 'NONE') return { key: 'error', label: 'parada de emergencia' };
@@ -2205,6 +2232,7 @@ createApp({
       const name = s && (s.information || []).find(i => i.infoType === 'ROBOT_NAME');
       const idleIn = s && (s.information || []).find(i => i.infoType === 'IDLE_RETURN_IN');
       const prompt = s && (s.information || []).find(i => i.infoType === 'USER_PROMPT');
+      const maint = s && (s.information || []).find(i => i.infoType === 'MAINTENANCE' || i.infoType === 'MAINTENANCE_PENDING');
       return {
         serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
         name: name ? name.infoDescriptor : '',   // el de la web del robot ("Dejavu"), si el driver lo da
@@ -2218,6 +2246,9 @@ createApp({
         idleIn: idleIn ? Number(idleIn.infoDescriptor) : null,
         idleGoing: !!s && (s.information || []).some(i => i.infoType === 'IDLE_RETURN'),
         prompt: prompt ? prompt.infoDescriptor : '',   // pregunta al operario (decisión 140)
+        // Mantenimiento (decisión 167): 'service' (ya está) o 'pending' (acaba lo suyo antes).
+        maint: maint ? (maint.infoType === 'MAINTENANCE' ? 'service' : 'pending') : null,
+        maintText: maint ? maint.infoDescriptor : '',
         errors: s ? (s.errors || []).slice(-3) : [],
         canPause: reachable && !s.paused, canResume: reachable && s.paused, canCancel: reachable && alive,
       };
@@ -3096,6 +3127,18 @@ createApp({
     }, { immediate: true });
     // «A la espera»: el contador, que ya va, o nada.
     const idleLabel = r => r.idleGoing ? 'yendo ahora' : r.idleIn != null ? `en ${r.idleIn} s si sigue parado` : '—';
+    // Mantenimiento: desde cuándo (MAINTENANCE trae la hora ISO) o qué espera (MAINTENANCE_PENDING).
+    const maintLabel = r => r.maint === 'service'
+      ? `desde las ${new Date(r.maintText).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}: el FM no le manda nada`
+      : r.maintText;
+    // Entrar pide confirmación; salir no (devuelve el robot al reparto, que es lo normal).
+    function toggleMaintenance(r) {
+      if (r.maint) return instant(r.serial, 'stopMaintenance');
+      const who = r.name ? `${r.name} (${r.serial})` : r.serial;
+      if (!confirm(`¿Poner ${who} en mantenimiento?\n\nNo recibirá orders, ni carga automática, ni vuelta a la espera ` +
+                   'hasta que salga. Si tiene una order o una carga en marcha, la termina antes.')) return;
+      instant(r.serial, 'startMaintenance');
+    }
     // Robots esperando respuesta del operario (decisión 140). El aviso de
     // arriba omite el robot que ya se está viendo en su pestaña.
     const prompts = computed(() => robotsView.value.filter(r => r.prompt));
@@ -3180,7 +3223,8 @@ createApp({
       const info = Object.fromEntries(infoList.map(i => [i.infoType, i.infoDescriptor]));
       const cfg = fleet.robots.find(x => x.serial === r.serial) || { actions: [] };
       return { ...r, info,
-               alerts: infoList.filter(i => ALERTS.includes(i.infoType)).map(i => i.infoDescriptor),
+               alerts: [...(r.maint ? ['Mantenimiento: ' + maintLabel(r)] : []),
+                        ...infoList.filter(i => ALERTS.includes(i.infoType)).map(i => i.infoDescriptor)],
                errors: s ? (s.errors || []) : [],       // todos; Operación enseña solo los 3 últimos
                actions: cfg.actions.map(a => a.action_type) };
     });
@@ -3220,7 +3264,7 @@ createApp({
              canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
-             cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, maintLabel, toggleMaintenance, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
              capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,

@@ -52,6 +52,10 @@ I_MAP_UNSAVED = "MAP_UNSAVED"             # cambios de mapa sin guardar en el ro
 # Del core, no de un driver (como AUTO_CHARGE): el FM lo manda a la espera (decisión 136).
 I_IDLE_RETURN = "IDLE_RETURN"
 I_IDLE_RETURN_IN = "IDLE_RETURN_IN"       # s que faltan para mandarlo a la espera, como texto
+# Modo mantenimiento (decisiones 167–170): en mantenimiento (`operatingMode` SERVICE),
+# con la hora en que se pidió; o pedido y esperando a que acabe su order o su carga.
+I_MAINTENANCE = "MAINTENANCE"
+I_MAINTENANCE_PENDING = "MAINTENANCE_PENDING"
 
 
 def drop_none(d: Any) -> Any:

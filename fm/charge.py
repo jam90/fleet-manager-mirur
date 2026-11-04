@@ -55,13 +55,14 @@ class ChargeGuard:
         return self.job_id is not None and self.status == "RUNNING"
 
     # ------------------------------------------------------------------ tick
-    def tick(self, driver: RobotDriver, telemetry: Telemetry | None) -> None:
+    def tick(self, driver: RobotDriver, telemetry: Telemetry | None, launch: bool = True) -> None:
         """Llamar cada tick tras `driver.poll()`. Sigue la carga activa y, si
-        procede, postea una nueva. Nunca lanza."""
+        procede, postea una nueva. `launch=False` (robot en mantenimiento,
+        decisión 168): solo sigue la que ya estaba. Nunca lanza."""
         if self.active:
             self._follow(driver)
             return
-        if telemetry is None or not telemetry.available or self.unsupported:
+        if not launch or telemetry is None or not telemetry.available or self.unsupported:
             return
         if telemetry.battery >= self.cfg.battery_floor:
             return

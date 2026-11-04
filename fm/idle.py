@@ -117,14 +117,15 @@ class IdleGuard:
             why = job_result(driver, self.job_id)
             log.warning("[%s] la vuelta a la espera terminó FAILED%s", self.serial, f" ({why})" if why else "")
 
-    def cancel(self, driver: RobotDriver) -> None:
-        """Llega una order: fuera la mission de espera. Si no se puede
-        cancelar (red), la order se encola detrás en el robot."""
+    def cancel(self, driver: RobotDriver, why: str = "llega una order") -> None:
+        """Llega una order (o el robot entra en mantenimiento): fuera la
+        mission de espera. Si no se puede cancelar (red), la order se encola
+        detrás en el robot."""
         if not self.active:
             return
         try:
             driver.cancel(self.job_id)
-            log.info("[%s] llega una order: se cancela la vuelta a la espera job=%s", self.serial, self.job_id)
+            log.info("[%s] %s: se cancela la vuelta a la espera job=%s", self.serial, why, self.job_id)
         except Exception as e:
             log.warning("[%s] no se pudo cancelar la vuelta a la espera job=%s (%s): la order irá detrás",
                         self.serial, self.job_id, e)

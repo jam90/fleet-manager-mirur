@@ -13,10 +13,13 @@ from fm.assigner import RobotSnapshot
 from fm.charge import ChargeGuard
 from fm.config import AutoChargeConfig, RobotConfig
 from fm.idle import IdleGuard
+from fm.maintenance import MaintenanceStore
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
-                              E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, Error, State)
+                              E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, I_MAINTENANCE,
+                              I_MAINTENANCE_PENDING, Error, Info, State)
+from fm.tasks import iso
 from fm.vda5050.state_builder import to_vda_state
 
 log = logging.getLogger("fm.robot")
@@ -55,6 +58,12 @@ class Robot:
         # Site de la flota (`FleetConfig.site`, decisión 129); lo cambia en
         # caliente `fm/reload.py`.
         self.site = site
+        # Modo mantenimiento (decisiones 167–170): epoch en que se pidió, o
+        # None. `maintenance_store` lo guarda en disco (lo pone el
+        # `Dispatcher`); sin él, solo vive en RAM.
+        self.maintenance_since: float | None = None
+        self.maintenance_store: MaintenanceStore | None = None
+        self._in_service = False          # para avisar en el log una sola vez al entrar
 
     @property
     def manufacturer(self) -> str:
@@ -101,17 +110,25 @@ class Robot:
                 self.next_connect_at = now + CONNECT_RETRY_S
         self.orders.poll(self.driver)
         self.orders.watch_duration(now, self.last_telemetry.paused, self.cfg.expected_s)
-        self.charge.tick(self.driver, self.last_telemetry)
+        # En mantenimiento no se lanza ninguna carga, pero la que ya estaba
+        # en marcha se sigue hasta que acabe (decisión 168).
+        self.charge.tick(self.driver, self.last_telemetry, launch=not self.in_maintenance)
         t = self.last_telemetry
         self.idle.tick(self.driver, busy=self.busy,
                        ready=(t.available and t.operating_mode == "AUTOMATIC" and not t.paused
-                              and not self.outside_site), telemetry=t)
+                              and not self.outside_site and not self.in_maintenance), telemetry=t)
+        self._log_service()
         return self.last_telemetry
 
     def overlay(self):
-        """Lo que el FM sabe de este robot y el driver no: order, auto-carga y
-        vuelta a la espera."""
-        return self.idle.decorate(self.charge.decorate(self.orders.overlay()))
+        """Lo que el FM sabe de este robot y el driver no: order, auto-carga,
+        vuelta a la espera y mantenimiento."""
+        ov = self.idle.decorate(self.charge.decorate(self.orders.overlay()))
+        if self.in_service:
+            ov.information.append(Info(I_MAINTENANCE, "INFO", iso(self.maintenance_since)))
+        elif self.in_maintenance:
+            ov.information.append(Info(I_MAINTENANCE_PENDING, "INFO", self.maintenance_reason))
+        return ov
 
     def state(self, header: dict) -> State:
         """`state` VDA de este robot: telemetría + overlay del FM + el gancho
@@ -119,6 +136,11 @@ class Robot:
         El gancho solo se llama con telemetría fresca: sin ella no hay nada
         nuevo que decir del robot."""
         s = to_vda_state(header, self.last_telemetry, self.overlay(), error=self.last_error)
+        if self.in_service and self.last_telemetry is not None:
+            # SERVICE (VDA §6.6.6): el gestor de flota no le manda orders ni
+            # actions. Manda sobre lo que diga el robot (p. ej. la llave en
+            # manual): el FM ha decidido no darle trabajo.
+            s.operatingMode = "SERVICE"
         if self.outside_site:
             s.errors.append(Error(E_ROBOT_OUTSIDE_SITE, "WARNING", self.outside_reason))
         extra = getattr(self.driver, "extra_state", None)
@@ -159,22 +181,83 @@ class Robot:
 
     @property
     def available(self) -> bool:
-        """Puede recibir orders: el driver lo da por disponible y está en el
-        site de la flota. La auto-carga no mira el site (`charge.py`)."""
+        """Puede recibir orders: el driver lo da por disponible, está en el
+        site de la flota y no está en mantenimiento. La auto-carga no mira el
+        site (`charge.py`)."""
         t = self.last_telemetry
-        return t is not None and t.available and not self.outside_site
+        return t is not None and t.available and not self.outside_site and not self.in_maintenance
 
     def snapshot(self) -> RobotSnapshot:
         t = self.last_telemetry
         charging = self.charge.charging or bool(t and t.charging)
+        reason = (self.maintenance_reason if self.in_maintenance
+                  else self.outside_reason if self.outside_site else "")
         return RobotSnapshot(self.serial, t.battery if t else 0.0, self.busy,
                              self.available, charging, t.pose[:2] if t and t.pose else None,
-                             reason=self.outside_reason if self.outside_site else "")
+                             reason=reason)
+
+    # ---------------------------------------------------------- mantenimiento
+    # Decisiones 167–170. Pedirlo saca al robot del reparto en el acto; si
+    # tiene una order o una carga del FM en marcha, se deja terminar (VDA
+    # pide borrar la order al entrar en SERVICE, y aquí no se aborta nada):
+    # mientras tanto está "pendiente" y sigue en AUTOMATIC. Una mission
+    # lanzada desde su web no lo retrasa: no es del FM.
+    @property
+    def in_maintenance(self) -> bool:
+        """Se ha pedido el mantenimiento (pendiente o ya en SERVICE)."""
+        return self.maintenance_since is not None
+
+    @property
+    def in_service(self) -> bool:
+        """En mantenimiento de verdad: ya no le queda trabajo del FM."""
+        return self.in_maintenance and not (self.orders.busy or self.charge.active)
+
+    @property
+    def maintenance_reason(self) -> str:
+        if self.in_service:
+            return "en mantenimiento: no recibe orders hasta que salga"
+        what = "su order" if self.orders.busy else "su carga"
+        return f"pasa a mantenimiento al terminar {what}: no recibe orders nuevas"
+
+    def start_maintenance(self, now: float | None = None) -> bool:
+        """Pide el mantenimiento. False si ya lo estaba (no cambia la hora)."""
+        if self.in_maintenance:
+            return False
+        self.maintenance_since = time.time() if now is None else now
+        if self.maintenance_store is not None:
+            self.maintenance_store.set(self.serial, self.maintenance_since)
+        # Ir a la espera es cosa del FM y se puede cortar (decisión 136).
+        self.idle.cancel(self.driver, why="entra en mantenimiento")
+        self.log.info("mantenimiento pedido%s", "" if self.in_service else
+                      " (pendiente: " + self.maintenance_reason.split(":")[0] + ")")
+        self._log_service()
+        return True
+
+    def stop_maintenance(self) -> bool:
+        """Sale del mantenimiento. False si no lo estaba."""
+        if not self.in_maintenance:
+            return False
+        self.maintenance_since = None
+        self._in_service = False
+        if self.maintenance_store is not None:
+            self.maintenance_store.set(self.serial, None)
+        # Alguien lo ha movido o tocado: que vuelva a la espera si se queda
+        # parado fuera de ella, como tras una order.
+        self.idle.armed = True
+        self.log.info("sale de mantenimiento: vuelve a recibir orders")
+        return True
+
+    def _log_service(self) -> None:
+        if self.in_service and not self._in_service:
+            self.log.info("en mantenimiento (SERVICE): el FM no le manda nada")
+        self._in_service = self.in_service
 
     def translate_order(self, order: Order) -> Job:
         """Valida reglas de ciclo de vida + traduce a `Job` del driver. Sin red.
         Lanza IgnoreOrder / OrderRejected."""
         self.orders.check_new(order, self.last_telemetry)
+        if self.in_maintenance:
+            raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, self.maintenance_reason)
         if self.outside_site:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, self.outside_reason)
         if self.foreign_busy:

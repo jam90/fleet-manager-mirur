@@ -26,7 +26,8 @@ en [`CLAUDE.md`](CLAUDE.md).
 4. Manda a cargar cuando la batería baja de `battery_floor` (sin abortar lo
    que esté en curso) y lo refleja en `powerSupply.charging`.
 5. Atiende `instantActions`: `startPause`, `stopPause`, `cancelOrder`,
-   `stateRequest`.
+   `stateRequest`, y las propias `startMaintenance` / `stopMaintenance`
+   (modo mantenimiento, ver abajo).
 6. Tolera robots apagados (`ROBOT_UNREACHABLE`, backoff, sin perder cadencia)
    y missions lanzadas desde fuera del FM (el robot cuenta como ocupado).
 7. Interfaz web en `http://<pc>:8050/`: batería y misión de cada robot en
@@ -520,12 +521,38 @@ actions de una order. Soportadas:
 | `cancelOrder` | aborta el job de la order activa (MiR: `DELETE /mission_queue/<id>`); la action pasa a `FAILED` sin error de ejecución | `FINISHED`, o `FAILED` + `NO_ORDER_TO_CANCEL` si no hay order |
 | `stateRequest` | publica un `state` inmediatamente | `FINISHED` |
 | `factsheetRequest` | vuelve a publicar el `factsheet` retained | `FINISHED` |
+| `startMaintenance` | propia: pone el robot en mantenimiento (abajo) | `FINISHED`, también si ya lo estaba |
+| `stopMaintenance` | propia: lo saca del mantenimiento | `FINISHED`, también si no lo estaba |
 | otros | no soportado | `FAILED` + `INVALID_INSTANT_ACTION` |
 
 El resultado va en `state.instantActionStates[]` y los fallos en
 `state.errors[]` con `errorReferences: [{actionId}]`; se conservan hasta el
 siguiente mensaje `instantActions`. Un mensaje malformado deja un
 `VALIDATION_FAILURE` suelto en `errors[]`.
+
+### Modo mantenimiento
+
+Para calibrar o intervenir un robot sin quitarlo de `fleet.yaml`: sigue
+publicando su `state`, pero el FM no le manda nada.
+
+- **Entrar:** `startMaintenance` en `<serial>/instantActions` (o el botón
+  «Mantenimiento» de su tarjeta en Operación). Sale del reparto en el acto:
+  una `fleet/order` va a otro robot o espera en la cola con el motivo, y
+  una order dirigida a él se rechaza con `MOBILE_ROBOT_NOT_AVAILABLE`.
+- **Lo que tenga en marcha, lo termina.** Si tiene una order o una carga
+  del FM, no se aborta: mientras acaba, sigue en `AUTOMATIC` y
+  `state.information[]` lleva `MAINTENANCE_PENDING` con el motivo. Al
+  terminar, `operatingMode: SERVICE` (VDA §6.6.6: el gestor de flota no le
+  manda orders ni actions) y `information[]` lleva `MAINTENANCE` con la hora
+  (ISO 8601) en que se pidió. Una mission lanzada desde la web del robot no
+  lo retrasa: no es del FM.
+- **Ni carga ni vuelta a la espera:** en mantenimiento no se lanza la
+  auto-carga aunque la batería baje del suelo, y la vuelta a la espera se
+  cancela al entrar y no cuenta. La batería la vigila quien lo interviene.
+- **Salir:** `stopMaintenance` (o «Salir de mantenimiento»). Vuelve al
+  reparto y, si se queda parado fuera de la espera, vuelve a ella.
+- **Sobrevive a reiniciar el FM:** se guarda en el mismo SQLite que la cola
+  (`data/<flota>.sqlite`, tabla `maintenance`), no en `fleet.yaml`.
 
 ## Interfaz web
 
@@ -616,7 +643,7 @@ lista para usar en `scripts/api.http`.
 | `GET` | `/api/robots/<serial>/actions` | actionTypes que acepta ese robot |
 | `POST` | `/api/fleet/order?wait=N` | `{actionType, params, orderId?}` → `fleet/order`; el FM elige robot |
 | `POST` | `/api/robots/<serial>/order?wait=N` | igual, pero `<serial>/order` (sin asignador) |
-| `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest` |
+| `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest`, `startMaintenance`, `stopMaintenance` |
 | `GET` | `/api/orders?limit=` · `/api/orders/<orderId>` | seguimiento de orders (últimas 200, en RAM) |
 | `POST` | `/api/orders/<orderId>/cancel?wait=N` | cancela una fleet order, en la cola o en curso (200 `CANCELLED`, 409 si no se puede) |
 | `POST` | `/api/orders/<orderId>/requeue?wait=N` | relanza una fleet order en duda tras reiniciar el FM (200 `QUEUED`, 409 si no está en duda) |

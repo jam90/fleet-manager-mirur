@@ -76,7 +76,9 @@ log = logging.getLogger("fm.web")
 STATIC = Path(__file__).resolve().parent / "static"
 CATALOG = Path(__file__).resolve().parents[2] / "catalog"
 
-INSTANT_ALLOWED = ("startPause", "stopPause", "cancelOrder", "stateRequest")
+# startMaintenance/stopMaintenance: propias, modo mantenimiento (decisión 167).
+INSTANT_ALLOWED = ("startPause", "stopPause", "cancelOrder", "stateRequest",
+                   "startMaintenance", "stopMaintenance")
 
 # Orders recordadas para `/api/orders`. Vive en RAM (como todo el FM): basta
 # con que un cliente pueda consultar las de la última jornada.

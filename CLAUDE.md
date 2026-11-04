@@ -80,6 +80,11 @@
   antes del reinicio (ganchos `find_job`/`adopt_job` del driver). En la
   web, bloque «Cola de la flota» en Operación (quitar; relanzar o
   descartar una en duda). Lo que falta, en #39.
+- **Modo mantenimiento por robot** (`fm/maintenance.py`, decisiones
+  167–170): instantActions propias `startMaintenance`/`stopMaintenance`
+  (botón en Operación). Sin orders, carga ni vuelta a la espera; lo que
+  tenga del FM en marcha lo termina y luego publica `operatingMode:
+  SERVICE`. Se guarda en el SQLite de la cola (tabla `maintenance`).
 - **Datos de la instalación fuera de este repo** (decisión 135, el repo es
   público): `fleet.yaml` y `catalog/` viven en el repo privado
   `../mirur-instalacion` (GitHub `jam90/mirur-instalacion`) y `.env` los
@@ -154,8 +159,9 @@ Servicio Python ("Fleet Manager", FM) que gestiona una flota de **MiR250**
 - Navegación por grafo `nodes`/`edges` del VDA 5050: el MiR navega solo con sus
   missions. Los `nodes` de la order son **un único nodo lógico** con `actions`.
 - Cambio de herramienta, catálogo de piezas, PLC (eso era del proyecto anterior).
-- Persistencia: el estado vive en RAM y en el robot. Excepción: la cola de
-  `fleet/order`, en SQLite (decisión 160, `docs/plan-cola.md`).
+- Persistencia: el estado vive en RAM y en el robot. Excepciones: la cola de
+  `fleet/order`, en SQLite (decisión 160, `docs/plan-cola.md`), y qué robots
+  están en mantenimiento, en el mismo fichero (decisión 170).
 - `factsheet` / `visualization` VDA 5050 (opcionales, se añaden si se piden).
 
 ---

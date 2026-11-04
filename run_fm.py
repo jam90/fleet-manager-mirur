@@ -32,6 +32,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 from fm.config import ConfigError, data_dir, install_paths, load_config  # noqa: E402
 from fm.fleet import Dispatcher  # noqa: E402
+from fm.maintenance import SqliteMaintenanceStore, attach  # noqa: E402
 from fm.mqtt_bus import MqttBus, running_fm  # noqa: E402
 from fm.reload import Reloader  # noqa: E402
 from fm.robot import Robot  # noqa: E402
@@ -102,6 +103,13 @@ def main(argv=None) -> int:
             return 3
         log.warning("--force: se arranca aunque el broker dice ONLINE en %s", where)
 
+    # Cola de fleet/order (decisión 160) y robots en mantenimiento (decisión
+    # 169) en SQLite: un fichero por fleet.yaml. El mantenimiento se carga ya,
+    # antes de la primera lectura de los robots (`poll_all`).
+    queue_db = Path(args.data or data_dir()) / f"{config.stem}.sqlite"
+    maintenance = SqliteMaintenanceStore(queue_db)
+    attach(robots, maintenance)
+
     web = None
     if args.web_port:
         from fm.web.server import WebServer   # import tardío: fastapi solo si se usa
@@ -160,8 +168,6 @@ def main(argv=None) -> int:
     for r in robots.values():
         publish_factsheet(r)
 
-    # Cola de fleet/order en SQLite (decisión 160): un fichero por fleet.yaml.
-    queue_db = Path(args.data or data_dir()) / f"{config.stem}.sqlite"
     tasks = SqliteTaskStore(queue_db, keep_days=cfg.queue.keep_days)
     log.info("[fleet] cola de fleet/order en %s", queue_db)
     dispatcher = Dispatcher(cfg, robots, bus, lambda r: publish_state(r, bus), publish_factsheet,
@@ -204,6 +210,7 @@ def main(argv=None) -> int:
             web.stop()
         bus.stop()
         tasks.close()
+        maintenance.close()
     if restart:
         # El nuevo proceso comprueba el broker (decisión 107): ve OFFLINE y arranca.
         log.info("[fm] reiniciando: %s %s", sys.executable, " ".join(sys.argv))
