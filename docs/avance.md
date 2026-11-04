@@ -3213,6 +3213,32 @@ usuario probó el ciclo completo con los MiR y el FM reiniciado (espera
 bloqueada con una silla, 10101, aviso, «⟲ Reset y reanudar» y reintento):
 funciona bien.
 
+## 2026-11-04 — Crear: el nombre de una position no se repite en ningún mapa (punto #37)
+
+174. **Una position nueva no puede repetir el nombre de ninguna otra, de
+     ningún mapa ni robot.** El editor de missions de la web del MiR lista
+     las positions de **todos** los mapas sin decir de cuál es cada una, y
+     con dos «Area_calidad» (una de `suberri`, de otros proyectos) se
+     eligió la que no era al editar `prueba-pregunta` en mir-1. Antes solo
+     se rechazaba un nombre repetido en el mismo mapa. Ahora,
+     `create_position` (también para marcadores y cargadores) lo compara
+     con: el catálogo entero (con borradores), todas las positions del
+     robot en el que se crea (`GET /positions`, cualquier mapa) y las de
+     los demás robots que respondan (`_others_position_names` en el
+     servidor, como ya se hacía con los números de GUID: la position
+     acabará desplegada en todos). Sin distinguir mayúsculas ni espacios de
+     más (`fold_name`): en la lista, «Montaje» y «montaje» se confunden
+     igual. El error dice dónde está la otra («ya hay una position con ese
+     nombre ('Montaje') en mir-1 (mapa 'suberri')…»). Lo que ya está
+     repetido no se toca (`suberri` no se toca). La entrada que el MiR crea
+     con un marcador lleva el nombre de su madre: no pasa por aquí.
+
+Probado: `pytest` 347 (1 nuevo en `tests/adapters/test_mir_create.py`:
+otro mapa del mismo robot, mayúsculas y espacios, otro robot). Con los
+MiR, solo lectura: en los dos, `Area_calidad` y `montaje` salen ocupados
+(«Montaje», mapa `suberri`) y un nombre nuevo, libre. Sin crear ninguna
+position.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3235,7 +3261,8 @@ administración con el FM real: faltaba que corregir se bloquee con el
 robot ocupado) y #36 (modo mantenimiento, decisiones 167–170, probado
 también con los MiR). Y #42 (vuelta a la espera con reintentos, paradas
 de seguridad y reset, decisiones 171–173), probado por el usuario con los
-MiR.
+MiR. Y #37 (nombres de position únicos en todos los mapas y robots,
+decisión 174).
 
 **En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
 
@@ -3269,21 +3296,10 @@ las del FM son placeholders y no hay tiempos que medir.
     como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que
     deja libre su número). Decidir qué pasa con las missions de positions
     fijas (decisión 131): copiarlas apuntando a las positions copiadas o
-    pasarlas a recibir la position como input.
+    pasarlas a recibir la position como input. Y cómo nombrar las positions
+    copiadas: no pueden repetir nombre (decisión 174).
 
 
-- **#37** **Crear: no dejar repetir el nombre de una position** (pedido el
-    2026-10-30). La web del MiR lista en el editor de missions las positions
-    de **todos** los mapas, sin decir de cuál es cada una, y hoy hay
-    nombres repetidos entre `suberri` (de otros proyectos) y
-    `suberri_mirur` (Area_calidad, Columna, Deshecho, Entrada zona
-    espera…): al editar `prueba-pregunta` en mir-1 se eligió sin querer
-    `Area_calidad` de `suberri` (`d0baeafd-…`). Al crear una position desde
-    el FM, rechazar un nombre que ya tenga cualquier position del robot
-    (en cualquier mapa) o del catálogo. Lo que ya está repetido no se
-    arregla así (`suberri` no se toca). Ojo con #33 (copiar un mapa): copia
-    las positions con sus nombres, así que choca con esta regla; decidir
-    cómo nombrar las copias.
 - **#38** **Capturar una mission con «Prompt user»** (visto el 2026-10-30
     con `prueba-pregunta`). La acción guarda el GUID de un grupo de
     usuarios del robot (`8f8af10e-…`, «Alumno» en mir-1) y la captura lo

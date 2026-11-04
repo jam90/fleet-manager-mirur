@@ -68,7 +68,7 @@ import math
 import struct
 from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from fm.adapters.mir.client import MirApiError
 from fm.adapters.mir.remove import retired, usage_blockers
@@ -232,11 +232,36 @@ def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = (),
     return {"kind": "mission", "guid": guid, "name": name, "url": sync.web_url(guid)}
 
 
+def fold_name(name: str) -> str:
+    """Nombre para comparar: sin mayúsculas ni espacios de más. En la lista
+    de la web del MiR, «Montaje» y «montaje » se confunden igual."""
+    return " ".join(str(name).split()).casefold()
+
+
+def position_names(client) -> dict[str, tuple[str, str]]:
+    """Positions del robot en TODOS sus mapas: nombre plegado → (nombre tal
+    cual, nombre del mapa). Para no repetir nombres (decisión 174)."""
+    maps = {m["guid"]: m["name"] for m in client._req("GET", "maps")}
+    out: dict[str, tuple[str, str]] = {}
+    for p in client._req("GET", "positions"):
+        map_guid = p.get("map_id") or str(p.get("map") or "").rstrip("/").split("/")[-1]   # ".../maps/<guid>"
+        out.setdefault(fold_name(p["name"]), (p["name"], maps.get(map_guid, map_guid or "?")))
+    return out
+
+
 def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
-                    type_id: int = POSITION_NORMAL) -> dict:
+                    type_id: int = POSITION_NORMAL,
+                    other_names: Mapping[str, tuple[str, str]] | None = None) -> dict:
     """Position `name` de tipo `type_id` (`POSITION_TYPES`) en el mapa
     `map_guid` del catálogo, donde está ahora el robot de `sync` (ese mapa
-    tiene que ser su mapa activo)."""
+    tiene que ser su mapa activo).
+
+    El nombre no puede repetir el de ninguna position del catálogo ni de
+    ningún mapa de este robot, ni de los demás (`other_names`: nombre
+    plegado → (nombre, dónde), lo junta el servidor) (decisión 174). El
+    editor de missions de la web del MiR lista las positions de todos los
+    mapas sin decir de cuál es cada una: con dos «Area_calidad», es fácil
+    elegir la de otro mapa sin darse cuenta."""
     name = (name or "").strip()
     if not name:
         raise CreateError("falta el nombre")
@@ -248,7 +273,6 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
     if mp is None or cat.kind(map_guid) != "map":
         raise CreateError(f"el mapa {map_guid} no está en el catálogo")
     every = {**cat.items, **cat.drafts}
-    same_map = [d for g, d in every.items() if cat.kind(g) == "position" and d.get("map_id") == map_guid]
     _, inst, _, map_num = parse_std(map_guid)
     with sync.lock:
         c = sync.client
@@ -258,10 +282,8 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
         if st.get("map_id") != map_guid:
             raise CreateError(f"{sync.serial} no está trabajando en el mapa {mp['name']!r}: su posición actual "
                               "no vale para ese mapa")
-        names = {p["name"] for p in c._req("GET", f"maps/{map_guid}/positions")}
-        names |= {d["name"] for d in same_map}
-        if name in names:
-            raise CreateError(f"ya hay una position {name!r} en el mapa {mp['name']!r}")
+        _check_name_free(name, every, cat, {fold: (n, f"{sync.serial} (mapa {m!r})")
+                                            for fold, (n, m) in position_names(c).items()}, other_names or {})
         taken = set(every) | _retired(sync) | robot_std_guids(c, "position", map_guid) | set(others)
         guid = next_guid("position", inst, map_num, taken, per_parent=True)
         pos = st["position"]
@@ -276,6 +298,25 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
     return {"kind": "position", "guid": guid, "name": name, "url": sync.web_url(guid, map_guid),
             "pose": [doc["pos_x"], doc["pos_y"], doc["orientation"]], "type": kind["label"],
             "marker": type_id in MARKER_TYPES}
+
+
+def _check_name_free(name: str, every: Mapping[str, dict], cat, robot: Mapping[str, tuple[str, str]],
+                     others: Mapping[str, tuple[str, str]]) -> None:
+    """Lanza `CreateError` si `name` ya es el de una position del catálogo
+    (con los borradores), de este robot o de los demás, en cualquier mapa."""
+    key = fold_name(name)
+    where: tuple[str, str] | None = None
+    for g, d in every.items():
+        if cat.kind(g) == "position" and fold_name(d.get("name", "")) == key:
+            mapa = (cat.items.get(d.get("map_id")) or cat.drafts.get(d.get("map_id")) or {}).get("name", "?")
+            where = (d["name"], f"el catálogo (mapa {mapa!r})")
+            break
+    where = where or robot.get(key) or others.get(key)
+    if where:
+        existing, place = where
+        same = "" if existing == name else f" ({existing!r})"
+        raise CreateError(f"ya hay una position con ese nombre{same} en {place}. El editor de missions de la web "
+                          "del MiR lista las de todos los mapas sin decir de cuál es: elige otro nombre")
 
 
 def placeholder_square(x: float, y: float, orientation_deg: float) -> list[dict]:

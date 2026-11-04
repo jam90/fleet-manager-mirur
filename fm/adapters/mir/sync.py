@@ -662,9 +662,16 @@ class MirSync:
         from fm.adapters.mir.create import create_mission
         return create_mission(self, name, group_guid, others, site)
 
-    def create_position(self, name: str, map_guid: str, others=(), type_id: int = 0) -> dict:
+    def position_names(self) -> dict[str, tuple[str, str]]:
+        """Nombres de las positions del robot, en todos sus mapas (decisión 174)."""
+        from fm.adapters.mir.create import position_names
+        with self.lock:
+            return position_names(self.client)
+
+    def create_position(self, name: str, map_guid: str, others=(), type_id: int = 0,
+                        other_names=None) -> dict:
         from fm.adapters.mir.create import create_position
-        return create_position(self, name, map_guid, others, type_id)
+        return create_position(self, name, map_guid, others, type_id, other_names)
 
     def capturable_maps(self) -> list[dict]:
         from fm.adapters.mir.create import capturable_maps

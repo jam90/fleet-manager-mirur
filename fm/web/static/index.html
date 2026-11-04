@@ -1749,7 +1749,8 @@
             <p>La position se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
               (hoy <code>suberri_mirur</code>). Para un marcador, deja el robot delante de él.</p></li>
           <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
-            <p>Arriba, «Position». Elige ese robot, escribe el nombre (no puede repetirse en el mapa), el <b>tipo</b> (Robot position, VL-marker
+            <p>Arriba, «Position». Elige ese robot, escribe el nombre (no puede repetir el de ninguna position, de ningún mapa ni robot, aunque
+              cambien mayúsculas: la web del MiR las lista todas juntas sin decir de qué mapa son), el <b>tipo</b> (Robot position, VL-marker
               o MiR Charge 48V) y «Crear position aquí». <b>El tipo no se puede cambiar después</b>, ni aquí ni en la web
               del MiR: si te equivocas, «Borrar» y vuelve a crearla.</p></li>
           <li><b>Terminarla en la web del MiR</b><span class="where">web del MiR</span>
@@ -2594,7 +2595,8 @@ createApp({
         flow: ['<b>Subir</b> aquí el PNG o <b>capturarlo</b> de un robot', `Llevarlo a los robots en ${SYNC_LINK}`,
                'Activarlo en la <b>web del MiR</b> de cada robot'] },
       { kind: 'position', label: 'Position', robot: true,
-        hint: 'Un punto del mapa, creado donde está el robot.',
+        hint: 'Un punto del mapa, creado donde está el robot. Su nombre no puede repetir el de ninguna position, de ningún ' +
+              'mapa ni robot: la web del MiR las lista todas juntas sin decir de qué mapa son.',
         flow: ['<b>Crear</b> aquí', 'Ajustarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
                `Llevarla a otros robots en ${SYNC_LINK}`] },
       { kind: 'zone', label: 'Zona', robot: true,

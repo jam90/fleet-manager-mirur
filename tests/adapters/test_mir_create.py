@@ -63,7 +63,7 @@ def test_crear_position_donde_esta_el_robot(sync, tmp_path):
     p = sync.client.db["positions"][r["guid"]]
     assert (p["type_id"], p["pos_x"], p["pos_y"], p["orientation"]) == (0, 1.235, 4.5, 89.99)
     assert r["guid"] in Catalog.load(tmp_path).drafts
-    with pytest.raises(CreateError, match="ya hay una position 'Mesa nueva'"):
+    with pytest.raises(CreateError, match=r"ya hay una position con ese nombre en el catálogo \(mapa 'm'\)"):
         sync.create_position("Mesa nueva", MAP)
     sync.client.status["map_id"] = "otro-mapa"
     with pytest.raises(CreateError, match="no está trabajando en el mapa"):
@@ -472,3 +472,19 @@ def test_volver_a_capturar_un_mapa_conserva_sus_guids(sync, tmp_path):
     assert next(d["guid"] for d in cat.items.values() if d["name"] == "Nueva") == std_guid("position", 1, 2, 4)
     with pytest.raises(CreateError, match="ya tiene GUID de la flota"):
         sync.capture_map(MAP)
+
+
+def test_nombre_de_position_unico_en_todos_los_mapas_y_robots(sync):
+    # Decisión 174: la web del MiR lista las positions de todos los mapas sin
+    # decir de cuál es cada una; un nombre repetido lleva a elegir la que no es.
+    sync.client.db["maps"]["otro"] = {"guid": "otro", "name": "suberri"}
+    sync.client.db["positions"]["x1"] = {"guid": "x1", "name": "Area_calidad", "type_id": 0,
+                                         "map_id": "otro", "parent_id": None}
+    with pytest.raises(CreateError, match=r"mir-2 \(mapa 'suberri'\)"):
+        sync.create_position("Area_calidad", MAP)              # de otro mapa del mismo robot
+    with pytest.raises(CreateError, match=r"\('Area_calidad'\)"):
+        sync.create_position("  area_CALIDAD ", MAP)            # mayúsculas y espacios no cuentan
+    otros = {"montaje": ("Montaje", "mir-1 (mapa 'suberri')")}
+    with pytest.raises(CreateError, match=r"mir-1 \(mapa 'suberri'\)"):
+        sync.create_position("Montaje", MAP, other_names=otros)  # de otro robot
+    assert sync.create_position("Montaje 2", MAP, other_names=otros)["name"] == "Montaje 2"

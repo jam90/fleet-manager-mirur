@@ -325,7 +325,7 @@ def test_crear_y_capturar(tmp_path):
             raise ValueError("ya hay una mission 'repetida'")
         return {"kind": "mission", "guid": "M2", "name": name, "url": "http://robot/setup/missions/M2"}
     sync.create_mission = create_mission
-    sync.create_position = lambda n, p, o, t=0: (calls.append(("pos", n, t)) or
+    sync.create_position = lambda n, p, o, t=0, other_names=None: (calls.append(("pos", n, t)) or
                                                  {"kind": "position", "guid": "P1", "name": n, "url": "u"})
     sync.capture = lambda g: {"kind": "mission", "guid": g, "name": "x", "detail": "3 actions"}
     c = TestClient(srv.app)

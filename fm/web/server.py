@@ -636,6 +636,21 @@ class WebServer:
                 log.info("[web] %s: no se pudieron leer sus GUIDs (%s)", s, e)
         return out
 
+    def _others_position_names(self, serial: str) -> dict[str, tuple[str, str]]:
+        """Nombres de las positions de los demás robots que respondan (decisión
+        174): una position nueva acaba desplegada en todos, así que su nombre
+        no debe repetir ninguno de ellos. Uno que no responde no cuenta."""
+        out: dict[str, tuple[str, str]] = {}
+        for s, y in self.syncs.items():
+            if s == serial or self.robots[s].last_telemetry is None or not hasattr(y, "position_names"):
+                continue
+            try:
+                for fold, (name, mapa) in y.position_names().items():
+                    out.setdefault(fold, (name, f"{s} (mapa {mapa!r})"))
+            except Exception as e:
+                log.info("[web] %s: no se pudieron leer sus positions (%s)", s, e)
+        return out
+
     def create(self, serial: str, kind: str, name: str, parent: str, type_id: int = 0) -> dict:
         y = self._creator(serial)
         with self._create_lock:
@@ -646,7 +661,8 @@ class WebServer:
                 elif kind == "zone":
                     out = y.create_zone(name, parent, others, type_id)
                 else:
-                    out = y.create_position(name, parent, others, type_id)
+                    out = y.create_position(name, parent, others, type_id,
+                                            other_names=self._others_position_names(serial))
             except ValueError as e:         # nombre repetido, falta el grupo/mapa en el robot…
                 raise HTTPException(400, str(e))
             except Exception as e:          # red, 4xx/5xx del robot
