@@ -67,7 +67,7 @@ def usage_blockers(sync, cat: Catalog, guid: str, definitions: dict, wanted: Ite
     if cat.kind(guid) == "mission":
         names = {n for n, a in (definitions or {}).items() if a and a.get("mission") in (guid, d["name"])}
         if names:
-            out.append(f"está en fleet.yaml (actions: {', '.join(sorted(names))}): quítala antes en el Configurador")
+            out.append(f"está en fleet.yaml (actions: {', '.join(sorted(names))}): quítala antes en Configuración")
         elif guid in refs or d["name"] in wanted:
             out.append("la necesita algún robot según fleet.yaml (¿mission de carga?)")
     elif cat.kind(guid) == "position":

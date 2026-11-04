@@ -560,12 +560,17 @@ publicando su `state`, pero el FM no le manda nada.
 
 `run_fm.py` sirve una página en `http://<pc>:8050/` (`--web-port`, 0 = sin
 web) para la LAN, sin login. Un fichero (`fm/web/static/index.html`, Vue 3
-incluida en el repo: funciona sin internet) que muestra por robot batería,
-estado, order y `actionStates`, texto de la misión y errores, con botones
-⏸ ▶ ✖, la "Cola de la flota" (las orders que esperan robot, con quitar, y
-las que quedan en duda tras un reinicio, con relanzar o descartar), un panel
-"Enviar a la flota" (action + parámetros, con desplegable de positions
-cuando el driver las conoce) y una lista de eventos.
+incluida en el repo: funciona sin internet) con un menú lateral único, por
+grupos: **Trabajo diario** (Operación, Mapa de la flota, Robots),
+**Administración** (Catálogo, Sincronización, Configuración) y **Ayuda**
+(Guía). Operación empieza con un resumen (disponibles, trabajando, en cola,
+otros estados), el panel "Nueva tarea" (action + parámetros, con
+desplegable de positions cuando el driver las conoce) junto a la "Cola de
+tareas" (las orders que esperan robot, con quitar, y las que quedan en duda
+tras un reinicio, con relanzar o descartar); debajo, una tarjeta por robot
+con batería, estado, `actionStates`, texto de la misión y errores, botones
+⏸ ▶ ✖ (el mantenimiento, en «Más opciones») y enlaces a su detalle y al
+mapa; al final, la lista de eventos.
 
 La UI es **un cliente VDA más**: recibe por WebSocket (`/ws`) exactamente lo
 que el FM publica por MQTT (`{topic, payload}`), y lo que envía
@@ -576,8 +581,13 @@ Nada de lo que hace la UI es un camino aparte: se ve en `mosquitto_sub`.
 `/api/docs` es el OpenAPI. Un robot de otra marca aparece solo: la página no
 sabe nada de MiR.
 
-Tres pestañas más, para el profesor y no para el operario (en la barra lateral,
-debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
+Las pestañas de administración son para el profesor y no para el operario
+(enlazables con `#catalogo`, `#crear`, `#configurador` y `#sincronizacion`;
+`#sincronizacion/<robot>/<GUID o action>` llega con ese robot y ese recurso
+ya marcados, como hacen «Sincronizar este recurso →» del Catálogo y el
+enlace «sincronizar» del Configurador). **Catálogo** busca entre todos los
+recursos (por nombre o GUID y por tipo) y lleva a **Crear** («+ Crear o
+importar recurso»):
 
 - **Crear** (`/api/create`): da de alta en el MiR elegido una mission vacía
   (en un grupo del catálogo), una position (donde está el robot, en su mapa
@@ -587,7 +597,7 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
   página en la web del MiR para terminarla (`/missions/<guid>` o el
   editor del mapa, `/maps/<guid>`). Queda como borrador en `catalog/`, que reserva su número
   de GUID; **Capturar** lo relee del robot al terminar y lo guarda en el
-  catálogo, listo para Sincronización y Configurador. **Borrar** quita lo
+  catálogo, listo para Sincronización y Configuración. **Borrar** quita lo
   creado allí de los robots y del catálogo (con confirmación; no si lo usa
   `fleet.yaml` u otro recurso, ni con un robot sin conexión u ocupado).
   **Nuevo mapa** (`POST /api/create/map`) sube un PNG en gris de 8 bits,
@@ -607,7 +617,7 @@ debajo; enlazables con `#crear`, `#configurador` y `#sincronizacion`):
   **Retirar de la flota** (se borra de los robots y del catálogo; su número
   de GUID queda reservado en `catalog/retirados.json`).
 
-- **Configurador** (`GET /api/config`): la matriz action × robot de
+- **Configuración** (`GET /api/config`, `#configurador`): la matriz action × robot de
   `fleet.yaml`, con una marca por casilla que dice si el robot tiene grabada
   la mission y lo que usa (✓ / ✗ falta / ! distinta), según la última
   comprobación de Sincronización; los umbrales, los robots y el catálogo de
@@ -752,7 +762,7 @@ robots:
   dice («hay que hacer reset»). En la tarjeta salen «⟲ Reset y reanudar»
   (instantAction `clearErrors`) y el enlace a la web del robot. Tras el
   reset, vuelve a contar y lo reintenta.
-- Se edita en el Configurador y se aplica en caliente.
+- Se edita en Configuración y se aplica en caliente.
 
 ## Limitaciones conocidas
 

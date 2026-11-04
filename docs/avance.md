@@ -3239,6 +3239,59 @@ MiR, solo lectura: en los dos, `Area_calidad` y `montaje` salen ocupados
 («Montaje», mapa `suberri`) y un nombre nuevo, libre. Sin crear ninguna
 position.
 
+## 2026-11-04 — Interfaz: menú lateral único y pestaña Catálogo
+
+175. **La navegación pasa a un menú lateral único, rotulado y por grupos**,
+     según la propuesta navegable que preparó el usuario en
+     `../preview-fleet-manager/` (datos ficticios, fuera de este repo). Se
+     trae su `index.html` sin lo que es solo de la demo (`demo.js`, franjas
+     de «vista previa», rutas relativas) y su `preview.css` dentro del
+     `<style>` (la UI sigue siendo un solo fichero). Motivo: con la
+     cabecera Flota / Robot / Fleet Manager y una barra de iconos sin
+     rótulo, el operario no sabía dónde estaba ni qué había en cada sitio.
+     - Menú: **Trabajo diario** (Operación, Mapa de la flota, Robots),
+       **Administración** (Catálogo, Sincronización, Configuración) y
+       **Ayuda** (Guía). Desaparecen la navegación de la cabecera y la
+       idea de «sección» (decisión 112); la cabecera dice dónde se está y
+       el selector de site se llama «Centro activo».
+     - **Operación**: resumen (disponibles, trabajando, en cola, otros),
+       «Nueva tarea» y «Cola de tareas» arriba, las tarjetas debajo y los
+       eventos al final. La tarjeta pierde el orderId y la posición (están
+       en el detalle), gana «Ver detalle →» y «Ver en el mapa», y el
+       mantenimiento pasa a «Más opciones».
+     - **Robots** (antes la sección Robot): con pausa, reanudar y cancelar
+       también en el detalle.
+     - **Catálogo** (nueva, `#catalogo`): todos los recursos con buscador
+       (el mismo que Sincronización) y filtro por tipo; cada uno con
+       «Sincronizar este recurso →». Crear queda como «Crear o importar
+       recurso», a la que se llega desde aquí.
+     - **Enlaces con contexto:** `#sincronizacion/<robot>/<GUID o action>`
+       llega con el robot elegido y el recurso marcado (desde el Catálogo,
+       al capturar en Crear y desde el «sincronizar» de una casilla del
+       Configurador, que manda el nombre de la action y se marca su
+       mission). `#flota/<robot>` abre el mapa donde está ese robot.
+     - **Configuración** (el Configurador; el `#configurador` no cambia):
+       accesos a sus bloques, barra de guardado fija, aviso en las demás
+       pestañas si hay cambios sin guardar y aviso del navegador al
+       cerrar o recargar con ellos.
+     - En Catálogo y Sincronización, la marca de cada robot va en verde si
+       tiene el recurso (✓) y en rojo si le falta (✗), antes naranja: a
+       petición del usuario, que lo lee como «no está».
+     - Textos de operario en castellano: tarea en vez de order,
+       acción en vez de action, Posiciones en el mapa.
+     La Guía se actualiza en el mismo cambio (nombres de pestañas y
+     botones, dónde está el mantenimiento, «Incluir otros centros»).
+     Al traerla se corrigen frases que la sustitución
+     Configurador → Configuración dejó como «el Configuración», y el
+     mensaje de `remove.py` que mandaba «al Configurador».
+
+Probado: `pytest` 347. Sin navegador: la plantilla compila con Vue y,
+con el `demo.js` de la propuesta como servidor falso, un script de Node
+recorre las ocho pantallas, pausa/reanuda, asigna y encola tareas, guarda
+la configuración, crea y captura una mission, la sincroniza, abre el mapa
+de un robot desde `#flota/mir-2` y comprueba el enlace «sincronizar» del
+Configurador. Falta verla en el navegador con el FM real.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3264,9 +3317,13 @@ de seguridad y reset, decisiones 171–173), probado por el usuario con los
 MiR. Y #37 (nombres de position únicos en todos los mapas y robots,
 decisión 174).
 
-**En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
+**En curso / siguiente** (al cerrar el 2026-11-04; orden decidido por el usuario)
 
-1. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
+1. **Siguiente día: la creación completa de un mapa** (pedido el
+   2026-11-04). Punto de partida, #33 (copiar un mapa del catálogo con
+   imagen, origen, positions y zonas, abajo); concretar el alcance al
+   empezar.
+2. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
    y el Configurador con el FM real (#22, 2026-11-04). Lo que queda en el
    bloque «Probar con robot» de abajo espera a otra cosa (una mission con
    parámetro de texto, #8, o llevar mir-2 a `MESA_TKNIKA`, #18b).
@@ -3274,23 +3331,22 @@ decisión 174).
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
-- **Estado al cerrar (2026-10-30, tarde):** cola de `fleet/order` con las
-    fases 1–3 hechas, probadas con los MiR y subidas (`docs/plan-cola.md`;
-    queda la fase 4 en #39). El FM real (arrancado a las 13:21) tiene la
-    fase 3 pero **no el arreglo 165**: reiniciarlo. Su cola está en
-    `data/fleet.sqlite` (con el histórico de las pruebas de hoy; se purga
-    solo a los 30 días). Los dos robots, libres pero en mapas de otro
-    proyecto: con `site: suberri_mirur`, el FM no les da orders hasta que
-    vuelvan a ese site (para probar sin moverlos, quitar el `site:` un rato
-    y usar `prueba_cola`, como hoy). La mission `prueba-cola` (10 s de
-    espera, grupo `mirur-tknika`, no está en el catálogo) sigue en los dos
-    robots: en Sincronización sale como sobrante. En `mirur-instalacion`,
-    el `fleet.yaml` del disco está sin `idle_return` (quitada por el usuario
-    para las pruebas; no se commitea: en git sigue activada) y sin
-    `prueba_cola` (se quita al acabar cada prueba). `prueba-pregunta`
-    (`…-mission000-01-0001-013`) sigue en mir-1 y en el catálogo: borrarla
-    en Crear cuando no haga falta. `clientes/voz/` es del compañero: solo se
-    toca si un cambio del FM la rompe.
+- **Estado al cerrar (2026-11-04):** todo commiteado y subido (último,
+    `1c48e92`, #37). Hecho hoy: #40 cerrado (WebSocket del MiR, decisión
+    166; sale #41), #27 quitado, #22 (corregir bloqueado con el robot
+    ocupado), #36 modo mantenimiento (decisiones 167–170), #42 vuelta a la
+    espera con reintentos, paradas de seguridad y reset (171–173) y #37
+    nombres de position únicos (174). El FM real (arrancado a las 09:05)
+    tiene hasta la decisión 173 pero **no la 174**: reiniciarlo antes de
+    crear positions. Los dos robots en `suberri_mirur` (el site de la
+    flota): reciben orders. En `mirur-instalacion`, el `fleet.yaml` del
+    disco es el de git (con `idle_return`; `prueba_cola` quitada al acabar
+    la prueba). La mission `prueba-cola` (10 s de espera, no está en el
+    catálogo) sigue en los dos robots para probar la cola. `prueba-pregunta`
+    (`…-mission000-01-0001-013`) sigue en mir-1 y como borrador sin
+    commitear en el catálogo: borrarla en Crear cuando no haga falta.
+    `clientes/voz/` es del compañero: solo se toca si un cambio del FM la
+    rompe.
 - **#33** **Copiar un mapa del catálogo** con imagen, origen, positions y
     zonas (GUIDs nuevos de ese mapa). Primer uso: rehacer `mapa-pruebas`
     como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que

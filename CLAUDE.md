@@ -61,7 +61,8 @@
   reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Un solo FM
   por broker (decisión 107). Pestaña **Guía** (decisión 109): paso a paso
   de cada proceso de administración; **todo cambio en el flujo de otra
-  pestaña actualiza la Guía en el mismo cambio**. Sección **Robot** arriba
+  pestaña actualiza la Guía en el mismo cambio**. Menú lateral único por
+  grupos y pestaña **Catálogo** (decisión 175, 2026-11-04). Pestaña **Robots**
   (decisiones 110–112, 2026-10-23): lo propio de cada marca llega en
   `state.information[]` con los `I_*` de `fm/vda5050/state.py`; los robots
   siguen siendo `mir-1`/`mir-2` y la UI enseña su nombre (Dejavu, Toretto). Lo abierto, ordenado, al final de
@@ -78,7 +79,7 @@
   (`Dispatcher.tick()`). En SQLite (`data/<fleet>.sqlite`, `FM_DATA`),
   detrás de `TaskStore`; al arrancar, `Dispatcher.recover()` retoma las de
   antes del reinicio (ganchos `find_job`/`adopt_job` del driver). En la
-  web, bloque «Cola de la flota» en Operación (quitar; relanzar o
+  web, bloque «Cola de tareas» en Operación (quitar; relanzar o
   descartar una en duda). Lo que falta, en #39.
 - **Modo mantenimiento por robot** (`fm/maintenance.py`, decisiones
   167–170): instantActions propias `startMaintenance`/`stopMaintenance`
