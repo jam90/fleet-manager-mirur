@@ -3001,6 +3001,75 @@ API (antes del arreglo 165, las dos primeras se quedaban en RUNNING). Con
 los MiR, el bloque se vio con seis `prueba_cola` (dos en marcha, cuatro en
 cola), con el `site:` quitado un rato.
 
+## 2026-11-03 — WebSocket del MiR en el puerto 9090 (punto #40)
+
+Prueba de solo lectura con los dos robots (scripts sueltos, fuera del repo;
+sin cambios en el código).
+
+**Qué hay en el 9090.** Un servidor AutobahnPython 22.5.1 que habla el
+**protocolo rosbridge** (`op: subscribe`, `call_service`…). Pide la misma
+cabecera `Authorization` que la API REST (`AUTH_HEADER` del `.env`): sin
+ella responde al handshake con un 401 con el JSON de error del MiR
+(`authorization_failed_due_to_bad_credentials`). `/rosapi/topics` lista
+247 topics en mir-2 y 202 en mir-1 (según el hardware de cada uno).
+
+**Topics de estado** (medidos unos 5 s en cada robot):
+
+- `/robot_status` (`mirMsgs/RobotStatus`), ~2 Hz: lo mismo que
+  `GET /status` (batería, `position`, `state_id`/`state_text`,
+  `mode_text`, `errors`, `mission_text`, `mission_queue_id`, `map_id`,
+  `user_prompt`, `velocity`…).
+- `/robot_pose` (`geometry_msgs/Pose`), ~10 Hz: posición en el mapa y
+  orientación en cuaternión.
+- Al cambiar (latched): `/robot_state`, `/robot_mode`, `/safety_status`
+  (parada de protección o de emergencia, modo manual), `/moving_state`.
+- `/PB/bms_status`, 1 Hz: la batería en detalle (tensión, corriente,
+  ciclos, temperatura, tensión de cada celda).
+- No hay topic con el estado de la `mission_queue`: el seguimiento de
+  jobs seguiría por REST.
+
+**Cámara (#27): por aquí no.** Ningún topic es `sensor_msgs/Image` ni
+`CompressedImage` en ninguno de los dos robots; las cámaras solo publican
+nubes de puntos (`PointCloud2`) de obstáculos y fondo.
+
+166. **El driver sigue leyendo el estado por REST.** Pasar `poll()` al
+     WebSocket no compensa: el core decide a 1 Hz, así que recibir antes
+     el dato no adelanta nada sin rehacer el core por eventos; con dos
+     robots, un `GET /status` por segundo no es carga; los topics son ROS
+     interno sin documentar (pueden cambiar con el software del MiR, que
+     en mir-2 es la 3.6.6), mientras que la REST es el contrato estable; y
+     habría que gestionar reconexiones y suscripciones manteniendo la REST
+     de respaldo. Donde sí aporta es en **ver al robot moverse**:
+     `/robot_pose` a 10 Hz para el mapa de la sección Flota, como
+     complemento solo de la web (queda en #41).
+
+## 2026-11-04 — Corregir y sustituir, bloqueados con el robot ocupado (punto #22)
+
+Prueba con mir-1 y el FM real (arrancado el 2026-11-04 a las 07:53), por
+la API de la web (`POST /api/sync/mir-1/deploy`, la misma que usa la
+pestaña Sincronización). Para que el FM lo viera ocupado, tres
+`prueba-cola` (10 s de espera, sin moverse) encoladas por REST como
+trabajo ajeno, quitando la pausa en la que estaba el robot. Para tener algo
+que corregir, la pose de `toolchanger-vl` (la hija,
+`…-position00-01-0001-014`) se movió 40 cm **solo en el catálogo**
+(`mirur-instalacion`) y se restauró con git al acabar.
+
+- Libre, la vista previa da `corregir` («mover (30.000, …) → (30.400, …)»)
+  y `coger`, marcada para sustituir, `sustituir`.
+- Ocupado, los dos despliegues se rechazan con 409 y el motivo: «'mir-1'
+  está ocupado y habría que corregir o sustituir recursos que ya tiene
+  (toolchanger-vl)» y lo mismo con `(coger)`.
+- Tras restaurar el catálogo, la vista previa vuelve a dar `igual`: el
+  robot no se tocó. Las seis `prueba-cola` acabaron Done y mir-1 quedó otra
+  vez en pausa.
+
+De paso: una position **normal** con otra pose no es «corregir» sino
+«distinta — no se toca», y el despliegue no la cambia nunca. «Corregir»
+solo existe para las positions que el MiR crea con su madre (entradas de
+marcadores y cargadores). Un primer intento movió `Pos_clase_centro` en
+el catálogo: el despliegue con el robot ocupado se aceptó, como debe
+(solo había «igual» y «distinta»), y no cambió nada en el robot.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3015,16 +3084,20 @@ Cerrados el 2026-10-29: #30 (resuscribir al reconectar, decisión 120), #32
 sin número: subir un mapa, crear un site, site de la flota, missions
 atadas a su mapa, capturar un mapa de un robot y retirar mapas
 (decisiones 126–133). Y #34 (crear grupos de missions, decisión 134).
+Cerrado el 2026-11-03: #40 (WebSocket del MiR en el 9090, decisión 166;
+lo que sale de ahí, en #41). Quitado el mismo día, por decisión del
+usuario: #27 (cámara en la pestaña Robot; el MiR no da imagen ni por REST
+ni por el WebSocket). Cerrado el 2026-11-04: #22 (Configurador y
+administración con el FM real: faltaba que corregir se bloquee con el
+robot ocupado).
 
 **En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
 
-1. **2026-10-30: pruebas con robot.** La vuelta a la espera (#35, hecha
-   el 2026-10-30) y el bloque «Probar con robot» de abajo. Antes, reiniciar el FM real (coge
-   la retirada de mapas, los grupos, los datos en `mirur-instalacion` y
-   la vuelta a la espera). El Error de mir-2 ya está quitado
-   (2026-10-30).
-2. **Pestaña Robot:** #27 (abajo, en su bloque; #24 y #26 hechas el 2026-10-30).
-3. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
+1. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
+   y el Configurador con el FM real (#22, 2026-11-04). Lo que queda en el
+   bloque «Probar con robot» de abajo espera a otra cosa: una mission con
+   parámetro de texto (#8) o llevar mir-2 a `MESA_TKNIKA` (#18b).
+2. **#36 Modo mantenimiento por robot** (de `docs/sugerencias_mejora.md`):
    sacarlo de las asignaciones sin quitarlo de `fleet.yaml`; sigue
    publicando telemetría. Falta decidir qué pasa con las orders dirigidas
    a ese robot, la auto-carga, la vuelta a la espera y una order en curso
@@ -3118,12 +3191,15 @@ las del FM son placeholders y no hay tiempos que medir.
     (offset calibrado con mir-1).
 **Funcionalidad nueva**
 
-- **#40** **Estado del robot por websocket, puerto 9090** (pedido el
-    2026-10-30). Comprobar si nos podemos conectar al status del MiR por un
-    websocket en el puerto 9090 y qué da (¿rosbridge?). Hoy el driver lee
-    `GET /status` por REST cada segundo (`fm/adapters/mir/driver.py`): por
-    websocket llegaría al momento y sin sondear. Mirar también si por ahí
-    sale imagen de cámara (#27).
+- **#41** **Prueba: posición de los robots por WebSocket** (pedido el
+    2026-11-03, sale de #40; decisión 166). Prueba de concepto **fuera del
+    repo del FM**: suscribirse a `/robot_pose` (~10 Hz) en
+    `ws://<robot>:9090` (rosbridge, con la cabecera `Authorization` de la
+    REST) y ver si en el mapa de la sección Flota el robot se mueve con
+    suavidad en vez de saltar cada segundo. Solo para la web: la
+    telemetría del core sigue con `GET /status`. Ver también qué pasa al
+    perder la conexión o cambiar de mapa (la pose es del mapa activo), y
+    cuántos clientes aguanta el robot a la vez.
 
 - **#5** **Avisos por tiempo anómalo de mission** (idea anotada el 2026-10-11).
    Objetivo: avisar a los operarios cuando una mission tarda más de lo
@@ -3194,16 +3270,6 @@ las del FM son placeholders y no hay tiempos que medir.
 - **#8** `required_inputs` (parámetro de texto): no hay mission que lo use.
 - **#18b** Atraque de mir-2 en `MESA_TKNIKA` (calibrado con mir-1), si algún
     día se lleva a mir-2.
-- **#22** **Configurador y pestañas de administración con el FM real.**
-    Hecho el 2026-10-30: actions en caliente, desplegar (crear) con el robot
-    ocupado, quitar un sobrante, baja y alta de un MiR con «Reiniciar el
-    FM ahora» (decisión 108) y retirar de la flota (decisión 105). Falta:
-    con el robot ocupado, que **corregir** se bloquee (decisión 103). Ya probado antes por el usuario:
-    crear, abrir en la web del MiR, capturar y borrar (decisiones 100–104).
-
-**Pestaña Robot** (decisiones 110–112; orden acordado el 2026-10-23)
-
-- **#27** Cámara: decidir la fuente (el MiR no da imagen por REST).
 
 **Entorno**
 
