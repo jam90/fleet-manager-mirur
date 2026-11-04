@@ -204,3 +204,106 @@ def test_config_zona_se_hereda_salvo_con_otra_action(tmp_path):
     assert cfg.robots["sim-1"].idle_return.zone is None              # la quita a propósito
     with pytest.raises(ConfigError, match="zone"):
         _load(tmp_path, "idle_return: { action: ir_a_espera, zone: 3 }")
+
+
+# ------------------------------ si acaba FAILED: reintentos y aviso (decisión 171)
+def _failing_robot():
+    t = {"now": 0.0}
+    d = SimDriver(SimRobotConfig("sim-1", {"coger", "ir_a_espera"}, battery=90, duration_s=10,
+                                 drain_pct_per_s=0.0, fail_actions={"ir_a_espera"}), clock=lambda: t["now"])
+    rc = RobotConfig("sim-1", battery_min=25, action_types=frozenset({"coger", "ir_a_espera"}), idle_return=ESPERA)
+    r = Robot(rc, d, clock=lambda: t["now"])
+    r.connect()
+    return r, d, t
+
+
+def _warnings(r):
+    return [e.errorDescription for e in r.overlay().errors if e.errorType == "IDLE_RETURN_FAILED"]
+
+
+def test_si_falla_reintenta_hasta_tres_veces_con_aviso():
+    from fm.idle import MAX_ATTEMPTS
+    r, d, t = _failing_robot()
+    _run(r, t, 32 + 11)                              # 1.º intento: va y acaba FAILED
+    assert len(_parks(d)) == 1 and r.idle.failures == 1
+    w = _warnings(r)
+    assert len(w) == 1 and "fallo simulado" in w[0] and "intento 2 de 3" in w[0]
+    assert r.idle.remaining() is not None            # vuelve a contar
+    _run(r, t, 32 + 11)                              # 2.º
+    _run(r, t, 32 + 11)                              # 3.º: se rinde
+    assert len(_parks(d)) == MAX_ATTEMPTS and r.idle.gave_up
+    assert "¿está bloqueada?" in _warnings(r)[0]
+    _run(r, t, 120)                                  # no insiste
+    assert len(_parks(d)) == MAX_ATTEMPTS and r.idle.remaining() is None
+    # Alguien confirma que está libre: va ya, sin esperar los 30 s.
+    from fm.instant import apply_instant_actions
+    d.cfg.fail_actions = set()
+    apply_instant_actions(r, [Action("retryIdleReturn", "ia-1")], lambda _: None)
+    assert r.orders.instant_states[0].actionStatus == "FINISHED" and _warnings(r) == []
+    _run(r, t, 1)
+    assert len(_parks(d)) == MAX_ATTEMPTS + 1 and r.idle.active
+    _run(r, t, 11)                                   # esta vez llega
+    assert not r.idle.active and r.idle.failures == 0 and _warnings(r) == []
+
+
+def test_otra_cosa_que_haga_el_robot_borra_los_fallos():
+    r, d, t = _failing_robot()
+    _run(r, t, 32 + 11)
+    assert r.idle.failures == 1 and _warnings(r)
+    r.execute(order(), d.translate(Action("coger", "a1")))
+    _run(r, t, 1)
+    assert r.idle.failures == 0 and _warnings(r) == []
+    # Con la vuelta a la espera desactivada, retryIdleReturn es FAILED.
+    from fm.instant import apply_instant_actions
+    r.idle.cfg = IdleReturnConfig()
+    apply_instant_actions(r, [Action("retryIdleReturn", "ia-1")], lambda _: None)
+    assert r.orders.instant_states[0].actionStatus == "FAILED"
+
+
+# ----------------------------- parada de seguridad: la cuenta sigue (decisión 172)
+def test_una_parada_de_seguridad_no_pone_la_cuenta_a_cero():
+    from dataclasses import replace
+    r, d, t = _robot()
+    real_poll = d.poll
+    stop = {"on": False}
+    # Parada como la da el MiR: EmergencyStop → no disponible.
+    d.poll = lambda: (lambda tel: replace(tel, emergency_stop=True, available=False) if stop["on"] else tel)(real_poll())
+    _run(r, t, 20)
+    stop["on"] = True                                # alguien se acerca a los 20 s
+    _run(r, t, 5)
+    assert r.idle.remaining() == pytest.approx(6)    # sigue contando (empezó en el 1.er tick)
+    _run(r, t, 15)                                   # se cumplen los 30 s en plena parada
+    assert _parks(d) == [] and r.idle.remaining() == 0
+    stop["on"] = False                               # se aparta
+    _run(r, t, 1)
+    assert len(_parks(d)) == 1
+
+
+def test_otras_paradas_si_ponen_la_cuenta_a_cero():
+    r, d, t = _robot()
+    _run(r, t, 20)
+    d.pause()                                        # pausa a mano
+    _run(r, t, 5)
+    assert r.idle.remaining() is None
+    d.resume()
+    _run(r, t, 2)
+    assert r.idle.remaining() == pytest.approx(29)
+
+
+
+# ------------------- en error tras fallar: el aviso dice qué hacer (decisión 173)
+def test_si_queda_en_error_el_aviso_pide_el_reset():
+    from dataclasses import replace
+    from fm.vda5050.state import Error
+    r, d, t = _failing_robot()
+    _run(r, t, 32 + 11)                              # falla el 1.er intento
+    real_poll = d.poll
+    d.poll = lambda: replace(real_poll(), available=False,
+                             errors=[Error("MIR_10101", "FATAL", "Movement timed out")])
+    _run(r, t, 60)                                   # en error: ni cuenta ni va
+    assert len(_parks(d)) == 1 and r.idle.remaining() is None
+    w = _warnings(r)[0]
+    assert "hay que hacer reset" in w and "intento 2 de 3" in w and "cuando lleve" not in w
+    d.poll = real_poll                               # reset: vuelve a contar y lo reintenta
+    _run(r, t, 32)
+    assert len(_parks(d)) == 2

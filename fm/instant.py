@@ -11,6 +11,8 @@ Soportadas (slugs literales de la norma, §6.10):
 | `factsheetRequest` | vuelve a publicar el `factsheet` retained             |
 | `startMaintenance` | propia: el robot entra en mantenimiento (decisión 167) |
 | `stopMaintenance`  | propia: sale del mantenimiento                        |
+| `retryIdleReturn`  | propia: la espera está libre, ir ya (decisión 171)    |
+| `clearErrors`      | propia: reset del robot y reanudar (decisión 173)     |
 
 El resultado de cada una va a `state.instantActionStates[]` (FINISHED /
 FAILED) y, si falla, a `state.errors[]` con `errorReferences: actionId`.
@@ -97,6 +99,12 @@ def _apply_one(robot: Robot, a: Action, publish_state: Callable[[Robot], None],
         robot.start_maintenance()
     elif a.actionType == "stopMaintenance":
         robot.stop_maintenance()
+    elif a.actionType == "retryIdleReturn":
+        if not robot.idle.cfg.enabled:
+            raise InstantFailed(E_INVALID_INSTANT_ACTION, "este robot no tiene vuelta a la espera (idle_return)")
+        robot.idle.retry()
+    elif a.actionType == "clearErrors":
+        _require(d, "clear_errors")()
     else:
         raise InstantFailed(E_INVALID_INSTANT_ACTION, f"actionType '{a.actionType}' no soportado")
 

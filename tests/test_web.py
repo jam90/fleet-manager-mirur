@@ -36,7 +36,7 @@ def test_fleet_info_y_pagina():
     assert r["serial"] == "sim-1" and r["manufacturer"] == "SIM" and r["battery_min"] == 25
     assert [a["action_type"] for a in r["actions"]] == ["coger", "dejar"]
     assert info["instant_actions"] == ["startPause", "stopPause", "cancelOrder", "stateRequest",
-                                       "startMaintenance", "stopMaintenance"]
+                                       "startMaintenance", "stopMaintenance", "retryIdleReturn", "clearErrors"]
 
 
 def test_post_order_e_instant_publican_en_el_bus():

@@ -76,9 +76,11 @@ log = logging.getLogger("fm.web")
 STATIC = Path(__file__).resolve().parent / "static"
 CATALOG = Path(__file__).resolve().parents[2] / "catalog"
 
-# startMaintenance/stopMaintenance: propias, modo mantenimiento (decisión 167).
+# Propias: startMaintenance/stopMaintenance (modo mantenimiento, decisión 167),
+# retryIdleReturn (la espera está libre, decisión 171) y clearErrors (reset y
+# reanudar, decisión 173).
 INSTANT_ALLOWED = ("startPause", "stopPause", "cancelOrder", "stateRequest",
-                   "startMaintenance", "stopMaintenance")
+                   "startMaintenance", "stopMaintenance", "retryIdleReturn", "clearErrors")
 
 # Orders recordadas para `/api/orders`. Vive en RAM (como todo el FM): basta
 # con que un cliente pueda consultar las de la última jornada.
@@ -395,7 +397,9 @@ class WebServer:
             robots.append({"serial": s, "manufacturer": r.manufacturer, "driver": r.cfg.driver,
                            "battery_min": r.cfg.battery_min, "actions": actions,
                            # largo × ancho en m, para pintarlo a escala en el mapa (decisión 141)
-                           "size": [spec.length, spec.width] if spec else None})
+                           "size": [spec.length, spec.width] if spec else None,
+                           # su interfaz propia, si el driver la sabe (decisión 173)
+                           "web": r.driver.web_url() if hasattr(r.driver, "web_url") else None})
         return {"robots": robots,
                 "site": self.cfg.site, "sites": self.sites(),
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,

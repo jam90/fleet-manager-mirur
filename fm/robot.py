@@ -114,11 +114,32 @@ class Robot:
         # en marcha se sigue hasta que acabe (decisión 168).
         self.charge.tick(self.driver, self.last_telemetry, launch=not self.in_maintenance)
         t = self.last_telemetry
+        # Una parada de seguridad (alguien se acerca) no corta la cuenta de la
+        # vuelta a la espera: solo retrasa la salida (decisión 172).
         self.idle.tick(self.driver, busy=self.busy,
-                       ready=(t.available and t.operating_mode == "AUTOMATIC" and not t.paused
-                              and not self.outside_site and not self.in_maintenance), telemetry=t)
+                       ready=((t.available or t.emergency_stop) and t.operating_mode == "AUTOMATIC"
+                              and not t.paused and not self.outside_site and not self.in_maintenance),
+                       telemetry=t, hold=t.emergency_stop, wait_reason=self._idle_wait_reason(t))
         self._log_service()
         return self.last_telemetry
+
+    def _idle_wait_reason(self, t: Telemetry) -> str:
+        """Por qué no puede ir a la espera ahora, dicho para quien tiene que
+        arreglarlo. Va en el aviso de la vuelta a la espera que falló
+        (decisión 173): un robot en error no lo reintentará hasta el reset."""
+        if any(e.errorLevel == "FATAL" for e in t.errors):
+            return "el robot está en error: hay que hacer reset"
+        if t.paused:
+            return "el robot está en pausa: hay que reanudarlo"
+        if t.operating_mode != "AUTOMATIC":
+            return "el robot no está en automático"
+        if not t.available and not t.emergency_stop:
+            return t.unavailable_reason or "el robot no está disponible"
+        if self.outside_site:
+            return "el robot está fuera del site de la flota"
+        if self.in_maintenance:
+            return "el robot está en mantenimiento"
+        return ""
 
     def overlay(self):
         """Lo que el FM sabe de este robot y el driver no: order, auto-carga,
@@ -242,8 +263,9 @@ class Robot:
         if self.maintenance_store is not None:
             self.maintenance_store.set(self.serial, None)
         # Alguien lo ha movido o tocado: que vuelva a la espera si se queda
-        # parado fuera de ella, como tras una order.
+        # parado fuera de ella, como tras una order, y sin fallos de antes.
         self.idle.armed = True
+        self.idle.reset_failures()
         self.log.info("sale de mantenimiento: vuelve a recibir orders")
         return True
 

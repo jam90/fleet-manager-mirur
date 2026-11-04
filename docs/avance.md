@@ -3137,6 +3137,82 @@ los dos. Al final el usuario puso mir-1 en mantenimiento: libre desde las
 FINISHED. Queda sin ver con robot el caso «pendiente» (entrar con una order
 en curso), probado con la flota simulada.
 
+## 2026-11-04 — Vuelta a la espera: reintentos, paradas de seguridad y reset
+
+Visto con mir-2: tras la prueba de la cola, la vuelta a la espera acabó
+Aborted («Movement timed out, after being blocked a total of 60 seconds»):
+los dos puntos de espera estaban bloqueados. El robot se quedó en «Entrada
+zona espera», con el centro 55 cm fuera de la zona, y como la vuelta va
+una sola vez (decisión 136), el FM no lo volvió a mandar al quedar libres.
+
+171. **Si la vuelta a la espera acaba FAILED, se reintenta y se avisa**
+     (pedido por el usuario). Vuelve a contar `after_s` y lo intenta otra
+     vez, hasta `MAX_ATTEMPTS` = 3 intentos seguidos (`fm/idle.py`; cada
+     uno puede costar minutos, porque el MiR espera hasta 60 s a que se
+     libere el camino). Desde el primer fallo el `state` lleva
+     `IDLE_RETURN_FAILED` (WARNING, para cualquier cliente) con el motivo
+     del robot y el intento que viene; al tercero se rinde y el aviso
+     pregunta si la espera está bloqueada. La instantAction propia
+     `retryIdleReturn` (como las de la decisión 167) es la confirmación de
+     que está libre: pone la cuenta a cero y lo manda en el siguiente tick,
+     sin volver a esperar `after_s`. En la web, botón «↻ La espera está
+     libre: reintentar» en la tarjeta del robot mientras hay aviso. La
+     cuenta también vuelve a cero si el robot hace otra cosa (order, carga,
+     mission de la web), si llega a la espera, si alguien lo lleva a la
+     zona o al salir de mantenimiento. Se reintenta también si la abortó
+     alguien a mano en la web del MiR: distinguirlo exigiría leer el texto
+     del MiR, y con el límite son como mucho dos viajes de más. Que los
+     puntos de espera estén a 1,1 m no es la causa (el usuario: siempre han
+     estado así y funciona).
+
+172. **Una parada de seguridad no pone a cero la cuenta de la vuelta a la
+     espera** (visto por el usuario: si se acerca al robot, vuelve a contar
+     los 30 s desde el principio; en una fábrica con mucho paso de gente,
+     un robot libre podría no volver nunca). El MiR da `EmergencyStop`
+     (state_id 10) tanto en la parada de protección como con la seta, y
+     el driver lo marca como no disponible (`Telemetry.emergency_stop`).
+     Para la cuenta, esa parada cuenta como «parado»: el reloj sigue y, si
+     llega a `after_s` durante la parada, la mission sale en cuanto se
+     suelte (`IdleGuard.tick(hold=…)`). Opción elegida por el usuario
+     frente a congelar la cuenta y seguir después. Lo demás (manual,
+     pausa, error, fuera del site, mantenimiento) sigue poniéndola a cero:
+     ahí alguien está interviniendo el robot.
+
+173. **Reset y reanudar desde el FM, y enlace a la web del robot.** Probando
+     los reintentos (el usuario puso una silla en la espera), el MiR no
+     solo aborta: queda en **Error 10101** («Movement timed out, after being
+     blocked a total of 60 seconds») hasta que alguien le hace reset, así
+     que el FM no puede reintentar solo. Tres cosas:
+     (a) El aviso `IDLE_RETURN_FAILED` dice por qué no reintenta todavía
+     («el robot está en error: hay que hacer reset»; también pausa, manual,
+     fuera del site, mantenimiento) en vez de prometer el intento a los
+     30 s (`Robot._idle_wait_reason`). Tras el reset vuelve a contar y lo
+     reintenta: el reset hace de confirmación de que alguien ha mirado.
+     (b) InstantAction propia `clearErrors` (gancho opcional
+     `clear_errors()` del driver; botón «⟲ Reset y reanudar» en la tarjeta
+     cuando hay un error FATAL, con confirmación). En el MiR,
+     `PUT /status {"clear_error": true}` (probado con mir-2 en 10101: pasa
+     de Error a Pause y borra el error, como el reset de su web) y después
+     `{"state_id": 3}`: el usuario prefiere que quede en marcha. Si tiene
+     missions en su cola, las hará (lo dice la confirmación).
+     (c) Gancho opcional `web_url()` del driver (MiR: `http://<host>/`) en
+     `/api/fleet` → enlace «Web del robot ↗» en la tarjeta y en la pestaña
+     Robot. Solo sirve desde un equipo que llegue a la red de los robots, y
+     la web del MiR pide su usuario.
+
+Probado: `pytest` 346 (4 nuevos en `tests/test_idle.py`: con el driver
+sim haciendo fallar `ir_a_espera`, tres intentos con su aviso, se rinde,
+`retryIdleReturn` lo manda en el acto y al llegar se borra el aviso; una
+parada a los 20 s no corta la cuenta y sale al soltarse; una pausa a mano
+sí la pone a cero; con el robot en error el aviso pide el reset y tras él
+lo reintenta; y uno en `tests/adapters/test_mir_driver.py`: el reset manda
+`clear_error` y luego `state_id` 3). Con los MiR, solo el `clear_error`
+suelto (mir-2, arriba) y el fallo con la silla: el 1.er intento acabó
+Aborted y en 10101 (FM con la decisión 171 ya en marcha). Después, el
+usuario probó el ciclo completo con los MiR y el FM reiniciado (espera
+bloqueada con una silla, 10101, aviso, «⟲ Reset y reanudar» y reintento):
+funciona bien.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3157,7 +3233,9 @@ usuario: #27 (cámara en la pestaña Robot; el MiR no da imagen ni por REST
 ni por el WebSocket). Cerrado el 2026-11-04: #22 (Configurador y
 administración con el FM real: faltaba que corregir se bloquee con el
 robot ocupado) y #36 (modo mantenimiento, decisiones 167–170, probado
-también con los MiR).
+también con los MiR). Y #42 (vuelta a la espera con reintentos, paradas
+de seguridad y reset, decisiones 171–173), probado por el usuario con los
+MiR.
 
 **En curso / siguiente** (al cerrar el 2026-10-29; orden decidido por el usuario)
 

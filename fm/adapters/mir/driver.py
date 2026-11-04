@@ -298,6 +298,16 @@ class MirDriver:
     def resume(self) -> None:
         self.client.status_put(STATE_READY)
 
+    def clear_errors(self) -> None:
+        """Reset y reanudar (decisión 173): `clear_error` hace lo que el reset
+        de la web y deja el robot en Pause; luego se reanuda."""
+        self.client.status_put(clear_error=True)
+        self.client.status_put(STATE_READY)
+
+    def web_url(self) -> str:
+        """La web del MiR (pide su propio usuario)."""
+        return f"http://{self.cfg.host}/"
+
     def charge_job(self) -> Job | None:
         """Job de auto-carga (H4): la mission configurada, sin parámetros."""
         name = self.cfg.charge_mission

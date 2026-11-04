@@ -195,9 +195,16 @@ class MirClient:
     def status_get_raw(self) -> dict:
         return self._req("GET", "status")
 
-    def status_put(self, state_id: int) -> dict:
-        """3 = Ready (reanudar), 4 = Pause."""
-        return self._req("PUT", "status", {"state_id": state_id})
+    def status_put(self, state_id: int | None = None, clear_error: bool = False) -> dict:
+        """3 = Ready (reanudar), 4 = Pause. `clear_error`: borra los errores,
+        como el reset de la web (el robot queda en Pause; comprobado con
+        mir-2 en Error 10101 el 2026-11-04)."""
+        body: dict = {}
+        if state_id is not None:
+            body["state_id"] = state_id
+        if clear_error:
+            body["clear_error"] = True
+        return self._req("PUT", "status", body)
 
     def missions_get(self) -> list[dict]:
         return self._req("GET", "missions")

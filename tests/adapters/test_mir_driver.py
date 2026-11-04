@@ -75,7 +75,11 @@ class _FakeClient(MirClient):
             return {"guid": "z-1", "polygon": [{"x": 34.4, "y": 7.2}, {"x": 36.2, "y": 7.2},
                                                {"x": 36.2, "y": 9.8}, {"x": 34.4, "y": 9.8}]}
         if method == "PUT" and path == "status":
-            self.status["state_id"] = json["state_id"]
+            self.puts = getattr(self, "puts", []) + [json]
+            if json.get("clear_error"):          # como el MiR: borra los errores y queda en Pause
+                self.status.update(errors=[], state_id=4)
+            if "state_id" in json:
+                self.status["state_id"] = json["state_id"]
             return self.status
         raise AssertionError(f"llamada inesperada {method} {path}")
 
@@ -324,3 +328,15 @@ def test_adopt_job_hace_propia_una_mission_del_fm_anterior():
     assert d.poll().foreign_busy                         # recién arrancado: parece ajena
     d.adopt_job("300")
     assert not d.poll().foreign_busy
+
+
+def test_reset_borra_el_error_y_reanuda():
+    # Decisión 173: lo que hace el reset de la web (clear_error → Pause) y luego en marcha.
+    d, c = _driver()
+    c.status.update(state_id=12, errors=[{"code": 10101, "description": "Movement timed out"}])
+    assert [e.errorType for e in d.poll().errors] == ["MIR_10101"]
+    d.clear_errors()
+    assert c.puts == [{"clear_error": True}, {"state_id": 3}]
+    t = d.poll()
+    assert t.errors == [] and t.available and c.status["state_id"] == 3
+    assert d.web_url() == f"http://{d.cfg.host}/"

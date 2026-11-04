@@ -186,6 +186,15 @@ class RobotDriver(Protocol):
     def extra_state(self, s: State) -> None:
         """Gancho opcional: campos del `state` que el core no puede deducir."""
 
+    def clear_errors(self) -> None:
+        """Gancho opcional: instantAction propia `clearErrors` (decisión 173).
+        Borra los errores que bloquean al robot (lo que hace el reset en su
+        propia interfaz) y lo deja en marcha. Lanza si no puede."""
+
+    def web_url(self) -> str | None:
+        """Gancho opcional: dirección de la interfaz propia del robot, para
+        enlazarla desde la web del FM (decisión 173)."""
+
     def in_zone(self, zone: str, t: Telemetry) -> bool | None:
         """Gancho opcional: ¿está el robot (la pose de `t`) dentro de la zona
         `zone` (GUID o nombre) de su mapa activo? None = no se sabe (la zona

@@ -523,6 +523,8 @@ actions de una order. Soportadas:
 | `factsheetRequest` | vuelve a publicar el `factsheet` retained | `FINISHED` |
 | `startMaintenance` | propia: pone el robot en mantenimiento (abajo) | `FINISHED`, también si ya lo estaba |
 | `stopMaintenance` | propia: lo saca del mantenimiento | `FINISHED`, también si no lo estaba |
+| `retryIdleReturn` | propia: la zona de espera está libre; tras fallar la vuelta a la espera, la manda ya | `FINISHED`, o `FAILED` si el robot no tiene vuelta a la espera |
+| `clearErrors` | propia: reset del robot (como el de su web) y en marcha otra vez (MiR: `PUT /status {clear_error: true}` y `{state_id: 3}`) | `FINISHED`, o `FAILED` si el driver no lo soporta |
 | otros | no soportado | `FAILED` + `INVALID_INSTANT_ACTION` |
 
 El resultado va en `state.instantActionStates[]` y los fallos en
@@ -643,7 +645,7 @@ lista para usar en `scripts/api.http`.
 | `GET` | `/api/robots/<serial>/actions` | actionTypes que acepta ese robot |
 | `POST` | `/api/fleet/order?wait=N` | `{actionType, params, orderId?}` → `fleet/order`; el FM elige robot |
 | `POST` | `/api/robots/<serial>/order?wait=N` | igual, pero `<serial>/order` (sin asignador) |
-| `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest`, `startMaintenance`, `stopMaintenance` |
+| `POST` | `/api/robots/<serial>/instant` | `{actionType}`: `startPause`, `stopPause`, `cancelOrder`, `stateRequest`, `startMaintenance`, `stopMaintenance`, `retryIdleReturn`, `clearErrors` |
 | `GET` | `/api/orders?limit=` · `/api/orders/<orderId>` | seguimiento de orders (últimas 200, en RAM) |
 | `POST` | `/api/orders/<orderId>/cancel?wait=N` | cancela una fleet order, en la cola o en curso (200 `CANCELLED`, 409 si no se puede) |
 | `POST` | `/api/orders/<orderId>/requeue?wait=N` | relanza una fleet order en duda tras reiniciar el FM (200 `QUEUED`, 409 si no está en duda) |
@@ -709,6 +711,9 @@ Para que un robot no se quede estorbando donde acabó una mission
 disponible, en automático, sin pausa, en el site de la flota y sin order,
 carga ni mission lanzada desde la web—, el FM le manda la action del
 catálogo `idle_return.action` (con sus `params`), como si fuera una order.
+Una parada de seguridad (alguien que se acerca demasiado) no pone la
+cuenta a cero: sigue contando y, si se cumple el tiempo, sale en cuanto se
+suelte (decisión 172). Lo demás (manual, pausa, error…) sí la pone a cero.
 
 ```yaml
 idle_return:                 # toda la flota
@@ -733,7 +738,20 @@ robots:
 - La action tiene que estar habilitada en el robot. Si la de la flota no lo
   está en alguno, ese robot no vuelve (aviso al arrancar); si la de un robot
   no lo está, la config no carga.
-- Si no se puede mandar o acaba `FAILED`, se dice en el log y no se insiste.
+- Si no se puede mandar, se dice en el log y no se insiste.
+- **Si acaba `FAILED`** (p. ej. el MiR aborta porque el camino a la espera
+  está bloqueado), vuelve a contar `after_s` y lo reintenta, hasta 3
+  intentos seguidos. Desde el primer fallo, `state.errors[]` lleva
+  `IDLE_RETURN_FAILED` (WARNING) con el motivo y el intento que viene; al
+  tercero se rinde y el aviso pregunta si la espera está bloqueada. La
+  instantAction propia `retryIdleReturn` (en la web, «La espera está libre:
+  reintentar» en la tarjeta del robot) pone la cuenta a cero y lo manda ya.
+  Cualquier otra cosa que haga el robot también la pone a cero.
+- **Si el robot queda en error** al abortar (el MiR da el 10101, «Movement
+  timed out», y espera un reset), no puede reintentar solo: el aviso lo
+  dice («hay que hacer reset»). En la tarjeta salen «⟲ Reset y reanudar»
+  (instantAction `clearErrors`) y el enlace a la web del robot. Tras el
+  reset, vuelve a contar y lo reintenta.
 - Se edita en el Configurador y se aplica en caliente.
 
 ## Limitaciones conocidas
