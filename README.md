@@ -536,7 +536,7 @@ Para calibrar o intervenir un robot sin quitarlo de `fleet.yaml`: sigue
 publicando su `state`, pero el FM no le manda nada.
 
 - **Entrar:** `startMaintenance` en `<serial>/instantActions` (o el botón
-  «Mantenimiento» de su tarjeta en Operación). Sale del reparto en el acto:
+  «Entrar en mantenimiento» de su tarjeta en Operación). Sale del reparto en el acto:
   una `fleet/order` va a otro robot o espera en la cola con el motivo, y
   una order dirigida a él se rechaza con `MOBILE_ROBOT_NOT_AVAILABLE`.
 - **Lo que tenga en marcha, lo termina.** Si tiene una order o una carga

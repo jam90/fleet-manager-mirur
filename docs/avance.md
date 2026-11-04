@@ -3080,7 +3080,7 @@ decidió el usuario (las cuatro, la opción propuesta).
      `startMaintenance` y `stopMaintenance`** (como `requeueOrder` en
      `fleet/`, regla de la decisión 145: cualquier cliente, no solo la
      web). Las dos son idempotentes (pedir lo que ya está es FINISHED, sin
-     cambiar la hora). En la web, botón «Mantenimiento» / «Salir de
+     cambiar la hora). En la web, botón «Entrar en mantenimiento» / «Salir de
      mantenimiento» en la tarjeta de Operación (entrar pide confirmación),
      fila «Mantenimiento» en la tarjeta, aviso en la pestaña Robot, pastilla
      «mantenimiento» y borde gris discontinuo en el mapa de la sección

@@ -764,7 +764,7 @@
           <button class="btn" :id="'pause-' + r.serial" :disabled="!r.canPause" @click="instant(r.serial, 'startPause')">⏸ Pausa</button>
           <button class="btn" :id="'resume-' + r.serial" :disabled="!r.canResume" @click="instant(r.serial, 'stopPause')">▶ Reanudar</button>
           <button class="btn danger" :id="'cancel-' + r.serial" :disabled="!r.canCancel" @click="instant(r.serial, 'cancelOrder')">✖ Cancelar order</button>
-          <button class="btn" :id="'maint-' + r.serial" @click="toggleMaintenance(r)">🔧 {{ r.maint ? 'Salir de mantenimiento' : 'Mantenimiento' }}</button>
+          <button class="btn" :id="'maint-' + r.serial" @click="toggleMaintenance(r)">🔧 {{ r.maint ? 'Salir de mantenimiento' : 'Entrar en mantenimiento' }}</button>
           <span class="feedback" v-if="r.feedback">{{ r.feedback }}</span>
         </div>
       </article>
@@ -1933,7 +1933,7 @@
           <span class="hint">Para calibrarlo o intervenirlo sin quitarlo de la flota: el FM deja de mandarle nada.</span></summary>
         <ol class="steps">
           <li><b>Entrar</b><a class="where" href="#operacion">→ Operación</a>
-            <p>«🔧 Mantenimiento» en la tarjeta del robot (lo pregunta antes). Desde ese momento no recibe orders: las de la flota
+            <p>«🔧 Entrar en mantenimiento» en la tarjeta del robot (lo pregunta antes). Desde ese momento no recibe orders: las de la flota
               van a otro robot o esperan en la cola («en mantenimiento»), y una dirigida a él se rechaza. Tampoco se le manda a
               cargar ni a la espera: <b>la batería la vigila quien lo interviene</b>.</p></li>
           <li><b>Si estaba trabajando</b><a class="where" href="#operacion">→ Operación</a>
