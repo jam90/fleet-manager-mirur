@@ -254,8 +254,9 @@ class Catalog:
                 maps = self.map_names(self.maps_of(g))
                 extra = f"{len(d['actions'])} actions" + (f" · mapa {', '.join(maps)}" if maps else "")
             o = d.get("_origen", {})
+            # `deps`: lo que usa (para «Usa» y «Lo usan» de la ficha del Catálogo).
             out.append({"guid": g, "kind": k, "name": d["name"], "parent": parent, "extra": extra,
-                        "site": self.site_of(g),
+                        "site": self.site_of(g), "deps": sorted(self.deps(g)),
                         "auto": bool(d.get("creada_por_mir")), "parent_id": d.get("parent_id"),
                         "origin": o.get("robot", ""), "captured": o.get("capturado", ""),
                         "origin_group": o.get("grupo", "")})

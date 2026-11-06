@@ -64,7 +64,8 @@
   por broker (decisión 107). Pestaña **Guía** (decisión 109): paso a paso
   de cada proceso de administración; **todo cambio en el flujo de otra
   pestaña actualiza la Guía en el mismo cambio**. Menú lateral único por
-  grupos y pestaña **Catálogo** (decisión 175, 2026-11-04). Pestaña **Robots**
+  grupos y pestaña **Catálogo** (decisión 175, 2026-11-04), con lista y ficha de
+  cada recurso y un único «Quitar…» (decisión 182); Sincronización a varios robots a la vez (183). Pestaña **Robots**
   (decisiones 110–112, 2026-10-23): lo propio de cada marca llega en
   `state.information[]` con los `I_*` de `fm/vda5050/state.py`; los robots
   siguen siendo `mir-1`/`mir-2` y la UI enseña su nombre (Dejavu, Toretto). Lo abierto, ordenado, al final de

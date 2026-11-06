@@ -418,6 +418,9 @@ def test_una_mission_esta_atada_al_mapa_de_sus_positions_fijas(tmp_path):
     assert cat.maps_of(M_SUB) == set()
     assert cat.maps_of(M_MAIN) == {MAP}                                # MAIN sigue yendo a VL fijo
     assert "mapa m" in {i["guid"]: i["extra"] for i in cat.summary()}[M_MAIN]
+    # Lo que usa cada recurso, para «Usa» y «Lo usan» de la ficha del Catálogo.
+    deps = {i["guid"]: i["deps"] for i in cat.summary()}
+    assert M_SUB in deps[M_MAIN] and GRP in deps[M_MAIN] and deps[M_SUB] == sorted(cat.deps(M_SUB))
 
 
 def test_fleet_maps_para_la_seccion_flota(tmp_path):

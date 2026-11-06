@@ -618,6 +618,36 @@ def test_traer_no_toca_nada_si_algo_del_robot_lo_usa(sync, tmp_path):
         sync.bring("mission", m, config_refs={m})
 
 
+def test_reintentar_traer_no_borra_el_original_si_la_copia_es_distinta(sync, tmp_path):
+    """Decisión 180. Primer intento: la copia se crea pero el DELETE del
+    original falla. Se edita el original en la web y se reintenta: el catálogo
+    coge lo nuevo, pero la copia del robot sigue con lo viejo y `deploy` no la
+    toca. Antes se borraba el original igualmente y se perdía lo editado."""
+    _web_position(sync, type_id=0)
+    real = sync.client._req
+
+    def delete_falla(method, path, json=None):
+        if method == "DELETE" and path == "positions/rw":
+            raise OSError("sin red")
+        return real(method, path, json)
+    sync.client._req = delete_falla
+    with pytest.raises(OSError):
+        sync.bring("position", "rw")
+    sync.client._req = real
+    g = std_guid("position", 1, 1, 5)
+    db = sync.client.db["positions"]
+    assert db[g]["pos_x"] == 2.0 and "rw" in db           # la copia y el original, los dos
+    db["rw"]["pos_x"] = 9.0                               # se edita el original en la web
+    out = sync.bring("position", "rw")
+    assert not out["replaced"] and "no coincide" in out["error"] and "Sustituir" in out["error"]
+    assert "rw" in db and db["rw"]["pos_x"] == 9.0         # el original se queda
+    assert Catalog.load(tmp_path).items[g]["pos_x"] == 9.0  # el catálogo ya tiene lo nuevo
+    # Lo que dice el mensaje: sustituir la copia y volver a traer.
+    sync.deploy([g], replace=[g])
+    out = sync.bring("position", "rw")
+    assert out["replaced"] and "rw" not in db and db[g]["pos_x"] == 9.0
+
+
 def test_traer_position_con_nombre_repetido(sync):
     _web_position(sync, name="A", type_id=0)              # «A» ya está en el catálogo
     with pytest.raises(CreateError, match=r"ya hay una position 'A' en el catálogo"):

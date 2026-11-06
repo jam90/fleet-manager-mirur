@@ -3507,6 +3507,79 @@ Probado: `pytest` 363 (repetidas en cola, en curso, terminada y tras un
 reinicio, en `tests/test_queue.py` y `test_queue_restart.py`; `FINISHED`
 en la API, `tests/test_web.py`).
 
+## 2026-11-06 — Traer de la preview: ficha del Catálogo, Quitar único y varios robots a la vez
+
+El usuario pidió revisar la propuesta de `../preview-fleet-manager/`
+frente al FM e integrar lo necesario, con el estilo de código del FM y
+**la terminología de siempre** (no la nueva de la preview: «Traer del
+robot», «Enviar a robots», «Área»…). Lo que se trae es lo que arregla
+problemas reales del flujo de administración: un mismo trabajo (quitar,
+traer lo cambiado) repartido por Crear y Sincronización con reglas
+distintas, y desplegar robot a robot. No se traen el asistente único de
+«+ Añadir» (pide en el backend traer una mission nueva junto con su
+position nueva, que hoy no se puede) ni las tarjetas de «Estado de la
+flota»: lo de ahora vale.
+
+180. **«Traer al catálogo» (lo hecho en la web de un robot) no borra el
+     original sin releer la copia.** Fallo encontrado al revisar la
+     preview: si el primer intento creaba la copia y fallaba al borrar el
+     original, y luego se editaba el original y se reintentaba, el
+     catálogo cogía lo nuevo pero `deploy` dejaba la copia vieja
+     (`distinta` acaba en «sin cambios», no en `error`) y se borraba el
+     original: se perdía lo editado. Ahora `bring()` cuenta también
+     `saltada` como fallo y, antes del DELETE, pide la vista previa de lo
+     traído (no de sus dependencias: un mapa retocado no la invalida) y
+     exige que salga todo `igual`; si no, el original se queda y el aviso
+     pide sustituir la copia en Sincronización y volver a traerla. No se
+     sustituye sola: la copia podría estar ya en uso. Test:
+     `test_reintentar_traer_no_borra_el_original_si_la_copia_es_distinta`
+     (falla sin el arreglo).
+181. **Se vuelve a decir «site»** donde la decisión 175 (traída de la
+     preview) puso «centro»: «Site» en la cabecera, «Sites» en el filtro,
+     «Solo lo del site …» y «Ver todo el catálogo», como antes de la 175.
+     El usuario ya había pedido en la preview conservar el término de
+     MiR. Lo demás de la 175 (Posiciones, Misiones en los filtros) se
+     queda como está.
+182. **Catálogo con lista y ficha.** Al pinchar un recurso se abre su
+     ficha (`#catalogo/<guid>`, para poder enlazarla): en qué robots está y
+     cómo (con la comprobación rápida dice «lo tiene» y avisa de que no
+     compara el contenido; «distinto del catálogo», sin decir cuál es el
+     bueno), qué usa y qué lo usa (`deps` nuevo en `Catalog.summary()`),
+     «Traer al catálogo» en el robot donde sale distinto (después se
+     comprueban a fondo los robots, porque los demás pasan a tener la
+     versión antigua), «Sincronizar este recurso →» y **un único
+     «Quitar…»** con los alcances de `remove.py` que valen para ese
+     recurso: «Quitar de un robot» (missions que tiene algún robot),
+     «Retirar de la flota» (número reservado) y «Borrar» (lo creado desde
+     aquí, número libre). Con varios alcances no hay uno elegido: se elige a
+     propósito. «Ver qué se quita» enseña el plan del servidor (dónde
+     está, qué se va con él, qué lo impide) dentro de la ficha y el botón
+     lo hace; sin `confirm()` aparte, porque la revisión ya es la
+     confirmación. Los borradores salen también en la lista (arriba),
+     con «Abrir en la web del MiR», «Capturar» y «Borrar». Se quitan el
+     botón «Borrar un recurso» y el «Retirar de la flota» de la lista de
+     Sincronización (ahora «Ficha»); `#crear/borrar` sigue funcionando.
+183. **Sincronización a varios robots a la vez.** «Robot» pasa a «Robots»
+     con casillas (por defecto, todos los que sincronizan): una vista
+     previa por robot, con sus propios «Sustituir», y un solo «Desplegar»
+     que va a los robots que se puede; la confirmación dice qué pasa en
+     cada uno y cuáles se quedan fuera y por qué (no responde, desplegando,
+     ocupado con algo que corregir, nada que cambiar). El servidor no
+     cambia: un despliegue por robot, como antes, y el avance por
+     WebSocket va a la vista previa de su robot. «Sincronizar este recurso
+     →» marca los robots donde falta o es distinto y pide ya la vista
+     previa (`#sincronizacion/flota/<guid>`); `#sincronizacion/<robot>/…`
+     (Configuración) sigue marcando solo ese robot.
+
+La Guía cuenta los recorridos nuevos (quitar desde la ficha, varios
+robots en la vista previa). Probado: `pytest` 364; y la interfaz en
+Chromium a 1300 y 390 px contra el `WebServer` con dos `MirSync` sobre el
+`FakeMir` de los tests (sin robots ni broker): ficha, traer al catálogo,
+sincronizar desde la ficha, vista previa y despliegue en dos robots con
+«Sustituir» en uno, quitar de un robot, retirar bloqueado por una
+mission que la usa, borrar un borrador, Guía y todas las pestañas sin
+errores en la consola. **Falta probarlo con los MiR.**
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3535,36 +3608,42 @@ Cerrado el 2026-11-06: #33 (copiar un mapa del catálogo con sus positions
 y zonas, decisión 176), y #31 (contestar a un `fleet/order` repetido con su estado,
 decisión 179).
 
-**En curso / siguiente** (al cerrar el 2026-11-04; orden decidido por el usuario)
+**En curso / siguiente** (al cerrar el 2026-11-06)
 
-1. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
-   y el Configurador con el FM real (#22, 2026-11-04). Lo que queda en el
-   bloque «Probar con robot» de abajo espera a otra cosa (una mission con
+1. **Probar con los MiR los PUT de «Sustituir»** (decisión 178), en
+   `mapa-pruebas`: una position movida en un robot, traída y sustituida en
+   el otro; un docking offset (cambiar el del propio marcador o volver a
+   detectarlo: al recalibrar `FM-mapa-pruebasH2D1-VL` el MiR solo movió su
+   entrada, y el registro del offset no cambió en ningún robot); y un mapa
+   retocado. Probado hasta ahora: traer una position hecha en la web
+   (`prueba-mapaprueba`, decisión 177) y la entrada de un marcador.
+2. **Pruebas con robot** (lo de siempre). Lo que queda en el bloque
+   «Probar con robot» de abajo espera a otra cosa (una mission con
    parámetro de texto, #8, o llevar mir-2 a `MESA_TKNIKA`, #18b).
 
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
-- **Estado al cerrar (2026-11-04):** todo commiteado y subido (último,
-    `076cbac`, interfaz nueva, decisión 175). Hecho hoy: #40 cerrado
-    (WebSocket del MiR, decisión 166; sale #41), #27 quitado, #22
-    (corregir bloqueado con el robot ocupado), #36 modo mantenimiento
-    (decisiones 167–170), #42 vuelta a la espera con reintentos, paradas de
-    seguridad y reset (171–173), #37 nombres de position únicos (174) y la
-    interfaz con menú lateral y pestaña Catálogo (175, traída de la
-    propuesta de `../preview-fleet-manager/`, que sigue fuera del repo;
-    su `preview.css` aún tiene el select que se sale, arreglado solo en el
-    FM). El FM real (arrancado a las 09:54) tiene hasta la 174; la
-    interfaz es estática y se ve con recargar la página. Falta repasar la
-    interfaz nueva en el navegador pantalla a pantalla. Los dos robots en `suberri_mirur` (el site de la
-    flota): reciben orders. En `mirur-instalacion`, el `fleet.yaml` del
-    disco es el de git (con `idle_return`; `prueba_cola` quitada al acabar
-    la prueba). La mission `prueba-cola` (10 s de espera, no está en el
-    catálogo) sigue en los dos robots para probar la cola. `prueba-pregunta`
-    (`…-mission000-01-0001-013`) sigue en mir-1 y como borrador sin
-    commitear en el catálogo: borrarla en Crear cuando no haga falta.
-    `clientes/voz/` es del compañero: solo se toca si un cambio del FM la
-    rompe.
+- **Estado al cerrar (2026-11-06):** todo commiteado y subido salvo esta
+    nota (último, `a1cf67f`, decisión 179). Hecho hoy: copiar un mapa del
+    catálogo (#33, decisión 176; `mapa-pruebas` rehecho como copia de
+    `suberri_mirur` y desplegado en los dos), botón «Borrar un recurso» y
+    rutas de la Guía tras la 175, traer al catálogo lo cambiado o hecho en
+    la web de un robot (177), sustituir positions y mapas en su sitio (178,
+    parte de #19) y contestar a un `fleet/order` repetido (#31, 179). El FM
+    real (arrancado a las 12:55) tiene hasta la 179. De la propuesta de
+    `../preview-fleet-manager/` se ha traído (sin commitear) la ficha del
+    Catálogo con un «Quitar…» único y la sincronización a varios robots
+    (decisiones 180–183); el FM en marcha no la tiene hasta recargar la
+    página y, para el arreglo de «Traer al catálogo» (180), reiniciarlo. **El compañero** va
+    a hacer que la pasarela de voz reintente con el mismo `orderId`
+    (`clientes/voz/AGENTS.md`). En `mirur-instalacion`: `prueba-mapaprueba`
+    (`…-position00-01-0002-026`) está en mir-2 y en el catálogo, commiteada;
+    retirarla de la flota (su ficha en Catálogo, «Quitar…») si era solo una prueba.
+    `prueba-pregunta` (`…-mission000-01-0001-013`) sigue en mir-1 y como
+    borrador sin commitear. La mission `prueba-cola` sigue en los dos
+    robots. Los dos robots en `suberri_mirur`. `clientes/voz/` es del
+    compañero: solo se toca si un cambio del FM la rompe.
 - **#38** **Capturar una mission con «Prompt user»** (visto el 2026-10-30
     con `prueba-pregunta`). La acción guarda el GUID de un grupo de
     usuarios del robot (`8f8af10e-…`, «Alumno» en mir-1) y la captura lo

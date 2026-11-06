@@ -1077,9 +1077,23 @@ def bring(sync, kind: str, source: str, others=lambda kind, parent: set(),
     # En el robot: primero la copia, luego se borra el original. Si la copia
     # falla, el original se queda (el catálogo ya la tiene: se puede reintentar).
     ops = sync.deploy([guid])
-    failed = [f"{o.name}: {o.detail}" for o in ops if o.status == "error"]
+    failed = [f"{o.name}: {o.detail}" for o in ops if o.status in ("error", "saltada")]
     if failed:
         out["error"] = "no se ha podido crear la copia en el robot (" + "; ".join(failed) + "): el original se queda"
+        return out
+    # Antes de borrar el original se relee la copia (decisión 180). Al
+    # reintentar, la copia de un intento anterior puede seguir en el robot con
+    # otro contenido (el original se editó entre medias): `deploy` no toca lo
+    # que sale «distinta» y lo daría por bueno, y se perdería lo hecho en la web.
+    # Solo cuenta lo traído: una dependencia distinta (el mapa retocado en el
+    # robot) no impide que la copia sea buena.
+    brought = {d["guid"] for _, d in docs}
+    _, check = sync.preview(brought)
+    differ = [f"{o.name}: {o.detail}" for o in check if o.guid in brought and o.verb != "igual"]
+    if differ:
+        out["error"] = (f"en {sync.serial} la copia con el GUID del proyecto no coincide con lo traído ("
+                        + "; ".join(differ) + "): el original se queda. Llévale la versión del catálogo en "
+                        "Sincronización (vista previa, «Sustituir») y vuelve a traerla")
         return out
     with sync.lock:                    # al borrar un marcador, el MiR borra su entrada
         sync.client._req("DELETE", f"{FOLDERS[kind]}/{source}")
