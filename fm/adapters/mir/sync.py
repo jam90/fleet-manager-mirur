@@ -58,6 +58,8 @@ GUIDISH = re.compile(r"^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]
 POSE = ("pos_x", "pos_y", "orientation")
 POSE_TOL = 1e-3
 MAP_FIELDS = ("name", "session_id", "resolution", "origin_x", "origin_y", "origin_theta")
+# Lo que se compara y se corrige con PUT del docking offset de un marcador.
+OFFSET_FIELDS = ("x_offset", "y_offset", "orientation_offset")
 # Lo que se compara y se escribe de una zona (decisión 124). `type_id` no se
 # puede cambiar con PUT (el MiR lo ignora, probado en mir-2 el 2026-10-29).
 ZONE_FIELDS = ("name", "type_id", "shape_type", "stroke_width", "direction", "polygon", "actions")
@@ -271,6 +273,8 @@ class RobotView:
     zones: dict[str, dict] = field(default_factory=dict)       # todas las de los mapas del catálogo, normalizadas
     groups: dict[str, dict] = field(default_factory=dict)
     missions: dict[str, dict] = field(default_factory=dict)    # {name, group_id, actions normalizadas}
+    offsets: dict[str, dict] = field(default_factory=dict)     # position → su docking offset en el robot
+    active_map: str | None = None                              # mapa activo del robot
 
     def entry_of(self, parent: str) -> dict | None:
         return next((p for p in self.positions.values() if p.get("parent_id") == parent), None)
@@ -337,6 +341,15 @@ def fetch_view(client: MirClient, cat: Catalog, guids: list[str]) -> RobotView:
             v.positions[p["guid"]] = client._req("GET", f"positions/{p['guid']}")
         for z in client._req("GET", f"maps/{g}/zones"):
             v.zones[z["guid"]] = normalized_zone(client._req("GET", f"zones/{z['guid']}"))
+    # Docking offset de los marcadores (el del catálogo es el que se calibró):
+    # un marcador recalibrado puede cambiar solo el offset.
+    for g in want["position"]:
+        if g in v.positions and cat.items[g].get("docking_offsets"):
+            offs = client._req("GET", f"positions/{g}/docking_offsets")
+            if offs:
+                v.offsets[g] = client._req("GET", f"docking_offsets/{offs[0]['guid']}")
+    if maps_needed & robot_maps:
+        v.active_map = client._req("GET", "status").get("map_id")
     robot_missions = {m["guid"] for m in client._req("GET", "missions")}
     for g in set(want["mission"]) & robot_missions:
         m = client._req("GET", f"missions/{g}")
@@ -367,6 +380,7 @@ class Op:
     warning: str = ""
     status: str = "pendiente"   # pendiente | hecho | error | saltada | sin cambios
     target: str | None = None   # GUID en el robot (entrada de marcador a corregir)
+    replaceable: bool = False   # distinta y se puede sustituir (la UI enseña la casilla)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -374,6 +388,14 @@ class Op:
 
 def _pose_differs(a: dict, b: dict) -> bool:
     return any(abs(a[k] - b[k]) > POSE_TOL for k in POSE)
+
+
+def _offset_differs(cat_offsets: list[dict], robot: dict | None) -> bool:
+    """¿Difiere el docking offset del robot del del catálogo? Sin uno de los
+    dos no se compara (no hay nada que corregir con PUT)."""
+    if not cat_offsets or robot is None:
+        return False
+    return any(abs(float(cat_offsets[0].get(k) or 0) - float(robot.get(k) or 0)) > POSE_TOL for k in OFFSET_FIELDS)
 
 
 def _fmt_pose(p: dict) -> str:
@@ -385,8 +407,10 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
     """Una operación por recurso de `guids` (ya en orden). Puro: no hay red.
 
     `map_png_b64(guid)` da la imagen del catálogo en base64 para comparar el
-    `base_map`; por defecto la lee del catálogo. `replace`: missions (y
-    zonas) que, si salen distintas, se sustituyen (decisiones 117 y 124)."""
+    `base_map`; por defecto la lee del catálogo. `replace`: recursos que, si
+    salen distintos, se sustituyen: missions (se borran y se crean, decisión
+    117), zonas (124), positions y mapas (178; estos tres, corregidos en su
+    sitio con PUT)."""
     replace = set(replace)
     png = map_png_b64 or (lambda g: base64.b64encode(cat.map_png(g)).decode())
     ops: list[Op] = []
@@ -407,6 +431,13 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                     diff.append("imagen")
                 op.verb = "distinta" if diff else "igual"
                 op.detail = ("difiere: " + ", ".join(diff)) if diff else ""
+                # El site de un mapa no se cambia con PUT (no se ha probado y no tiene sentido).
+                op.replaceable = bool(diff) and "session_id" not in diff
+                if op.replaceable and g in replace:
+                    op.verb = "sustituir"
+                    op.detail = f"corregir en su sitio ({op.detail})"
+                    if view.active_map == g:
+                        op.warning = "es su mapa activo: después, comprueba en su web que sigue bien localizado"
         elif k == "position" and d.get("creada_por_mir"):
             have = view.entry_of(d["parent_id"])
             if have is None:
@@ -424,11 +455,21 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                 diff = [f for f in ("name", "type_id", "map_id") if have.get(f) != d[f]]
                 if _pose_differs(have, d):
                     diff.append("pose")
+                if _offset_differs(d.get("docking_offsets"), view.offsets.get(g)):
+                    diff.append("docking offset")
                 op.verb = "distinta" if diff else "igual"
                 op.detail = ("difiere: " + ", ".join(diff)) if diff else ""
-            if d.get("docking_offsets") and d.get("_origen", {}).get("robot") not in (None, serial):
-                op.warning = (f"docking offset calibrado con {d['_origen']['robot']}: "
-                              f"comprobar el atraque en {serial}")
+                # El tipo no se puede cambiar en el MiR (decisión 119), ni el mapa de una position.
+                op.replaceable = bool(diff) and "type_id" not in diff and "map_id" not in diff
+                if diff and not op.replaceable:
+                    op.detail += " (el tipo o el mapa no se cambian en el robot: retírala y vuelve a crearla)"
+                if op.replaceable and g in replace:
+                    op.verb = "sustituir"
+                    op.detail = f"corregir en su sitio ({op.detail})"
+            # El offset es del robot del que se trajo por última vez (#19).
+            calib = (d.get("_recapturado") or d.get("_origen") or {}).get("robot")
+            if d.get("docking_offsets") and calib not in (None, serial):
+                op.warning = f"docking offset calibrado con {calib}: comprobar el atraque en {serial}"
         elif k == "zone":
             have = view.zones.get(g)
             if have is None:
@@ -437,6 +478,7 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                 diff = zone_diff(have, d)
                 op.verb = "distinta" if diff else "igual"
                 op.detail = ("difiere: " + ", ".join(diff)) if diff else ""
+                op.replaceable = bool(diff)
                 if diff and g in replace:
                     op.verb = "sustituir"
                     op.detail = (f"borrar y volver a crear ({op.detail})" if "type_id" in diff
@@ -451,6 +493,7 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                     diff.append("actions")
                 op.verb = "distinta" if diff else "igual"
                 op.detail = ("difiere: " + ", ".join(diff)) if diff else ""
+                op.replaceable = bool(diff)
                 if diff and g in replace:
                     op.verb = "sustituir"
                     op.detail = f"borrar y volver a crear con {len(d['actions'])} actions ({op.detail})"
@@ -462,8 +505,7 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                     if users:
                         op.warning = f"la cargan {', '.join(users)}: unos segundos sin ella"
         if op.verb == "distinta":
-            op.detail += (" — no se toca (márcala para sustituirla)" if k in ("mission", "zone")
-                          else " — no se toca")
+            op.detail += " — no se toca (márcala para sustituirla)" if op.replaceable else " — no se toca"
         ops.append(op)
     return ops
 
@@ -501,6 +543,15 @@ def _apply_one(client: MirClient, cat: Catalog, op: Op) -> None:
     if op.kind == "session":
         client._req("POST", "sessions", json={"guid": g, "name": d["name"],
                                               "description": d.get("description", "")})
+    elif op.kind == "map" and op.verb == "sustituir":
+        # Corregir en su sitio (decisión 178): mismo GUID, así sus positions y
+        # zonas siguen colgando de él. El site no se toca.
+        body = {"name": d["name"], "base_map": base64.b64encode(cat.map_png(g)).decode(),
+                **{f: d[f] for f in ("resolution", "origin_x", "origin_y", "origin_theta")}}
+        client._req("PUT", f"maps/{g}", json=body)
+        have = client._req("GET", f"maps/{g}")
+        if any(have.get(k) != v for k, v in body.items()):
+            raise RuntimeError("escrito, pero al releerlo no coincide con el catálogo")
     elif op.kind == "map":
         client._req("POST", "maps", json={
             "guid": g, "session_id": d["session_id"], "name": d["name"],
@@ -517,6 +568,21 @@ def _apply_one(client: MirClient, cat: Catalog, op: Op) -> None:
         have = client._req("GET", f"positions/{target}")
         if _pose_differs(have, d):
             client._req("PUT", f"positions/{target}", json={k: d[k] for k in POSE})
+    elif op.kind == "position" and op.verb == "sustituir":
+        # Corregir en su sitio (decisión 178): borrarla y crearla rompería las
+        # missions de la web del robot que van a ella. Nombre y pose con PUT;
+        # el docking offset, que tiene GUID propio en cada robot, también.
+        client._req("PUT", f"positions/{g}", json={k: d[k] for k in ("name", *POSE)})
+        have = client._req("GET", f"positions/{g}")
+        if have.get("name") != d["name"] or _pose_differs(have, d):
+            raise RuntimeError("escrita, pero al releerla no coincide con el catálogo")
+        if d.get("docking_offsets"):
+            offs = client._req("GET", f"positions/{g}/docking_offsets")
+            if offs:
+                want = {k: d["docking_offsets"][0][k] for k in OFFSET_FIELDS}
+                client._req("PUT", f"docking_offsets/{offs[0]['guid']}", json=want)
+                if _offset_differs(d["docking_offsets"], client._req("GET", f"docking_offsets/{offs[0]['guid']}")):
+                    raise RuntimeError("docking offset escrito, pero al releerlo no coincide con el catálogo")
     elif op.kind == "position":
         body = {k: d[k] for k in ("guid", "name", "type_id", *POSE, "map_id")}
         if d["docking_offsets"]:
@@ -708,6 +774,22 @@ class MirSync:
     def capture(self, guid: str) -> dict:
         from fm.adapters.mir.create import capture
         return capture(self, guid)
+
+    def recapture(self, guid: str) -> dict:
+        """Trae al catálogo la versión de este robot de un recurso del catálogo (#19)."""
+        from fm.adapters.mir.create import recapture
+        return recapture(self, guid)
+
+    def foreign(self) -> list[dict]:
+        """Lo hecho en la web de este robot dentro de lo de la flota, con su GUID propio (#19)."""
+        from fm.adapters.mir.create import foreign
+        return foreign(self)
+
+    def bring(self, kind: str, source: str, others=lambda kind, parent: set(), other_names=None,
+              config_refs=()) -> dict:
+        """Lo trae al catálogo con GUID del proyecto y lo sustituye en este robot (#19)."""
+        from fm.adapters.mir.create import bring
+        return bring(self, kind, source, others, other_names, config_refs)
 
     def adoptable(self) -> list[dict]:
         from fm.adapters.mir.create import adoptable

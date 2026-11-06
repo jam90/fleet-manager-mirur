@@ -74,7 +74,7 @@ class FakeMir:
 
     def __init__(self):
         self.db = {"sessions": {}, "maps": {}, "positions": {}, "sounds": {}, "zones": {}, "mission_groups": {},
-                   "missions": {}, "actions": {}}
+                   "missions": {}, "actions": {}, "docking_offsets": {}}
         self.writes: list[tuple[str, str]] = []
         self.status = {"map_id": MAP, "position": {"x": 1.23456, "y": 4.5, "orientation": 89.987}}
 
@@ -96,6 +96,11 @@ class FakeMir:
                 doc["actions"] = self._zone_actions(doc.get("actions", []))
             if parts[0] == "positions":
                 doc.setdefault("parent_id", None)
+                if "offset_x" in json:            # el MiR crea el docking offset del marcador, con GUID propio
+                    o = str(uuid.uuid4())
+                    self.db["docking_offsets"][o] = {"guid": o, "pos_id": g, "x_offset": json["offset_x"],
+                                                     "y_offset": json["offset_y"],
+                                                     "orientation_offset": json["offset_orientation"]}
                 if doc["type_id"] in (11, 20):    # el MiR crea la entrada solo, 1 m más allá
                     e = str(uuid.uuid4())
                     self.db["positions"][e] = {"guid": e, "name": doc["name"], "type_id": doc["type_id"] + 1,
@@ -123,6 +128,9 @@ class FakeMir:
                     for g in [g for g, x in self.db[t].items() if x.get("map_id") == parts[1]]:
                         del self.db[t][g]
             return None
+        if method == "PUT" and parts[0] in ("docking_offsets", "maps"):
+            self.db[parts[0]][parts[1]].update(json)
+            return self.db[parts[0]][parts[1]]
         if method == "PUT" and parts[0] == "positions":
             self.db["positions"][parts[1]].update(json)
             return self.db["positions"][parts[1]]
@@ -138,7 +146,7 @@ class FakeMir:
             if parts[0] == "mission_groups" and len(parts) == 3:
                 return [m for m in self.db["missions"].values() if m["group_id"] == parts[1]]
             if parts[0] == "positions" and len(parts) == 3 and parts[2] == "docking_offsets":
-                return []
+                return [{"guid": o["guid"]} for o in self.db["docking_offsets"].values() if o["pos_id"] == parts[1]]
             if len(parts) == 1:
                 return list(self.db[parts[0]].values())
             if parts[0] == "sessions" and len(parts) == 3:
@@ -429,3 +437,60 @@ def test_fleet_maps_para_la_seccion_flota(tmp_path):
     assert [z["name"] for z in m["zones"]] == ["lento"]
     assert y.map_png(MAP) == tmp_path / "maps" / f"{MAP}.png"
     assert y.map_png(P_NORMAL) is None and y.map_png("../../etc/passwd") is None
+
+
+# ------------------------------- sustituir positions y mapas en su sitio (decisión 178)
+def _deployed(cat, mir, guids):
+    ops = apply(mir, cat, plan(cat, fetch_view(mir, cat, cat.closure(guids)), cat.closure(guids), "mir-2"))
+    assert {o.status for o in ops} == {"hecho"}, [(o.name, o.status, o.detail) for o in ops]
+
+
+def test_sustituir_un_marcador_lo_corrige_en_su_sitio(cat):
+    mir = FakeMir()
+    _deployed(cat, mir, [P_MARKER])
+    pos, offs = mir.db["positions"], mir.db["docking_offsets"]
+    pos[P_MARKER].update(name="VL viejo", pos_x=7.0)               # en el robot, la versión antigua
+    off = next(o for o in offs.values() if o["pos_id"] == P_MARKER)
+    off["x_offset"] = -0.7
+    guids = cat.closure([P_MARKER])
+    op = next(o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2") if o.guid == P_MARKER)
+    assert (op.verb, op.replaceable) == ("distinta", True)
+    assert "name, pose, docking offset" in op.detail and "márcala para sustituirla" in op.detail
+    ops = plan(cat, fetch_view(mir, cat, guids), guids, "mir-2", replace=[P_MARKER])
+    op = next(o for o in ops if o.guid == P_MARKER)
+    assert op.verb == "sustituir" and op.detail.startswith("corregir en su sitio")
+    apply(mir, cat, ops)
+    assert op.status == "hecho", op.detail
+    assert (pos[P_MARKER]["name"], pos[P_MARKER]["pos_x"], off["x_offset"]) == ("VL", 5.0, -1.0)
+    assert ("DELETE", f"positions/{P_MARKER}") not in mir.writes   # mismo GUID: las missions siguen valiendo
+    assert {o.verb for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2")} == {"igual"}
+
+
+def test_el_tipo_de_una_position_no_se_sustituye(cat):
+    mir = FakeMir()
+    _deployed(cat, mir, [P_NORMAL])
+    mir.db["positions"][P_NORMAL]["type_id"] = 11
+    guids = cat.closure([P_NORMAL])
+    op = next(o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2", replace=[P_NORMAL])
+              if o.guid == P_NORMAL)
+    assert (op.verb, op.replaceable) == ("distinta", False) and "retírala" in op.detail
+
+
+def test_sustituir_un_mapa_lo_corrige_en_su_sitio(cat):
+    mir = FakeMir()
+    _deployed(cat, mir, [MAP])
+    mir.db["maps"][MAP].update(origin_x=3.0, base_map="otra imagen")
+    mir.status["map_id"] = MAP                                     # es su mapa activo
+    guids = cat.closure([MAP])
+    op = next(o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2") if o.guid == MAP)
+    assert (op.verb, op.replaceable) == ("distinta", True) and "origin_x, imagen" in op.detail
+    ops = plan(cat, fetch_view(mir, cat, guids), guids, "mir-2", replace=[MAP])
+    op = next(o for o in ops if o.guid == MAP)
+    assert op.verb == "sustituir" and "mapa activo" in op.warning
+    apply(mir, cat, ops)
+    assert op.status == "hecho" and mir.db["maps"][MAP]["origin_x"] == -1.0
+    assert ("DELETE", f"maps/{MAP}") not in mir.writes
+    # Otro site: no se sustituye.
+    mir.db["maps"][MAP]["session_id"] = "otro-site"
+    op = next(o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2", replace=[MAP]) if o.guid == MAP)
+    assert (op.verb, op.replaceable) == ("distinta", False)

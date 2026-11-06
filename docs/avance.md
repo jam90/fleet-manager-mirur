@@ -3362,6 +3362,121 @@ recurso»). Comprobado con Chromium sin ventana: el clic y la carga
 directa de `#crear/borrar` dejan la lista a la vista; `#crear` sigue
 empezando arriba.
 
+## 2026-11-06 — Traer al catálogo lo cambiado o hecho en la web de un robot (punto #19)
+
+Pedido por el usuario: recapturar desde la interfaz positions, missions o
+mapas que no se crearon desde el FM, **dándoles el GUID del proyecto**,
+no solo trayendo su contenido. Hasta ahora, solo lo creado desde el FM se
+podía volver a capturar; lo demás, con `scripts/catalog_capture.py`.
+
+177. **Dos casos, los dos en Sincronización** (`create.recapture`,
+     `create.foreign`, `create.bring`; `POST /api/sync/<robot>/recapture`,
+     `GET …/foreign`, `POST …/bring`):
+     - **Ya tiene GUID del proyecto y en el robot es distinto** (un
+       marcador recalibrado, una mission retocada en el Blockly, una zona
+       o un mapa editados): en la vista previa, la fila *distinta* lleva
+       **«Traer al catálogo»**, que guarda en el catálogo la versión de ese
+       robot con el mismo GUID. Vale para missions, positions (con la
+       entrada del marcador), zonas y mapas (imagen, resolución, origen y
+       nombre; sus positions y zonas, una a una). Solo lee el robot. El
+       `_origen` no cambia (dice cómo entró, y decide qué sale en «Creado
+       desde aquí»); se apunta `_recapturado` con robot y fecha, y el aviso
+       de docking offset de la vista previa usa ese robot. Una position
+       renombrada en la web no puede repetir nombre en el catálogo
+       (decisión 174). En una mission, un GUID propio del robot ya no se
+       traduce al del catálogo, como al capturar: si la mission apunta al
+       original de una position, se dice.
+     - **Hecho en la web del robot, con su GUID propio**: bloque «Hecho en
+       la web de <robot>» → «Buscar» lista las positions y zonas creadas
+       en su web sobre un mapa del catálogo y las missions de un grupo del
+       catálogo (las entradas de marcador, no: van con su madre).
+       **«Traer al catálogo»** les da el siguiente GUID del estándar (o el
+       que ya tenían, si se trajeron antes) y, **decidido por el usuario,
+       el FM las sustituye en ese robot**: despliega la copia con el GUID
+       nuevo y borra el original (el MiR no deja cambiar un GUID). Primero
+       la copia: si falla, el original se queda y se dice. No se hace con
+       el robot ocupado (409), mientras otro despliegue (cuenta como uno),
+       si una mission del robot usa el original (se leen las actions de
+       todas, ~1,5 s con 70 missions) o si es la mission de una action de
+       `fleet.yaml` por su GUID propio; entonces no se toca nada y el aviso
+       dice cuál. Una position no puede llamarse como otra del catálogo ni
+       de otro robot (decisión 174; el original y su entrada no cuentan).
+       Una mission con el nombre de otra del catálogo en su grupo se manda
+       a «Adoptar» (decisión 116). Una zona con un sonido que no es del
+       catálogo, no.
+     Los mapas hechos en la web siguen con «Capturar de un robot»
+     (decisión 132): el original puede ser el mapa activo, y se activa a
+     mano el del catálogo. Guía: «Traer al catálogo lo cambiado en la web
+     de un robot», y los pasos de «Cambiar una mission» y «Cambiar o
+     quitar una zona».
+
+Leído de los robots antes de empezar (solo GET): con GUID propio en los
+mapas y grupos del catálogo solo hay las entradas de los marcadores (las
+crea el MiR) y `prueba-cola`, en los dos. 68 missions por robot.
+
+Probado: `pytest` 359 (7 nuevos en `tests/adapters/test_mir_create.py`
+y 1 en `tests/test_web.py`). Con un Chromium sin ventana y un MiR falso
+sobre una copia del catálogo: una position de la flota movida en el robot
+sale *distinta*, se trae y queda *igual*; una position hecha en su web
+entra como `…-0001-028` y desaparece de la lista. Sin errores en consola
+ni scroll horizontal a 1300 y 390 px. **Sin probar con los MiR.**
+
+**Probado por el usuario con mir-2** (FM reiniciado): `prueba-mapaprueba`,
+creada en la web sobre `mapa-pruebas`, entra con GUID del proyecto. Al
+probarlo pidió que el bloque tenga **su propio selector de robot** (el
+del panel «Robot» queda muy arriba): ahora «Hecho en la web de un robot»
+lleva su lista de robots, que por defecto propone el del panel «Robot».
+
+**Lo que faltaba para cerrar el ciclo** (sustituir positions y mapas en
+los demás robots), hecho el mismo día: decisión 178.
+
+## 2026-11-06 — Sustituir positions y mapas distintos (punto #19)
+
+Cierra el ciclo de la decisión 177: tras traer al catálogo un marcador
+recalibrado o un mapa retocado en un robot, los demás lo veían *distinta*
+y «Sustituir» solo valía para missions y zonas.
+
+178. **«Sustituir» vale también para positions y mapas, y los corrige en
+     su sitio con PUT**, con el mismo GUID: borrarlos y crearlos rompería
+     lo que va a ellos (las missions de la web del robot que van a una
+     position; las positions y zonas de un mapa, que el MiR borra con él).
+     - **Position**: `PUT positions/<guid>` con nombre y pose, y el docking
+       offset con `PUT docking_offsets/<guid del robot>` (tiene GUID propio
+       en cada robot, decisión 77). Se relee y, si no coincide, error. La
+       entrada del marcador sigue con su «corregir» de siempre.
+     - **La vista previa compara ya el docking offset** de los marcadores
+       (antes no): un marcador recalibrado puede cambiar solo el offset.
+       Se lee el del robot para las positions que tienen uno en el
+       catálogo; sin uno de los dos no se compara.
+     - **Mapa**: `PUT maps/<guid>` con nombre, imagen, resolución y origen;
+       el site no. Si es el mapa activo de ese robot, la vista previa
+       avisa de comprobar después la localización en su web.
+     - **Lo que no se puede cambiar sale *distinta* sin «Sustituir»**, con
+       el motivo: el tipo o el mapa de una position (decisión 119:
+       retirarla y volver a crearla) y el site de un mapa. Quién se puede
+       sustituir lo dice el servidor (`Op.replaceable`) y la casilla de la
+       vista previa sale solo ahí.
+     - La confirmación de «Desplegar» separa lo que se borra y se crea de
+       nuevo (missions, y una zona de otro tipo) de lo que se corrige en
+       su sitio.
+     Leído de los robots (solo GET): positions, docking offsets y mapas
+     admiten PUT (`allowed_methods`); los dos robots están en
+     `suberri_mirur`. Guía: el paso «Llevarlo a los demás robots» de
+     «Traer al catálogo lo cambiado en la web de un robot».
+
+**Visto por el usuario al probarlo con mir-2:** recalibrado el VL-marker
+`FM-mapa-pruebasH2D1-VL` en la web, el marcador salía *igual* y solo su
+entrada había cambiado, que sale **«corregir»** (al desplegar, el FM la
+devolvería a la pose del catálogo), sin «Traer al catálogo». Ahora la
+fila «corregir» de una entrada también lo lleva, y `recapture` de una
+entrada trae su marcador con ella.
+
+Probado: `pytest` 362 (3 nuevos en `tests/adapters/test_mir_sync.py`;
+`FakeMir` simula ya los docking offsets y el PUT de mapas). Con un
+Chromium sin ventana y un MiR falso: una position movida en el robot sale
+con «Sustituir», la confirmación la da como «se corrigen en su sitio» y,
+desplegada, vuelve a salir igual. **Los PUT sin probar con los MiR.**
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3453,13 +3568,12 @@ las del FM son placeholders y no hay tiempos que medir.
 
 **Configurador y sincronización, más adelante**
 
-- **#19** **Sincronización, siguientes versiones:** recapturar desde la UI una
-    position que no se creó en la pestaña Crear (p. ej. un marcador
-    recalibrado en un robot; hoy, con `POST /api/create/<serial>/capture` o
-    `scripts/catalog_capture.py`); sustituir positions y mapas distintos;
-    desplegar mapas a un robot cuyo site activo es otro (no probado).
-    Hecho el 2026-10-23: adoptar missions hechas en la web (decisión 116) y
-    sustituir missions distintas (decisión 117).
+- **#19** **Sincronización, siguientes versiones:** desplegar mapas a un
+    robot cuyo site activo es otro (no probado). Hecho: adoptar missions
+    hechas en la web (decisión 116), sustituir missions distintas (117) y,
+    el 2026-11-06, traer al catálogo lo cambiado o hecho en la web de un
+    robot, con GUID del proyecto (177), y sustituir positions y mapas en
+    su sitio (178; los PUT, sin probar con los MiR).
 - **#28** Terminar `coger` (decisiones 116–118). Hecho: adoptada y desplegada
     en mir-1, y la copia `181aad0a-…` borrada en su web. Falta: cuando
     MESA_TKNIKA esté colocada, recapturarla de mir-1 y desplegar en mir-2

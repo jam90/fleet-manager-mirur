@@ -59,7 +59,8 @@
   catálogo, que llega al robot con su primera mission (decisión 134). Site de la flota (`site:` en
   `fleet.yaml`, selector en la cabecera, decisión 129): un robot cuyo mapa
   activo es de otro site no recibe orders. En Sincronización, sobrantes y «Retirar de la flota» con el número
-  reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Un solo FM
+  reservado (`fm/adapters/mir/remove.py`, decisiones 105–106). Traer al catálogo lo cambiado o hecho en la web de un
+  robot, con GUID del proyecto (decisión 177). Un solo FM
   por broker (decisión 107). Pestaña **Guía** (decisión 109): paso a paso
   de cada proceso de administración; **todo cambio en el flujo de otra
   pestaña actualiza la Guía en el mismo cambio**. Menú lateral único por

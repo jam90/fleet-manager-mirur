@@ -560,3 +560,138 @@ def test_copiar_un_mapa_errores(sync):
         sync.copy_map(MAP, "copia", "-x", "suffix", other_names=otros)
     out = sync.copy_map(MAP, "copia", "-y", "suffix", other_names=otros)
     assert out["positions"] == 3                                  # A, VL y B: el borrador B2 no se copia
+
+
+# ------------------- traer lo hecho en la web del robot, con GUID del proyecto (#19)
+def _web_position(sync, guid="rw", name="Mesa web", type_id=11):
+    """Una position hecha en la web del robot sobre el mapa del catálogo; si es
+    un marcador, con la entrada que le pone el MiR."""
+    db = sync.client.db
+    db["positions"][guid] = {"guid": guid, "name": name, "type_id": type_id, "pos_x": 2.0, "pos_y": 3.0,
+                             "orientation": 45.0, "map_id": MAP, "parent_id": None}
+    if type_id == 11:
+        db["positions"][guid + "e"] = {"guid": guid + "e", "name": name, "type_id": 12, "pos_x": 3.0, "pos_y": 3.0,
+                                       "orientation": 45.0, "map_id": MAP, "parent_id": guid}
+
+
+def test_lista_lo_hecho_en_la_web_dentro_de_lo_de_la_flota(sync):
+    _web_position(sync)
+    _web_mission(sync, "hecha en la web")
+    sync.client.db["zones"]["rz"] = {"guid": "rz", "name": "Pasillo", "type_id": 206, "map_id": MAP, "actions": [],
+                                     "polygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]}
+    sync.client.db["positions"]["fuera"] = {"guid": "fuera", "name": "otra", "type_id": 0, "map_id": "otro-mapa",
+                                            "parent_id": None}
+    got = sorted((x["kind"], x["name"], x["where"]) for x in sync.foreign())
+    # La entrada del marcador no sale (va con él), ni lo que está en un mapa que no es del catálogo.
+    assert got == [("mission", "hecha en la web", "g"), ("position", "Mesa web", "m"), ("zone", "Pasillo", "m")]
+
+
+def test_traer_un_marcador_lo_sustituye_en_el_robot(sync, tmp_path):
+    _web_position(sync)
+    out = sync.bring("position", "rw")
+    g = std_guid("position", 1, 1, 5)                    # el catálogo tiene 1..4 en ese mapa
+    assert (out["guid"], out["replaced"], out["name"]) == (g, True, "Mesa web")
+    cat = Catalog.load(tmp_path)
+    doc = cat.items[g]
+    assert (doc["type_id"], doc["pos_x"], doc["map_id"], doc["_origen"]["guid"]) == (11, 2.0, MAP, "rw")
+    entry = next(d for d in cat.items.values() if d.get("parent_id") == g)
+    assert entry["creada_por_mir"] and entry["guid"] == std_guid("position", 1, 1, 6)
+    db = sync.client.db["positions"]
+    assert "rw" not in db and "rwe" not in db             # el original y su entrada, borrados
+    assert db[g]["name"] == "Mesa web"                   # y la copia con el GUID del proyecto
+    # No sale en «Creado desde aquí»: no se creó desde el FM.
+    assert g not in {d["guid"] for d in sync.create_choices()["created"]}
+    assert sync.foreign() == []
+
+
+def test_traer_no_toca_nada_si_algo_del_robot_lo_usa(sync, tmp_path):
+    _web_position(sync, type_id=0)
+    _web_mission(sync, "va a la mesa", {"action_type": "move", "priority": 1, "parameters": [
+        {"id": "position", "value": "rw", "input_name": None}]})
+    before = set(Catalog.load(tmp_path).items)
+    with pytest.raises(CreateError, match="la usa 'va a la mesa'"):
+        sync.bring("position", "rw")
+    assert set(Catalog.load(tmp_path).items) == before and "rw" in sync.client.db["positions"]
+    # Ni si es la mission de una action de fleet.yaml por su GUID propio.
+    m = next(g for g, d in sync.client.db["missions"].items() if d["name"] == "va a la mesa")
+    with pytest.raises(CreateError, match="fleet.yaml"):
+        sync.bring("mission", m, config_refs={m})
+
+
+def test_traer_position_con_nombre_repetido(sync):
+    _web_position(sync, name="A", type_id=0)              # «A» ya está en el catálogo
+    with pytest.raises(CreateError, match=r"ya hay una position 'A' en el catálogo"):
+        sync.bring("position", "rw")
+    _web_position(sync, guid="rx", name="Montaje", type_id=0)
+    otros = {"montaje": ("Montaje", "mir-1 (mapa 'suberri')")}
+    with pytest.raises(CreateError, match=r"mir-1 \(mapa 'suberri'\)"):
+        sync.bring("position", "rx", other_names=otros)
+    # El original y su entrada en este robot no cuentan como repetidos.
+    _web_position(sync, guid="ry", name="Única")
+    assert sync.bring("position", "ry")["replaced"]
+
+
+def test_traer_zona_y_mission(sync, tmp_path):
+    sync.client.db["zones"]["rz"] = {"guid": "rz", "name": "Pasillo", "type_id": 206, "map_id": MAP, "actions": [],
+                                     "polygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]}
+    z = sync.bring("zone", "rz")
+    assert z["guid"] == std_guid("zone", 1, 1, 1) and "rz" not in sync.client.db["zones"]
+    assert sync.client.db["zones"][z["guid"]]["name"] == "Pasillo"
+    m = _web_mission(sync, "nueva web", {"action_type": "move", "priority": 1, "parameters": [
+        {"id": "position", "value": P_NORMAL, "input_name": "destino"}]})
+    out = sync.bring("mission", m)
+    assert out["replaced"] and m not in sync.client.db["missions"]
+    doc = Catalog.load(tmp_path).items[out["guid"]]
+    assert doc["group_id"] == GRP and doc["session_id"] == SES and doc["actions"][0]["parameters"][0]["value"] == P_NORMAL
+    assert sync.client.db["missions"][out["guid"]]["name"] == "nueva web"
+    # Con el nombre de una del catálogo en el mismo grupo: eso es «Adoptar».
+    m2 = _web_mission(sync, "principal")
+    with pytest.raises(CreateError, match="Adoptar"):
+        sync.bring("mission", m2)
+    with pytest.raises(CreateError, match="ya tiene GUID de la flota"):
+        sync.bring("mission", M_MAIN)
+
+
+# ---------------------- traer lo de la flota editado en la web de un robot (#19)
+def test_recapturar_un_marcador_movido_en_el_robot(sync, tmp_path):
+    from tests.adapters.test_mir_sync import P_ENTRY, P_MARKER
+    sync.deploy([P_MARKER])
+    db = sync.client.db["positions"]
+    db[P_MARKER].update(pos_x=5.5, orientation=170.0)      # recalibrado en la web de mir-2
+    entry = next(g for g, p in db.items() if p.get("parent_id") == P_MARKER)
+    db[entry]["pos_x"] = 6.4
+    out = sync.recapture(P_MARKER)
+    # (El catálogo de prueba guarda el offset solo con x/y/orientación; al traerlo llegan todas sus claves.)
+    assert out["changed"] == ["docking_offsets", "orientation", "pos_x", "entrada"]
+    assert ("DELETE", f"positions/{P_MARKER}") not in sync.client.writes          # solo lee el robot
+    cat = Catalog.load(tmp_path)
+    d = cat.items[P_MARKER]
+    assert (d["pos_x"], d["orientation"], cat.items[P_ENTRY]["pos_x"]) == (5.5, 170.0, 6.4)
+    assert d["_origen"] == {"robot": "mir-2"} and d["_recapturado"]["robot"] == "mir-2"   # el origen no cambia
+    _, ops = sync.preview([P_MARKER])
+    assert {o.verb for o in ops if o.kind == "position"} == {"igual"}             # ya coincide con el robot
+    # La entrada movida en la web sale «corregir»; traerla trae su marcador con ella.
+    db[entry]["pos_x"] = 6.9
+    out = sync.recapture(P_ENTRY)
+    assert (out["guid"], out["changed"]) == (P_MARKER, ["entrada"])
+    assert Catalog.load(tmp_path).items[P_ENTRY]["pos_x"] == 6.9
+
+
+def test_recapturar_mission_y_mapa(sync, tmp_path):
+    import base64
+    sync.deploy([M_SUB])
+    acts = [a for a in sync.client.db["actions"].values() if a["mission_id"] == M_SUB]
+    for a in acts:                                          # se quita el sonido en la web
+        if a["action_type"] == "sound":
+            del sync.client.db["actions"][a["guid"]]
+    out = sync.recapture(M_SUB)
+    assert out["changed"] == ["actions"] and len(Catalog.load(tmp_path).items[M_SUB]["actions"]) == 1
+    m = sync.client.db["maps"][MAP]
+    m.update(name="m", session_id=SES, resolution=0.05, origin_x=-1.5, origin_y=-2.0, origin_theta=0.0,
+             base_map=base64.b64encode(_png(6, 6)).decode())
+    out = sync.recapture(MAP)
+    assert out["changed"] == ["origin_x", "imagen"]
+    cat = Catalog.load(tmp_path)
+    assert cat.items[MAP]["origin_x"] == -1.5 and cat.map_png(MAP) == _png(6, 6)
+    with pytest.raises(CreateError, match="solo missions, positions, zonas y mapas"):
+        sync.recapture(GRP)

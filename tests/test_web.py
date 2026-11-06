@@ -371,6 +371,35 @@ def test_copiar_un_mapa_desde_la_web():
     assert bad.status_code == 400 and "repetirían" in bad.json()["detail"]
 
 
+def test_traer_desde_sincronizacion():
+    # #19: lo hecho en la web del robot entra con GUID del proyecto y se
+    # sustituye en él (escribe en el robot: libre y sin otro despliegue).
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    calls = []
+    sync.foreign = lambda: [{"kind": "position", "guid": "rw", "name": "Mesa", "where": "m"}]
+    sync.std_guids = lambda kind, parent=None: set()
+    sync.position_names = lambda: {}
+
+    def bring(kind, guid, others, other_names, config_refs):
+        calls.append((kind, guid, config_refs, srv.sync_status("sim-1")["deploying"]))
+        return {"kind": kind, "guid": "P9", "name": "Mesa", "source": guid, "robot": "sim-1", "replaced": True}
+    sync.bring = bring
+    sync.recapture = lambda g: {"kind": "position", "guid": g, "name": "A", "robot": "sim-1", "changed": ["pos_x"]}
+    c = TestClient(srv.app)
+    assert c.get("/api/sync/sim-1/foreign").status_code == 409                     # sin telemetría
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
+    assert c.get("/api/sync/sim-1/foreign").json()["items"][0]["guid"] == "rw"
+    r = c.post("/api/sync/sim-1/bring", json={"kind": "position", "guid": "rw"})
+    assert r.status_code == 200 and r.json()["guid"] == "P9"
+    assert calls[-1][:2] == ("position", "rw") and calls[-1][3] is True              # cuenta como despliegue
+    assert "m" in calls[-1][2] and not srv.sync_status("sim-1")["deploying"]         # missions de fleet.yaml
+    assert c.post("/api/sync/sim-1/recapture", json={"guid": "A"}).json()["changed"] == ["pos_x"]
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0, foreign_busy=True)
+    busy = c.post("/api/sync/sim-1/bring", json={"kind": "position", "guid": "rw"})
+    assert busy.status_code == 409 and "ocupado" in busy.json()["detail"] and len(calls) == 1
+
+
 def test_crear_no_aplica_sin_la_capacidad():
     srv, _ = _server()
     c = TestClient(srv.app)

@@ -182,6 +182,11 @@ class CaptureIn(BaseModel):
     guid: str
 
 
+class BringIn(BaseModel):
+    kind: str                    # position | zone | mission
+    guid: str                    # GUID propio del robot (hecho en su web)
+
+
 class AdoptIn(BaseModel):
     source: str               # GUID de la mission en el robot (sin GUID de la flota)
     target: str = ""          # GUID del catálogo al que pasa; vacío = uno nuevo de su grupo
@@ -848,6 +853,71 @@ class WebServer:
             raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
         return self.syncs[serial]
 
+    def foreign(self, serial: str) -> list[dict]:
+        """Lo hecho en la web del robot dentro de lo de la flota, con GUID propio (#19)."""
+        sync = self._sync_for(serial)
+        if not hasattr(sync, "foreign"):
+            raise HTTPException(400, f"el driver de '{serial}' no permite traer recursos")
+        if self.robots[serial].last_telemetry is None:
+            raise HTTPException(409, f"'{serial}' no responde")
+        try:
+            return sync.foreign()
+        except Exception as e:
+            raise HTTPException(502, f"{serial}: {e}")
+
+    def bring(self, serial: str, body: BringIn) -> dict:
+        """Traer al catálogo con GUID del proyecto y sustituir el original en
+        ese robot (#19). Escribe en el robot: tiene que estar libre, y nadie
+        más puede desplegar en él mientras tanto."""
+        sync = self._sync_for(serial)
+        if not hasattr(sync, "bring"):
+            raise HTTPException(400, f"el driver de '{serial}' no permite traer recursos")
+        st = self.sync_status(serial)
+        if not st["online"]:
+            raise HTTPException(409, f"'{serial}' no responde")
+        if st["busy"]:
+            raise HTTPException(409, f"'{serial}' está ocupado (una order, la carga o una mission de su web): se "
+                                     "sustituye en el robot, así que espera a que quede libre")
+        # Missions de fleet.yaml apuntadas por GUID propio del robot: no se borran.
+        refs = {str(d.get("mission")) for d in (self.cfg.actions or {}).values() if isinstance(d, dict)}
+        with self._deploy_lock:
+            if serial in self._deploying:
+                raise HTTPException(409, f"ya hay un despliegue en curso en '{serial}'")
+            self._deploying.add(serial)
+        try:
+            with self._create_lock:
+                out = sync.bring(body.kind, body.guid,
+                                 others=lambda kind, parent: self._others_guids(serial, kind, parent),
+                                 other_names=self._others_position_names(serial), config_refs=refs)
+        except ValueError as e:              # lo usa una mission, nombre repetido…
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"{serial}: {e}")
+        finally:
+            self._deploying.discard(serial)
+        log.info("[web] %s %r de %s traída al catálogo como %s%s", body.kind, out["name"], serial, out["guid"],
+                 " y sustituida en el robot" if out["replaced"] else f" ({out.get('error')})")
+        self.monitor.check_async(serial)
+        return out
+
+    def recapture(self, serial: str, guid: str) -> dict:
+        """Traer al catálogo la versión de un robot de un recurso del catálogo (#19). Solo lee el robot."""
+        sync = self._sync_for(serial)
+        if not hasattr(sync, "recapture"):
+            raise HTTPException(400, f"el driver de '{serial}' no permite traer recursos")
+        if self.robots[serial].last_telemetry is None:
+            raise HTTPException(409, f"'{serial}' no responde")
+        with self._create_lock:
+            try:
+                out = sync.recapture(guid)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            except Exception as e:
+                raise HTTPException(502, f"{serial}: {e}")
+        log.info("[web] %s %r traída de %s al catálogo (%s)", out["kind"], out["name"], serial,
+                 ", ".join(out["changed"]) or "sin cambios")
+        return out
+
     def _run_deploy(self, serial: str, sync, guids: list[str], only_create: bool = False,
                     replace: list[str] = ()) -> None:
         topic = f"fm/sync/{serial}"
@@ -1214,6 +1284,18 @@ class WebServer:
             return {"catalog": first.catalog().summary() if first else [],
                     "robots": [self.sync_status(s) for s in self.robots],
                     "reports": self.monitor.reports}
+
+        @app.get("/api/sync/{serial}/foreign")
+        def sync_foreign(serial: str):      # `def`: REST bloqueante
+            return {"items": self.foreign(serial)}
+
+        @app.post("/api/sync/{serial}/bring")
+        def sync_bring(serial: str, body: BringIn):
+            return self.bring(serial, body)
+
+        @app.post("/api/sync/{serial}/recapture")
+        def sync_recapture(serial: str, body: CaptureIn):
+            return self.recapture(serial, body.guid)
 
         @app.post("/api/sync/{serial}/check")
         def sync_check(serial: str, body: CheckIn):

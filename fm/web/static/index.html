@@ -273,6 +273,7 @@
   .ops .v-distinta .mark { color: var(--bad); } .ops li.v-igual { color: var(--ink-3); }
   .ops .v-sustituir .mark { color: var(--warn); }
   .ops .replace { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-weight: 700; font-size: 13px; }
+  .ops .link-btn { margin-left: 8px; font-size: 13px; }
   .ops .warnline { display: block; color: var(--warn); font-weight: 700; }
   .ops .st { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
   .st-hecho { color: var(--ok); } .st-error { color: var(--bad); } .st-saltada { color: var(--warn); }
@@ -1836,11 +1837,17 @@
               <span class="mark">{{ VERB_MARK[o.verb] }}</span>
               <span><span class="muted">{{ KIND_LABEL[o.kind] || o.kind }}</span> <b>{{ o.name }}</b><code class="guid">{{ o.guid }}</code></span>
               <span>{{ VERB_LABEL[o.verb] }}<template v-if="o.detail"> · {{ o.detail }}</template>
-                <!-- Sustituir (decisiones 117 y 124): missions distintas (se borran y se crean con el mismo
-                     GUID) y zonas distintas (se corrigen en su sitio). -->
-                <label class="replace" v-if="(o.kind === 'mission' || o.kind === 'zone') && (o.verb === 'distinta' || o.verb === 'sustituir') && o.status === 'pendiente'">
+                <!-- Sustituir (decisiones 117, 124 y 178): missions distintas (se borran y se crean con el mismo
+                     GUID); zonas, positions y mapas distintos (se corrigen en su sitio). Lo dice el servidor. -->
+                <label class="replace" v-if="o.replaceable && (o.verb === 'distinta' || o.verb === 'sustituir') && o.status === 'pendiente'">
                   <input type="checkbox" :checked="!!syncState.replace[o.guid]" @change="toggleReplace(o.guid, $event.target.checked)"
                          :disabled="syncState.loading"> Sustituir</label>
+                <!-- #19: o al revés, la versión del robot al catálogo (mismo GUID; solo lee el robot). -->
+                <!-- La entrada de un marcador movida en el robot sale «corregir»: traerla trae su marcador. -->
+                <button class="link-btn" type="button" v-if="o.status === 'pendiente' && ((o.verb === 'distinta' && RECAPTURABLE.includes(o.kind))
+                                                                                         || (o.verb === 'corregir' && o.kind === 'position'))"
+                        :disabled="syncState.loading" @click="recaptureOp(o)"
+                        :title="'Guardar en el catálogo la versión de ' + syncState.target + (o.verb === 'corregir' ? ' (con su marcador o cargador)' : '') + ' (no escribe en el robot)'">Traer al catálogo</button>
                 <span class="warnline" v-if="o.warning">⚠ {{ o.warning }}</span></span>
               <span class="st" :class="'st-' + o.status.replace(' ', '-')">{{ o.status === 'pendiente' ? '' : o.status }}</span>
             </li>
@@ -1848,6 +1855,43 @@
         </template>
         <p class="empty" v-else>Elige qué sincronizar y en qué robot, y pide la vista previa: aquí verás qué se crearía, qué se corrige y qué ya está.</p>
       </div>
+    </div>
+    <!-- #19: lo hecho en la web de un robot (con su GUID propio) dentro de lo de la flota entra en el
+         catálogo con GUID del proyecto, y el FM lo sustituye en ese robot. -->
+    <div class="panel" id="hecho-en-la-web">
+      <h3>Hecho en la web de un robot</h3>
+      <p class="hint">Positions y zonas creadas en la web del MiR sobre un mapa del catálogo, y missions en un grupo del catálogo,
+        que aún llevan el GUID del robot. <b>Traer al catálogo</b> les da el GUID del proyecto y, en ese robot, crea la copia y
+        <b>borra el original</b> (el MiR no deja cambiar un GUID). No se hace si el robot está ocupado o si una mission suya usa
+        el original. Los mapas hechos en su web se traen en Catálogo › Crear recurso › Mapa › «Capturar de un robot».</p>
+      <!-- Su propio robot (no el del panel «Robot», que queda muy arriba); por defecto, el mismo. -->
+      <div class="sync-robots">
+        <label v-for="r in syncState.robots" :key="r.serial" class="sync-robot" :class="{ off: !r.supported }">
+          <input type="radio" name="foreign-target" :value="r.serial" v-model="foreignState.robot" :disabled="!r.supported">
+          <b>{{ r.serial }}</b>
+          <span class="pill" :class="syncRobotState(r).key">{{ syncRobotState(r).label }}</span>
+        </label>
+      </div>
+      <div class="acts">
+        <button class="btn" id="foreign-load" :disabled="!foreignState.robot || foreignState.loading" @click="loadForeign">
+          Buscar en {{ foreignState.robot || 'el robot' }}</button>
+        <span class="feedback">{{ foreignState.msg }}</span>
+      </div>
+      <p class="empty" v-if="foreignState.loading">Leyendo {{ foreignState.serial }}…</p>
+      <p class="empty" v-else-if="foreignState.loaded && !foreignState.items.length">
+        {{ foreignState.serial }} no tiene nada hecho en su web dentro de los mapas y grupos del catálogo.</p>
+      <ul class="drafts" v-else-if="foreignState.items.length">
+        <li v-for="x in foreignState.items" :key="x.guid">
+          <span><span class="muted">{{ KIND_LABEL[x.kind] }}</span> <b>{{ x.name }}</b>
+            <span class="muted">· {{ x.kind === 'mission' ? 'grupo' : 'mapa' }} {{ x.where }}</span>
+            <span class="chip" v-if="x.captured_as">ya en el catálogo</span>
+            <code class="guid">{{ x.guid }}</code></span>
+          <span class="acts">
+            <a class="btn" :href="x.url" target="_blank" rel="noopener">Ver en el MiR ↗</a>
+            <button class="btn primary" :disabled="!!foreignState.busy" @click="bringForeign(x)">Traer al catálogo</button>
+          </span>
+        </li>
+      </ul>
     </div>
   </main>
 
@@ -1973,7 +2017,9 @@
             <p>Ábrela y cámbiala <b>en el sitio</b>. No la borres para rehacerla ni la guardes con «Guardar como»: la copia
               nace con otro GUID, el FM no la reconoce y la action que la usaba deja de encontrarla en ese robot.</p></li>
           <li><b>Llevar el cambio al catálogo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>Si se creó desde aquí, «Volver a capturar» en «Creado desde aquí», desde el robot donde la has editado.</p>
+            <p>En <a href="#sincronizacion">Sincronización</a>, márcala, elige el robot donde la has editado y «Vista previa»:
+              sale <i>distinta</i>; pulsa <b>«Traer al catálogo»</b> en su fila. Vale para cualquier mission de la flota, se
+              creara o no desde el FM. (Si se creó desde aquí, también «Volver a capturar» en «Creado desde aquí».)</p>
             <p><b>Si ya se hizo un «Guardar como»:</b> la copia sale en «Hechas en la web del MiR». Elige «en lugar de
               «su nombre»» (viene propuesta la del catálogo con el mismo nombre) y «Adoptar»: su contenido pasa al
               catálogo con el GUID de siempre, y Configuración no cambia. En el robot no se toca nada todavía.</p></li>
@@ -2164,9 +2210,10 @@
           <span class="hint">Se cambia en un robot y se lleva a los demás.</span></summary>
         <ol class="steps">
           <li><b>Cambiarla en la web del MiR</b><span class="where">web del MiR</span>
-            <p>En el robot donde se creó, edita la zona en el editor del mapa (forma, nombre, acciones). El tipo no.</p></li>
-          <li><b>Volver a capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>«Volver a capturar» en «Creado desde aquí».</p></li>
+            <p>En un robot, edita la zona en el editor del mapa (forma, nombre, acciones). El tipo no.</p></li>
+          <li><b>Traerla al catálogo</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Márcala, elige ese robot y «Vista previa»: sale <i>distinta</i>; «Traer al catálogo» en su fila. (Si se creó
+              desde aquí, también «Volver a capturar» en «Creado desde aquí».)</p></li>
           <li><b>Llevar el cambio</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>En la vista previa de los demás robots sale <b>distinta</b>: marca <b>Sustituir</b> y «Desplegar». Se corrige en
               su sitio, con el mismo GUID. Con el robot ocupado no se deja: espera a que quede libre.</p></li>
@@ -2174,6 +2221,33 @@
             <p><b>Era una prueba creada aquí</b><a class="where" href="#crear/borrar">→ Catálogo › Borrar un recurso</a> «Borrar»: su número queda libre.</p>
             <p><b>Si no</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota»: se borra de todos
               los robots y su número queda reservado.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Traer al catálogo lo cambiado en la web de un robot
+          <span class="hint">Un marcador recalibrado, una mission retocada, una position o zona nueva hecha en el editor del MiR.</span></summary>
+        <ol class="steps">
+          <li><b>Algo de la flota, cambiado en un robot</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Márcalo (una mission, position, zona o mapa), elige el robot donde se cambió y «Vista previa». Sale
+              <i>distinta</i>: <b>«Traer al catálogo»</b> en su fila guarda en el catálogo la versión de ese robot, con el mismo
+              GUID. Solo lee el robot. La entrada de un marcador movida en el robot sale <i>corregir</i> (al desplegar,
+              el FM la devolvería a la pose del catálogo): su «Traer al catálogo» trae el marcador con su entrada. De un mapa se traen la imagen,
+              la resolución y el origen; sus positions y zonas, una a una.</p></li>
+          <li><b>Algo nuevo, hecho en la web de un robot</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>Abajo, «Hecho en la web de un robot»: elige el robot y «Buscar». Salen las positions y zonas creadas en su web sobre un mapa
+              del catálogo y las missions de un grupo del catálogo, que aún llevan el GUID del robot. <b>«Traer al
+              catálogo»</b> les da el GUID del proyecto y, en ese robot, crea la copia y borra el original. Con el robot
+              ocupado no se deja; si una mission de ese robot usa el original, o es la mission de una action de Configuración,
+              no se toca nada y el aviso dice cuál. Una position no puede llamarse como otra de ningún mapa ni robot.</p></li>
+          <li><b>Llevarlo a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>En la vista previa de los demás robots, lo cambiado sale <i>distinta</i>: marca <b>Sustituir</b> y lo nuevo sale
+              <i>crear</i>. «Desplegar». Una mission se borra y se vuelve a crear con el mismo GUID; una position (nombre, pose y
+              docking offset), una zona o un mapa (imagen, origen, resolución) se corrigen en su sitio, así que lo que va a
+              ellos sigue valiendo. El tipo de una position y el site de un mapa no se cambian: salen sin «Sustituir».
+              Si el mapa es el activo de ese robot, comprueba después en su web que sigue bien localizado.</p></li>
+          <li><b>Guardarlo en git</b><span class="where">terminal</span>
+            <p>El cambio está en <code>catalog/</code>: haz commit.</p></li>
         </ol>
       </details>
 
@@ -2677,14 +2751,80 @@ createApp({
     }
     async function syncDeploy() {
       const n = (opCounts.value.crear || 0) + (opCounts.value.corregir || 0) + (opCounts.value.sustituir || 0);
-      const subs = syncState.ops.filter(o => o.verb === 'sustituir').map(o => `«${o.name}»`);
-      const extra = subs.length ? `\n\nSe BORRAN y se vuelven a crear en el robot: ${subs.join(', ')}.` : '';
+      const subs = syncState.ops.filter(o => o.verb === 'sustituir');
+      const gone = subs.filter(o => o.detail.startsWith('borrar')).map(o => `«${o.name}»`);
+      const fixed = subs.filter(o => !o.detail.startsWith('borrar')).map(o => `«${o.name}»`);
+      const extra = (gone.length ? `\n\nSe BORRAN y se vuelven a crear en el robot: ${gone.join(', ')}.` : '')
+                  + (fixed.length ? `\n\nSe corrigen en su sitio, con el mismo GUID: ${fixed.join(', ')}.` : '');
       if (!confirm(`Desplegar en ${syncState.target}: ${n} cambios. Lo que ya está igual, o es distinto y no se ha marcado, no se toca.${extra}\n\n¿Seguir?`)) return;
       const r = await fetch(`/api/sync/${syncState.target}/deploy`, { method: 'POST',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guids: selected.value, replace: replaceList.value }) });
       if (!r.ok) { syncState.msg = 'no se despliega: ' + (await r.json()).detail; await loadSync(); return; }
       syncState.msg = 'desplegando…';
       const t = targetInfo.value; if (t) t.deploying = true;
+    }
+    // #19: traer al catálogo la versión del robot de un recurso que sale distinto (mismo GUID).
+    const RECAPTURABLE = ['mission', 'position', 'zone', 'map'];
+    async function recaptureOp(o) {
+      const robot = syncState.target;
+      const entry = o.verb === 'corregir' ? ' (la entrada, con su marcador o cargador)' : '';
+      if (!confirm(`Guardar en el catálogo la versión de ${robot} de «${o.name}»${entry}.\n\nLa del catálogo se sustituye; ` +
+                   `el robot no se toca. Después, los demás robots tendrán la versión antigua y saldrá «distinta»: ` +
+                   `se les lleva desde aquí.\n\n¿Seguir?`)) return;
+      syncState.loading = true; syncState.msg = `trayendo «${o.name}» de ${robot}…`;
+      try {
+        const r = await fetch(`/api/sync/${robot}/recapture`, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guid: o.guid }) });
+        const out = await r.json();
+        if (!r.ok) { syncState.msg = 'no se trae: ' + out.detail; return; }
+        syncState.msg = `«${out.name}» traída de ${robot} al catálogo` +
+          (out.changed.length ? ` (cambia: ${out.changed.join(', ')})` : ' (ya era igual)');
+        addEvent(robot, syncState.msg);
+      } catch (e) { syncState.msg = 'no se pudo contactar con el FM'; }
+      finally { syncState.loading = false; }
+      const msg = syncState.msg;
+      await loadSync();
+      await syncPreview();
+      syncState.msg = msg;
+    }
+    // #19: lo hecho en la web del robot, con su GUID propio, dentro de lo de la flota.
+    const foreignState = reactive({ robot: '', serial: '', items: [], loading: false, loaded: false, busy: '', msg: '' });
+    async function loadForeign() {
+      const serial = foreignState.robot;
+      Object.assign(foreignState, { serial, items: [], loading: true, loaded: false, msg: '' });
+      try {
+        const r = await fetch(`/api/sync/${serial}/foreign`);
+        const out = await r.json();
+        if (serial !== foreignState.serial) return;
+        if (!r.ok) { foreignState.msg = out.detail; return; }
+        Object.assign(foreignState, { items: out.items, loaded: true });
+      } catch (e) { foreignState.msg = 'no se pudo contactar con el FM'; }
+      finally { foreignState.loading = false; }
+    }
+    // Por defecto, el robot del panel «Robot»; se elige aparte. Al cambiarlo, la lista vieja se va.
+    watch(() => syncState.target, t => { if (!foreignState.robot) foreignState.robot = t; }, { immediate: true });
+    watch(() => foreignState.robot, () => Object.assign(foreignState, { items: [], loaded: false, msg: '' }));
+    async function bringForeign(x) {
+      const serial = foreignState.serial;
+      if (!confirm(`Traer al catálogo ${KIND_LABEL[x.kind]} «${x.name}» de ${serial}, con GUID del proyecto.\n\n` +
+                   `En ${serial} se crea la copia con el GUID nuevo y se BORRA el original (${x.guid}). ` +
+                   `Si alguna mission de ${serial} lo usa, no se toca nada.\n\n¿Seguir?`)) return;
+      foreignState.busy = x.guid; foreignState.msg = `trayendo «${x.name}»…`;
+      try {
+        const r = await fetch(`/api/sync/${serial}/bring`, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: x.kind, guid: x.guid }) });
+        const out = await r.json();
+        if (!r.ok) { foreignState.msg = 'no se trae: ' + out.detail; return; }
+        foreignState.msg = out.replaced
+          ? `«${out.name}» ya está en el catálogo como ${out.guid} y sustituida en ${serial}. Llévala a los demás robots desde aquí.`
+          : `«${out.name}» está en el catálogo como ${out.guid}, pero ${out.error}`;
+        addEvent(serial, foreignState.msg);
+      } catch (e) { foreignState.msg = 'no se pudo contactar con el FM'; }
+      finally { foreignState.busy = ''; }
+      const msg = foreignState.msg;
+      await loadSync();
+      await loadForeign();
+      foreignState.msg = msg;
     }
     // ---- estado de la flota: informes de SyncMonitor (rápida cada 5 min, completa bajo demanda)
     const catByGuid = computed(() => Object.fromEntries(syncState.catalog.map(i => [i.guid, i])));
@@ -3664,7 +3804,7 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, targetInfo, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh, opCounts,
-             canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
+             canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot, retire,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, maintLabel, toggleMaintenance, retryIdle, resetRobot, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,

@@ -774,15 +774,20 @@ def capture(sync, guid: str) -> dict:
     return {"kind": kind, "guid": guid, "name": main["name"], "detail": detail}
 
 
-def _capture_mission(sync, cat: Catalog, old: dict, source: str | None = None) -> tuple[str, dict]:
+def _capture_mission(sync, cat: Catalog, old: dict, source: str | None = None,
+                     translate_known: bool = True) -> tuple[str, dict]:
     """Documento del catálogo para `old` con lo que hay en el robot. Se lee
-    la mission `source` (adoptar) o, por defecto, la del mismo GUID."""
+    la mission `source` (adoptar) o, por defecto, la del mismo GUID.
+    `translate_known`: un GUID propio del robot que ya se capturó de él
+    (p. ej. una position del mapa antiguo) se cambia por el del catálogo.
+    Al recapturar no: una mission de la flota que apunta al original de una
+    position es justo el error de la decisión 174, y se dice."""
     c, guid = sync.client, source or old["guid"]
     m = _get_or(c, f"missions/{guid}", f"{old['name'] if not source else guid!r} ya no está en {sync.serial}")
     # GUID del robot → del catálogo, para lo capturado antes de este mismo robot
     # (positions del mapa antiguo, sub-missions...).
     known = {d["_origen"]["guid"]: g for g, d in cat.items.items()
-             if d.get("_origen", {}).get("robot") == sync.serial and d["_origen"].get("guid")}
+             if translate_known and d.get("_origen", {}).get("robot") == sync.serial and d["_origen"].get("guid")}
     errors = []
     actions = normalized_actions(c, guid)
     for a in actions:
@@ -864,6 +869,315 @@ def _capture_zone(sync, cat: Catalog, old: dict) -> tuple[str, dict]:
     doc = {"guid": guid, **z,
            "_origen": _origen(sync.serial, guid, mapa=old.get("_origen", {}).get("mapa", ""))}
     return "zone", doc
+
+
+# --------------------------------------------------------------- recapturar
+RECAPTURABLE = ("mission", "position", "zone", "map")
+
+
+def recapture(sync, guid: str) -> dict:
+    """Trae al catálogo la versión que tiene el robot de `sync` de un recurso
+    que ya está en el catálogo (#19): una mission, position, zona o mapa
+    editado en la web de ese robot (un marcador recalibrado, una mission
+    cambiada en el Blockly, una pared nueva en el mapa). Valga o no lo
+    creado desde el FM: se lee el mismo GUID de la flota en ese robot.
+
+    Solo lee el robot. Después, los demás robots tienen la versión antigua
+    y en Sincronización la ven distinta. El `_origen` no se toca (dice cómo
+    entró en el catálogo y decide qué sale en «Creado desde aquí»): se
+    apunta `_recapturado` con el robot y la fecha. De un mapa se traen la
+    imagen, la resolución, el origen y el nombre; sus positions y zonas se
+    traen una a una."""
+    cat = sync.catalog()
+    old = cat.items.get(guid)
+    if old is None:
+        raise CreateError(f"{guid} no está en el catálogo" + (" (es un borrador: captúralo en «Crear o importar "
+                                                             "recurso»)" if guid in cat.drafts else ""))
+    kind = cat.kind(guid)
+    if kind not in RECAPTURABLE:
+        raise CreateError(f"un recurso de tipo {kind} no se trae del robot: solo missions, positions, zonas y mapas")
+    if old.get("creada_por_mir"):
+        # La entrada de un marcador o cargador va con su madre: se trae la
+        # madre, que se lleva también la entrada (en la vista previa, la
+        # entrada movida en el robot sale «corregir», no «distinta»).
+        mother = cat.items.get(old.get("parent_id") or "")
+        if mother is None:
+            raise CreateError(f"la entrada de {old['name']!r} no tiene su marcador en el catálogo")
+        guid, old = mother["guid"], mother
+    png = None
+    with sync.lock:
+        if kind == "mission":
+            docs = [_capture_mission(sync, cat, old, translate_known=False)]
+        elif kind == "position":
+            docs = _capture_position(sync, cat, old)
+        elif kind == "zone":
+            docs = [_capture_zone(sync, cat, old)]
+        else:
+            doc, png = _recapture_map(sync, cat, old)
+            docs = [("map", doc)]
+    main = docs[0][1]
+    if kind == "position" and fold_name(main["name"]) != fold_name(old["name"]):
+        # Renombrada en la web del MiR: el nombre nuevo tampoco puede repetirse
+        # en el catálogo (decisión 174). La propia y su entrada no cuentan.
+        mine = {guid} | {g for g, d in cat.items.items() if d.get("parent_id") == guid}
+        every = {g: d for g, d in {**cat.items, **cat.drafts}.items() if g not in mine}
+        where = _name_in_use(main["name"], every, cat, {}, {})
+        if where:
+            raise CreateError(f"en {sync.serial} se llama {main['name']!r}, y ya hay una position con ese nombre en "
+                              f"{where[1]}: cámbiaselo en su web y vuelve a traerla")
+    stamp = {"robot": sync.serial, "fecha": date.today().isoformat()}
+    for _, d in docs:
+        before = cat.items.get(d["guid"])
+        if before is not None and "_origen" in before:
+            d["_origen"] = before["_origen"]
+        d["_recapturado"] = stamp
+    skip = {"_origen", "_recapturado", "borrador"}
+    changed = sorted(k for k in {*main, *old} - skip if main.get(k) != old.get(k))
+    if png is not None:
+        if png != cat.map_png(guid):
+            changed.append("imagen")
+        (Path(sync.catalog_dir) / FOLDERS["map"] / old["base_map"]).write_bytes(png)
+    strip = lambda d: {k: v for k, v in (d or {}).items() if k not in skip}  # noqa: E731
+    if kind == "position" and any(strip(cat.items.get(d["guid"])) != strip(d) for _, d in docs[1:]):
+        changed.append("entrada")
+    for k, d in docs:
+        write_doc(sync.catalog_dir, k, d)
+    return {"kind": kind, "guid": guid, "name": main["name"], "robot": sync.serial, "changed": changed}
+
+
+def _recapture_map(sync, cat: Catalog, old: dict) -> tuple[dict, bytes]:
+    c, guid = sync.client, old["guid"]
+    m = _get_or(c, f"maps/{guid}", f"{old['name']!r} no está en {sync.serial}")
+    if not m.get("base_map"):
+        raise CreateError(f"{sync.serial} no ha dado la imagen del mapa {old['name']!r}")
+    png = base64.b64decode(m["base_map"])
+    png_size(png)
+    name = (m.get("name") or old["name"]).strip()
+    if fold_name(name) != fold_name(old["name"]) and any(
+            cat.kind(g) == "map" and g != guid and fold_name(d["name"]) == fold_name(name)
+            for g, d in {**cat.items, **cat.drafts}.items()):
+        raise CreateError(f"en {sync.serial} se llama {name!r}, y ya hay otro mapa con ese nombre en el catálogo")
+    doc = {k: v for k, v in old.items() if k != "borrador"}
+    doc.update(name=name, **{k: float(m.get(k) or 0.0) for k in ("resolution", "origin_x", "origin_y", "origin_theta")})
+    return doc, png
+
+
+# ----------------------------------------- traer lo hecho en la web del robot
+FOREIGN_KINDS = ("position", "zone", "mission")
+
+
+def foreign(sync) -> list[dict]:
+    """Lo que el robot de `sync` tiene **con su GUID propio** dentro de lo de
+    la flota (#19): positions y zonas hechas en su web sobre un mapa del
+    catálogo y missions en un grupo del catálogo. Las entradas de marcadores
+    y cargadores no: las crea el MiR y van con su madre. Cada una con
+    `captured_as` si ya se trajo antes (el original sigue en el robot).
+    Los mapas hechos en su web van aparte (`capturable_maps`)."""
+    cat = sync.catalog()
+    maps = {g: d for g, d in cat.items.items() if cat.kind(g) == "map"}
+    groups = {g: d for g, d in cat.items.items() if cat.kind(g) == "missiongrp"}
+    brought = {d["_origen"]["guid"]: g for g, d in cat.items.items()
+               if d.get("_origen", {}).get("robot") == sync.serial and d["_origen"].get("guid")
+               and not is_std(d["_origen"]["guid"])}
+    out = []
+    with sync.lock:
+        c = sync.client
+        robot_maps = {m["guid"] for m in c._req("GET", "maps")}
+        for mg in sorted(set(maps) & robot_maps):
+            for p in c._req("GET", f"maps/{mg}/positions"):
+                if is_std(p["guid"]) or p["guid"].startswith(FACTORY) or p.get("type_id") in AUTO_CHILD_TYPES:
+                    continue
+                out.append({"kind": "position", "guid": p["guid"], "name": p["name"], "where": maps[mg]["name"],
+                            "parent": mg, "type_id": p.get("type_id"), "captured_as": brought.get(p["guid"]),
+                            "url": f"http://{c.host}/maps/{mg}"})
+            for z in c._req("GET", f"maps/{mg}/zones"):
+                if is_std(z["guid"]) or z["guid"].startswith(FACTORY):
+                    continue
+                out.append({"kind": "zone", "guid": z["guid"], "name": z["name"], "where": maps[mg]["name"],
+                            "parent": mg, "type_id": z.get("type_id"), "captured_as": brought.get(z["guid"]),
+                            "url": f"http://{c.host}/maps/{mg}"})
+        for gg in sorted(groups):
+            try:
+                rows = c._req("GET", f"mission_groups/{gg}/missions")
+            except MirApiError as e:
+                if e.status == 404:          # el robot no tiene ese grupo
+                    continue
+                raise
+            for m in rows:
+                if is_std(m["guid"]) or m["guid"].startswith(FACTORY):
+                    continue
+                out.append({"kind": "mission", "guid": m["guid"], "name": m["name"], "where": groups[gg]["name"],
+                            "parent": gg, "captured_as": brought.get(m["guid"]), "url": sync.web_url(m["guid"])})
+    return out
+
+
+def robot_users(client, guids: set[str]) -> list[str]:
+    """Missions del robot que usan alguno de `guids` en sus actions (una
+    position como destino, una sub-mission con `load_mission`...). Lee las
+    actions de todas: ~1,5 s con 70 missions."""
+    users = []
+    for m in client._req("GET", "missions"):
+        if m["guid"] in guids:
+            continue
+        for a in client._req("GET", f"missions/{m['guid']}/actions"):
+            if any(p.get("value") in guids for p in a.get("parameters", [])):
+                users.append(m["name"])
+                break
+    return sorted(users)
+
+
+def bring(sync, kind: str, source: str, others=lambda kind, parent: set(),
+          other_names: Mapping[str, tuple[str, str]] | None = None, config_refs: Iterable[str] = ()) -> dict:
+    """Trae al catálogo, **con GUID del proyecto**, la position, zona o
+    mission `source` hecha en la web del robot de `sync` (#19), y la
+    sustituye en ese robot: crea la copia con el GUID nuevo y borra el
+    original (el MiR no deja cambiar el GUID). Decisión del usuario: lo hace
+    el FM, no se deja para la web del MiR.
+
+    No toca nada si algo del robot usa el original (una mission de su web,
+    `robot_users`) o si es la mission de una action de `fleet.yaml`
+    (`config_refs`): habría que cambiarlo a mano primero. Si ya se trajo
+    antes (`_origen`), conserva su GUID. Una position no puede repetir el
+    nombre de otra del catálogo ni de otro robot (decisión 174); en este,
+    el original y su entrada no cuentan. `others(kind, parent)`: GUIDs
+    estándar de los demás robots, para no repetir número.
+
+    El robot tiene que estar libre: lo comprueba el servidor."""
+    if kind not in FOREIGN_KINDS:
+        raise CreateError(f"no se trae un recurso de tipo {kind!r} así (los mapas: «Capturar de un robot»)")
+    if is_std(source):
+        raise CreateError("ya tiene GUID de la flota: si en el robot es distinto, se trae desde la vista previa")
+    cat = sync.catalog()
+    every = {**cat.items, **cat.drafts}
+    prev = next((g for g, d in cat.items.items() if d.get("_origen", {}).get("robot") == sync.serial
+                 and d["_origen"].get("guid") == source), None)
+    with sync.lock:
+        c = sync.client
+        if kind == "position":
+            docs, name = _bring_position(sync, cat, every, source, prev, others, other_names or {})
+        elif kind == "zone":
+            docs, name = _bring_zone(sync, cat, every, source, prev, others)
+        else:
+            docs, name = _bring_mission(sync, cat, every, source, prev, others)
+        if source in set(config_refs):
+            raise CreateError(f"{name!r} es la mission de una action de fleet.yaml por su GUID propio: cámbiala en "
+                              "Configuración a la del catálogo cuando esté, y vuelve a traerla")
+        olds = {source} | ({h["guid"] for h in c._req("GET", f"positions/{source}/helper_positions")}
+                           if kind == "position" and docs[1:] else set())
+        users = robot_users(c, olds)
+        if users:
+            raise CreateError(f"en {sync.serial}, {'la usa' if len(users) == 1 else 'la usan'} "
+                              f"{', '.join(repr(u) for u in users)}: cámbialas en su web para que usen otra cosa "
+                              "(o tráelas también) y vuelve a intentarlo. No se ha tocado nada")
+    for k, d in docs:
+        write_doc(sync.catalog_dir, k, d)
+    guid = docs[0][1]["guid"]
+    out = {"kind": kind, "guid": guid, "name": name, "source": source, "robot": sync.serial, "again": bool(prev),
+           "replaced": False}
+    # En el robot: primero la copia, luego se borra el original. Si la copia
+    # falla, el original se queda (el catálogo ya la tiene: se puede reintentar).
+    ops = sync.deploy([guid])
+    failed = [f"{o.name}: {o.detail}" for o in ops if o.status == "error"]
+    if failed:
+        out["error"] = "no se ha podido crear la copia en el robot (" + "; ".join(failed) + "): el original se queda"
+        return out
+    with sync.lock:                    # al borrar un marcador, el MiR borra su entrada
+        sync.client._req("DELETE", f"{FOLDERS[kind]}/{source}")
+    out["replaced"] = True
+    return out
+
+
+def _bring_position(sync, cat, every, source, prev, others, other_names):
+    c = sync.client
+    p = _get_or(c, f"positions/{source}", f"la position {source} ya no está en {sync.serial}")
+    map_guid = p.get("map_id") or str(p.get("map") or "").rstrip("/").split("/")[-1]
+    if map_guid not in cat.items or cat.kind(map_guid) != "map":
+        raise CreateError(f"{p['name']!r} está en un mapa que no es del catálogo: captura el mapa entero")
+    if p["type_id"] in AUTO_CHILD_TYPES:
+        raise CreateError(f"la entrada de {p['name']!r} la crea el MiR: se trae con su marcador o cargador")
+    offsets = [c._req("GET", f"docking_offsets/{o['guid']}")
+               for o in c._req("GET", f"positions/{source}/docking_offsets")]
+    helpers = [c._req("GET", f"positions/{h['guid']}") for h in c._req("GET", f"positions/{source}/helper_positions")]
+    # Decisión 174, sin contarse a sí misma: ni el original y su entrada en
+    # este robot, ni lo que ya se trajo (y su entrada) en el catálogo.
+    mine_cat = {prev} | {g for g, d in cat.items.items() if prev and d.get("parent_id") == prev}
+    skip = {source} | {h["guid"] for h in helpers} | mine_cat
+    maps = {m["guid"]: m["name"] for m in c._req("GET", "maps")}
+    robot = {}
+    for q in c._req("GET", "positions"):
+        if q["guid"] in skip:
+            continue
+        mg = q.get("map_id") or str(q.get("map") or "").rstrip("/").split("/")[-1]
+        robot.setdefault(fold_name(q["name"]), (q["name"], f"{sync.serial} (mapa {maps.get(mg, mg)!r})"))
+    where = _name_in_use(p["name"], {g: d for g, d in every.items() if g not in mine_cat}, cat, robot, other_names)
+    if where:
+        raise CreateError(f"ya hay una position {where[0]!r} en {where[1]}: cámbiale el nombre a {p['name']!r} en la "
+                          "web del MiR y vuelve a traerla (la web lista las de todos los mapas juntas)")
+    _, inst, _, map_num = parse_std(map_guid)
+    taken = set(every) | _retired(sync) | robot_std_guids(c, "position", map_guid) | set(others("position", map_guid))
+    guid = prev or next_guid("position", inst, map_num, taken, per_parent=True)
+    taken.add(guid)
+    mapa = cat.items[map_guid]["name"]
+    docs = [("position", {
+        "guid": guid, "name": p["name"], "type_id": p["type_id"],
+        **{k: p[k] for k in ("pos_x", "pos_y", "orientation")}, "map_id": map_guid, "parent_id": None,
+        "docking_offsets": [{k: o.get(k) for k in OFFSET_KEYS} for o in offsets[:1]],
+        "creada_por_mir": False, "_origen": _origen(sync.serial, source, mapa=mapa)})]
+    if p["type_id"] in MARKER_TYPES and helpers:
+        e = helpers[0]
+        eg = next((g for g in mine_cat if g and g != prev), None) or next_guid("position", inst, map_num, taken,
+                                                                             per_parent=True)
+        docs.append(("position", {
+            "guid": eg, "name": e["name"], "type_id": e["type_id"],
+            **{k: e[k] for k in ("pos_x", "pos_y", "orientation")}, "map_id": map_guid, "parent_id": guid,
+            "docking_offsets": [], "creada_por_mir": True, "_origen": _origen(sync.serial, e["guid"], mapa=mapa)}))
+    return docs, p["name"]
+
+
+def _bring_zone(sync, cat, every, source, prev, others):
+    c = sync.client
+    z = _get_or(c, f"zones/{source}", f"la zona {source} ya no está en {sync.serial}")
+    map_guid = z["map_id"]
+    if map_guid not in cat.items or cat.kind(map_guid) != "map":
+        raise CreateError(f"{z['name']!r} está en un mapa que no es del catálogo: captura el mapa entero")
+    doc = normalized_zone(z)
+    for a in doc["actions"]:
+        for q in a["parameters"]:
+            v = q["value"]
+            if isinstance(v, str) and GUIDISH.match(v) and not v.startswith(FACTORY) and v not in cat.items:
+                raise CreateError(f"la zona {z['name']!r} usa {v}, que no está en el catálogo (¿un sonido subido "
+                                  "solo a este robot?): súbelo al catálogo o cambia la acción en su web")
+    _, inst, _, map_num = parse_std(map_guid)
+    taken = set(every) | _retired(sync) | robot_std_guids(c, "zone", map_guid) | set(others("zone", map_guid))
+    guid = prev or next_guid("zone", inst, map_num, taken, per_parent=True)
+    return [("zone", {"guid": guid, **doc,
+                      "_origen": _origen(sync.serial, source, mapa=cat.items[map_guid]["name"])})], z["name"]
+
+
+def _bring_mission(sync, cat, every, source, prev, others):
+    c = sync.client
+    m = _get_or(c, f"missions/{source}", f"la mission {source} ya no está en {sync.serial}")
+    group = cat.items.get(m["group_id"])
+    if group is None or cat.kind(m["group_id"]) != "missiongrp":
+        raise CreateError(f"{m['name']!r} está en un grupo que no es del catálogo: muévela en su web a uno que sí")
+    same = [d["name"] for g, d in every.items() if cat.kind(g) == "mission" and g != prev
+            and d.get("group_id") == m["group_id"] and fold_name(d["name"]) == fold_name(m["name"])]
+    if same:
+        raise CreateError(f"ya hay una mission {same[0]!r} en el grupo {group['name']!r} del catálogo. Si esta es "
+                          "una versión nueva de aquella, usa «Adoptar» en «Crear o importar recurso»; si no, "
+                          "cámbiale el nombre en su web")
+    if prev:
+        old = cat.items[prev]
+    else:
+        _, inst, _, group_num = parse_std(m["group_id"])
+        taken = set(every) | _retired(sync) | robot_std_guids(c, "mission") | set(others("mission", ""))
+        guid = next_guid("mission", inst, group_num, taken, per_parent=False)
+        # La session: la que tiene en el robot si es del catálogo; si no, la de su grupo.
+        sid = m.get("session_id")
+        session = sid if sid in cat.items and cat.kind(sid) == "session" else group_session(cat, m["group_id"], None)
+        old = {"guid": guid, "name": m["name"], "description": "", "group_id": m["group_id"],
+               "session_id": session, "hidden": False}
+    return [_capture_mission(sync, cat, old, source=source)], m["name"]
 
 
 # ------------------------------------------------------------------ adoptar
