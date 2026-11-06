@@ -90,6 +90,30 @@ Desde la raíz del repo, con el FM: `docker compose --profile sim --profile voz 
 - Matar procesos por PID, no con `pkill -f <patrón>` (coincide con la propia shell del agente).
 - El usuario escribe en castellano o en inglés; responder en el idioma que use.
 
+## Reintentos y `orderId` (pendiente, a cargo del compañero; 2026-11-06)
+
+Hoy `app/main.py` crea un `orderId` nuevo (`mm-<8 hex>`) en **cada** llamada a `/api/missions/{m}`.
+Si `POST /api/fleet/order` falla por red o por tiempo (o vuelve con 202 `PENDING`) pero el FM ya
+la había aceptado, y el usuario repite la orden, salen **dos tareas**: dos robots haciendo lo mismo.
+
+Lo que se pide a la pasarela:
+
+- Generar el `orderId` **una vez por orden del usuario** (al confirmarla) y, ante un error de red,
+  un timeout o un 202, **reintentar con ese mismo `orderId`**, no con uno nuevo.
+- Para eso, el `orderId` tiene que sobrevivir al reintento: que lo genere el navegador y lo pase
+  a `/api/missions/{m}`, o que la ruta lo acepte opcional (cómo, a elección del compañero).
+
+Lo que hace el FM con un reintento (decisión 179 de `../../docs/avance.md`): **no la ejecuta otra
+vez** y contesta con su estado actual: `QUEUED` (con `queuePosition`), `ASSIGNED` (con `serial`) o
+`FINISHED` si ya terminó; también tras reiniciar el FM. Todo eso ya lo trata la página
+(`FINAL` incluye `FINISHED`). Si terminó `FAILED`, `CANCELLED` o `EXPIRED`, el mismo `orderId`
+se vuelve a lanzar.
+
+Aparte (idea, no pedido): dos «tonto, trae esa caja» seguidos con confirmación son dos `orderId`
+distintos y el FM hace **las dos** (pueden ser dos cajas de verdad: el FM no compara contenidos).
+Si se quiere evitar el doble encargo por voz, es cosa de la pasarela, p. ej. preguntar «¿otra
+vez?» si llega la misma misión en pocos segundos.
+
 ## Problemas encontrados hasta ahora
 
 - **El micro del navegador necesita un contexto seguro**: abrir `http://localhost:8000` desde Windows, no la IP de WSL.

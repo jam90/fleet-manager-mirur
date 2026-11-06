@@ -3477,6 +3477,36 @@ Chromium sin ventana y un MiR falso: una position movida en el robot sale
 con «Sustituir», la confirmación la da como «se corrigen en su sitio» y,
 desplegada, vuelve a salir igual. **Los PUT sin probar con los MiR.**
 
+## 2026-11-06 — Responder a un `fleet/order` repetido (punto #31)
+
+Al mirar la pasarela de voz (`clientes/voz`): genera un `orderId` nuevo
+(`mm-<8 hex>`) en cada petición y manda por la API REST. Si la llamada
+falla por tiempo pero el FM la había aceptado y el usuario repite, salen
+dos tareas. El compañero va a hacer que reintente con el mismo `orderId`.
+La API REST ya contestaba a un reintento con el estado que tenía, pero su
+seguimiento vive en RAM: tras reiniciar el FM (o pasadas 200 orders) la
+cola la reconocía y callaba, y la API se quedaba en `PENDING`.
+
+179. **Una `fleet/order` repetida (mismo `orderId` y `orderUpdateId`) se
+     contesta con su estado actual** (cambia la decisión 19, que era
+     silencio). Sigue sin hacerse dos veces. `Dispatcher._repeat`: en cola
+     → `QUEUED` con su puesto; en curso → `ASSIGNED` con su robot;
+     terminada bien → **`FINISHED`**, con su robot, un valor nuevo de
+     `order_response` que solo sale aquí (el final normal va en el `state`
+     del robot, pero ese robot puede estar ya con otra, y con `ASSIGNED` el
+     emisor la daría por en curso para siempre); en duda tras un reinicio
+     (`ASSIGNING`) no se contesta todavía, porque al resolverse se publica
+     su resultado. Fallida, cancelada o caducada se acepta otra vez, como
+     antes. La API REST toma `FINISHED` como final (antes, un status
+     desconocido caía en `REJECTED`). Las `<serial>/order` dirigidas siguen
+     con la idempotencia en silencio de VDA 5050 (§6.1.4). Documentado en
+     `docs/plan-cola.md` §3, `docs/api-rest.md`, README y `CLAUDE.md`; lo
+     que toca a la pasarela, en `clientes/voz/AGENTS.md`.
+
+Probado: `pytest` 363 (repetidas en cola, en curso, terminada y tras un
+reinicio, en `tests/test_queue.py` y `test_queue_restart.py`; `FINISHED`
+en la API, `tests/test_web.py`).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3502,7 +3532,8 @@ de seguridad y reset, decisiones 171–173), probado por el usuario con los
 MiR. Y #37 (nombres de position únicos en todos los mapas y robots,
 decisión 174).
 Cerrado el 2026-11-06: #33 (copiar un mapa del catálogo con sus positions
-y zonas, decisión 176).
+y zonas, decisión 176), y #31 (contestar a un `fleet/order` repetido con su estado,
+decisión 179).
 
 **En curso / siguiente** (al cerrar el 2026-11-04; orden decidido por el usuario)
 
@@ -3546,15 +3577,6 @@ las del FM son placeholders y no hay tiempos que medir.
     Fase 4: `expected_s` con el histórico y sacar del dock (D6). La mission
     `prueba-cola` (10 s de espera) sigue en los dos robots para probar;
     borrarla cuando no haga falta.
-
-**Fiabilidad** (revisión del 2026-10-29, ver `docs/sugerencias_mejora.md`)
-
-- **#31** **Responder a un `fleet/order` reenviado** (antes de #2). El
-    registro ya está (cola, decisión 154: con A → B → A, A no se ejecuta
-    dos veces). Falta, ante un reenvío, **repetir el último
-    `order_response`** (ASSIGNED, QUEUED…) en vez de callar. Cambia la
-    decisión 19 (idempotencia = silencio): acordarlo con quien hace el
-    emisor de `fleet/order`.
 
 **Aguas arriba (a cargo de otro compañero, sobre este FM)**
 

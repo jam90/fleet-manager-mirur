@@ -93,8 +93,9 @@ def test_las_que_esperan_siguen_en_la_cola(world):
     assert [(r["orderId"], r["status"], r.get("queuePosition")) for r in responses(fm.bus)] == [
         ("o1", ASSIGNED, None), ("o2", ASSIGNED, None), ("o3", QUEUED, 1), ("o4", QUEUED, 2)]
     n = len(responses(fm.bus))
-    send(fm.disp, "o3")                                  # repetida tras el reinicio: se ignora
-    assert len(responses(fm.bus)) == n
+    send(fm.disp, "o3")                                  # repetida tras el reinicio: se contesta (decisión 179)
+    assert len(responses(fm.bus)) == n + 1 and responses(fm.bus, "o3")[-1]["queuePosition"] == 1
+    assert [t.order_id for t in fm.store.alive() if t.status == QUEUED] == ["o3", "o4"]   # no entra dos veces
     finish(fm.robots["mir-2"])
     fm.disp.tick()
     assert responses(fm.bus, "o3")[-1]["assignedSerial"] == "mir-2"

@@ -309,6 +309,8 @@ class WebServer:
                                description=p.get("description"))
                 elif status in (CANCELLED, EXPIRED):
                     rec.update(status=status, description=p.get("description"))
+                elif status == FINISHED:      # respuesta a una order repetida ya terminada (decisión 179)
+                    rec.update(status=FINISHED, serial=p.get("assignedSerial"), description=p.get("description"))
                 else:            # REJECTED, o FAILED al lanzarla desde la cola
                     rec.update(status=FAILED if status == FAILED else REJECTED, errorType=p.get("errorType"),
                                description=p.get("errorDescription"))

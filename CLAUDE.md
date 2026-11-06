@@ -490,7 +490,9 @@ propio `assignedSerial` (no se reutiliza `serialNumber` del header para eso).
 
 Con la cola (decisión 154) hay más estados, y una order puede recibir
 varios: `QUEUED` (con `queuePosition`) y más tarde `ASSIGNED`; `FAILED`,
-`CANCELLED`, `EXPIRED` y `CANCEL_FAILED`. Tabla completa y `fleet/queue`
+`CANCELLED`, `EXPIRED` y `CANCEL_FAILED`. Una `fleet/order` repetida no se
+ejecuta otra vez y recibe su estado actual (`FINISHED` si ya terminó;
+decisión 179). Tabla completa y `fleet/queue`
 en `docs/plan-cola.md` §3.
 
 Separación importante: `order_response` es el **ACK/rechazo** del
@@ -850,7 +852,8 @@ Formato de log (stdout), un prefijo por robot para poder filtrar:
    quedar uno libre, `ASSIGNED` a ese (decisión 154).
 5. `fleet/order` con `manufacturer` o `serialNumber` que no cuadran con el
    topic → `REJECTED validationError`.
-6. Segunda `fleet/order` idéntica (`orderId`,`orderUpdateId`) → ignorada.
+6. Segunda `fleet/order` idéntica (`orderId`,`orderUpdateId`) → no se ejecuta
+   otra vez; `order_response` con su estado actual (decisión 179).
 7. `instantActions cancelOrder` con mission `Executing` → desaparece de la cola,
    `state.errors[]` recibe `orderError` con `errorReferences.orderId`.
 8. Bajar `battery_floor` por encima del SoC → una única mission de carga encolada

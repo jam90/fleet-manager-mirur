@@ -171,7 +171,10 @@ class Dispatcher:
         if prev is not None and prev.status not in RETRYABLE:
             # Mismas reglas de orderUpdateId que una order dirigida (§6.1.4).
             if order.orderUpdateId == prev.update_id:
-                log.info("[fleet] fleet/order %s/%d repetida: ignorada", order.orderId, order.orderUpdateId)
+                # Repetida: no se hace dos veces, pero se contesta con cómo va
+                # (decisión 179, cambia la 19). Quien reenvía es porque no sabe
+                # qué pasó (perdió la respuesta, se reinició él o el FM).
+                self._repeat(prev)
                 return None
             if order.orderUpdateId < prev.update_id:
                 raise OrderRejected(E_OUTDATED_ORDER_UPDATE,
@@ -286,6 +289,25 @@ class Dispatcher:
             log.info("[fleet] fleet/order %s espera: %s", task.order_id, reason)
             task.waiting = reason
             self.tasks.save(task)
+
+    def _repeat(self, task: Task) -> None:
+        """`order_response` con el estado actual de una tarea cuya order ha
+        llegado otra vez (mismo `orderId` y `orderUpdateId`). Una terminada
+        bien responde `FINISHED`, que solo sale aquí: el resultado de la
+        ejecución va en el `state` del robot, pero ese robot ya puede estar con
+        otra, y con `ASSIGNED` el emisor la daría por en curso para siempre.
+        Una en duda tras un reinicio (`ASSIGNING`) no se contesta todavía: al
+        resolverse se publica su resultado."""
+        log.info("[fleet] fleet/order %s/%d repetida (%s): no se hace dos veces, se repite su estado",
+                 task.order_id, task.update_id, task.status)
+        if task.status == QUEUED:
+            self._announce(task)
+        elif task.status == ASSIGNED:
+            self._respond(task.order_id, task.update_id, ASSIGNED, assignedSerial=task.serial,
+                          description=f"asignado a {task.serial}")
+        elif task.status == FINISHED:
+            self._respond(task.order_id, task.update_id, FINISHED, assignedSerial=task.serial,
+                          description=f"terminada en {task.serial}" + (f": {task.result}" if task.result else ""))
 
     def _announce(self, task: Task) -> None:
         queued = [t for t in self.tasks.alive() if t.status == QUEUED]

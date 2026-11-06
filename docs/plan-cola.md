@@ -77,6 +77,7 @@ estaba en la cola, `FAILED`.
 | `REJECTED` | no se acepta (inválida, imposible, cola llena) | `errorType`, `errorDescription` |
 | `FAILED` | estaba en la cola y el robot no la aceptó al lanzarla; o, tras reiniciar el FM, no se pudo retomar | `errorType`, `errorDescription` o `description` |
 | `CANCELLED` / `EXPIRED` | salió de la cola sin ejecutarse | `description` |
+| `FINISHED` | **solo** al repetir una order ya terminada bien (decisión 179); el final normal va en el `state` del robot | `assignedSerial`, `description` |
 | `CANCEL_FAILED` | `cancelOrder` de algo que no está en la cola ni en curso | `errorType`, `errorDescription` |
 | `REQUEUE_FAILED` | `requeueOrder` de algo que no está en duda | `errorType`, `errorDescription` |
 
@@ -118,7 +119,10 @@ ignoran con un aviso en el log.
 Duplicados y actualizaciones (mismas reglas de `orderUpdateId` que §6.1.4):
 
 - Mismo `orderId` y `orderUpdateId` que una tarea en cola, en curso o
-  terminada bien → se ignora (sin respuesta). Si terminó `FAILED`,
+  terminada bien → no se hace dos veces, y se contesta con su estado:
+  `QUEUED` (con su puesto), `ASSIGNED` (con su robot) o `FINISHED`
+  (decisión 179; antes, silencio). Una en duda tras un reinicio
+  (`ASSIGNING`) no se contesta hasta resolverse. Si terminó `FAILED`,
   `CANCELLED` o `EXPIRED`, se puede volver a mandar.
 - `orderUpdateId` mayor de una que espera → la sustituye **en su mismo
   puesto** y se responde `QUEUED` otra vez. De una en curso → `REJECTED`

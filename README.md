@@ -302,8 +302,10 @@ recibir varios: `QUEUED` al llegar y `ASSIGNED` cuando un robot queda libre.
 Los fallos posteriores de ejecución (mission `Aborted`) van a
 `state.errors[]` del robot como `ORDER_EXECUTION_FAILED`. Una `fleet/order`
 repetida (mismo `orderId` y `orderUpdateId`) que está en la cola, en curso o
-terminada bien se ignora sin respuesta; si terminó `FAILED`, `CANCELLED` o
-`EXPIRED`, se acepta otra vez. Un `orderUpdateId` mayor de una que espera la
+terminada bien no se hace dos veces, pero **se contesta con su estado**:
+`QUEUED` con su puesto, `ASSIGNED` con su robot o `FINISHED` (este solo sale
+aquí) (decisión 179); si terminó `FAILED`, `CANCELLED` o `EXPIRED`, se acepta
+otra vez. Un `orderUpdateId` mayor de una que espera la
 sustituye en su mismo puesto (`QUEUED` otra vez); de una en curso, `REJECTED`.
 
 Si el robot elegido no puede traducir la order a una mission suya (le falta
@@ -462,7 +464,7 @@ docker compose --profile sim --profile voz up --build fleet-sim voz   # flota si
 3. `send_fleet_order.py coger` → `ASSIGNED` + mission en la cola del MiR elegido. ✔
 4. Con ambos ocupados → `QUEUED` con detalle; al terminar uno, `ASSIGNED` a ese
    (probado con la flota simulada). ✔
-5. Repetir la misma order → ignorada. ✔
+5. Repetir la misma order → no se ejecuta otra vez; se contesta su estado (decisión 179). ✔
 6. Header con `manufacturer`/`serialNumber` ≠ topic → `REJECTED VALIDATION_FAILURE`.
 7. `kill -9` al FM → `CONNECTION_BROKEN` retained en cada `connection`. ✔
 
@@ -669,8 +671,8 @@ acabar `CANCELLED` o `EXPIRED` sin ejecutarse. Con `?wait=N` (máx. 30 s) el POS
 espera al veredicto y devuelve el seguimiento (200); si no llega a tiempo,
 202 con `PENDING` y se consulta después `GET /api/orders/<orderId>`. Sin
 `wait` responde al momento con `PENDING`. `orderId` es opcional: si el
-sistema que envía usa sus propios ids, los conserva (y repetir el mismo id se
-ignora, como manda VDA). Se siguen también las orders que llegan por MQTT.
+sistema que envía usa sus propios ids, los conserva (y repetir el mismo id no
+la ejecuta otra vez: devuelve cómo va, también tras reiniciar el FM). Se siguen también las orders que llegan por MQTT.
 
 ```bash
 curl -X POST 'http://localhost:8050/api/fleet/order?wait=5' \

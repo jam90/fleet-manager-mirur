@@ -130,12 +130,20 @@ def test_la_nueva_no_se_cuela():
     assert r["status"] == "QUEUED" and r["queuePosition"] == 1
 
 
-def test_repetida_en_cola_se_ignora_y_la_actualizacion_conserva_el_sitio():
+def test_repetida_en_cola_se_contesta_y_la_actualizacion_conserva_el_sitio():
+    # Decisión 179: una order repetida no se hace dos veces, pero se contesta
+    # con cómo va (antes, decisión 19, silencio).
     disp, robots, bus, clock = _setup({"mir-1": {"coger"}})
     send(disp, "o1"); send(disp, "o2"); send(disp, "o3")
     n = len(responses(bus))
     send(disp, "o2")                                        # QoS 1: llega dos veces
-    assert len(responses(bus)) == n
+    assert len(responses(bus)) == n + 1
+    r = responses(bus, "o2")[-1]
+    assert (r["status"], r["queuePosition"]) == ("QUEUED", 1) and len(disp.tasks.alive()) == 3
+    send(disp, "o1")                                        # la que está en curso
+    r = responses(bus, "o1")[-1]
+    assert (r["status"], r["assignedSerial"]) == ("ASSIGNED", "mir-1")
+    assert len(robots["mir-1"].driver.executed) == 1
     send(disp, "o2", update_id=1)
     r = responses(bus, "o2")[-1]
     assert r["status"] == "QUEUED" and r["orderUpdateId"] == 1 and r["queuePosition"] == 1
@@ -143,14 +151,18 @@ def test_repetida_en_cola_se_ignora_y_la_actualizacion_conserva_el_sitio():
     assert responses(bus, "o2")[-1]["errorType"] == "OUTDATED_ORDER_UPDATE"
 
 
-def test_terminada_repetida_se_ignora():
+def test_terminada_repetida_se_contesta_finished():
+    # Con ASSIGNED el emisor la daría por en curso para siempre: su robot ya
+    # puede estar con otra y su `state` no la nombra.
     disp, robots, bus, clock = _setup({"mir-1": {"coger"}})
     send(disp, "o1")
     finish(robots["mir-1"])
     disp.tick()
     n = len(responses(bus))
     send(disp, "o1")
-    assert len(responses(bus)) == n and len(robots["mir-1"].driver.executed) == 1
+    assert len(responses(bus)) == n + 1 and len(robots["mir-1"].driver.executed) == 1
+    r = responses(bus, "o1")[-1]
+    assert (r["status"], r["assignedSerial"]) == ("FINISHED", "mir-1") and "terminada en mir-1" in r["description"]
 
 
 def test_ninguno_la_soporta_se_rechaza_sin_encolar():

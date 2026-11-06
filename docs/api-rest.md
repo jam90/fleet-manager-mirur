@@ -41,8 +41,9 @@ value is the **position name** as it appears on the robot (not a GUID).
 
 **orderId**: identifies a mission request. You may send your own (recommended:
 your system's job id), or the FM generates `ui-xxxxxxxx`. Re-sending an
-`orderId` the FM has already processed is ignored (it is not executed twice),
-so it is safe to retry.
+`orderId` the FM has already processed does not run it again: the response is
+its current state (`QUEUED`, `ASSIGNED`, `FINISHED`…), also after the FM has
+restarted. So it is safe to retry.
 
 **Fleet order vs. directed order**
 
@@ -333,7 +334,7 @@ Response: `{"actionId": "ui-xxxxxxxx"}`. The result shows up in the robot's
    1–2 s until `status` is final: `FINISHED`, `FAILED`, `REJECTED`,
    `CANCELLED` or `EXPIRED`.
 4. On network errors or timeouts, resend with the **same** `orderId`. It will
-   not run twice.
+   not run twice, and the answer tells you how it is going.
 5. To stop it (queued or running): `POST /api/orders/{orderId}/cancel?wait=5`.
 
 ### Python example

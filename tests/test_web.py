@@ -778,3 +778,14 @@ def test_relanzar_una_en_duda_desde_la_api():
     # Ya en QUEUED, otro relanzar no se da por bueno con lo de antes: espera la respuesta nueva.
     bus.publish = publish
     assert c.post("/api/orders/q-9/requeue?wait=0.1").status_code == 202
+
+
+def test_finished_de_una_order_repetida_es_final():
+    # Decisión 179: tras reiniciar el FM la API REST no recuerda la order; si
+    # el emisor la reintenta con el mismo orderId, el FM contesta FINISHED y
+    # la API la da por terminada (antes la habría tomado por un REJECTED).
+    srv, _ = _server()
+    srv._track_response({"orderId": "mm-1", "orderUpdateId": 0, "status": "FINISHED",
+                         "assignedSerial": "sim-1", "description": "terminada en sim-1"})
+    rec = TestClient(srv.app).get("/api/orders/mm-1").json()
+    assert (rec["status"], rec["serial"], rec["description"]) == ("FINISHED", "sim-1", "terminada en sim-1")
