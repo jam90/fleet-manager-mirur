@@ -394,7 +394,8 @@ def test_cada_recurso_dice_su_site(tmp_path):
     s = MirSync("mir-1", "0.0.0.0", "Basic x", tmp_path)
     ch = s.form_choices()
     assert ch["position_sites"]["A"] == [SES] and {m["site"] for m in ch["missions"]} == {SES}
-    assert s.create_choices()["maps"] == [{"guid": MAP, "name": "m", "site": SES}]
+    assert s.create_choices()["maps"] == [{"guid": MAP, "name": "m", "site": SES, "positions": 3, "zones": 1,
+                                           "example": "A"}]
 
 
 def test_una_mission_esta_atada_al_mapa_de_sus_positions_fijas(tmp_path):

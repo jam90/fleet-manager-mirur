@@ -132,7 +132,7 @@ def test_borrar_lo_creado_libera_el_numero(sync, tmp_path):
 
 
 def test_borrar_bloqueos(sync):
-    assert "pestaña Crear" in sync.delete_blockers(M_MAIN, {}, [])[0]     # capturada con el script
+    assert "Crear o importar recurso" in sync.delete_blockers(M_MAIN, {}, [])[0]     # capturada con el script
     g = sync.create_mission("prueba", GRP)["guid"]
     assert "fleet.yaml (actions: probar)" in sync.delete_blockers(g, {"probar": {"mission": g}}, [])[0]
     assert "fleet.yaml (actions: probar)" in sync.delete_blockers(g, {"probar": {"mission": "prueba"}}, [])[0]
@@ -488,3 +488,75 @@ def test_nombre_de_position_unico_en_todos_los_mapas_y_robots(sync):
     with pytest.raises(CreateError, match=r"mir-1 \(mapa 'suberri'\)"):
         sync.create_position("Montaje", MAP, other_names=otros)  # de otro robot
     assert sync.create_position("Montaje 2", MAP, other_names=otros)["name"] == "Montaje 2"
+
+
+# ------------------------------------------------------ copiar un mapa (#33)
+def _zone_on(tmp_path, map_guid, n=1, name="Espera", actions=()):
+    z = std_guid("zone", 1, parse_std(map_guid)[3], n)
+    (tmp_path / "zones").mkdir(exist_ok=True)
+    (tmp_path / "zones" / f"{z}.json").write_text(json.dumps({
+        "guid": z, "name": name, "type_id": 102, "shape_type": "shape", "stroke_width": 0.0, "direction": 0.0,
+        "polygon": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}], "actions": list(actions),
+        "map_id": map_guid, "_origen": {"robot": "mir-1"}}))
+    return z
+
+
+def test_copiar_un_mapa_con_positions_y_zonas(sync, tmp_path):
+    from tests.adapters.test_mir_sync import P_ENTRY, P_MARKER, PNG
+    sound = [{"type_id": 3, "parameters": [{"name": "sound", "value": SND}]}]
+    _zone_on(tmp_path, MAP, actions=sound)
+    out = sync.copy_map(MAP, "m-pruebas", "-pruebas", "suffix", others={std_guid("map", 1, 1, 2)})
+    assert sync.client.writes == []                               # solo el catálogo
+    g = out["guid"]
+    assert g == std_guid("map", 1, 1, 3)                          # el 2 lo tiene un robot
+    assert (out["site"], out["copied_from"], out["positions"], out["zones"]) == ("s", "m", 3, 1)
+    assert out["example"] == ["A", "A-pruebas"]
+    cat = Catalog.load(tmp_path)
+    m = cat.items[g]
+    assert (m["session_id"], m["origin_x"], m["origin_y"], m["resolution"]) == (SES, -1.0, -2.0, 0.05)
+    assert cat.map_png(g) == PNG
+    pos = {d["_origen"]["copia_de"]: d for d in cat.items.values()
+           if cat.kind(d["guid"]) == "position" and d["map_id"] == g}
+    assert {d["guid"] for d in pos.values()} == {std_guid("position", 1, 3, n) for n in (1, 2, 3, 4)}
+    assert sorted(d["name"] for d in pos.values()) == ["A-pruebas", "B-pruebas", "VL-pruebas", "VL-pruebas"]
+    # La entrada del marcador va con su madre copiada, y conserva el offset.
+    assert pos[P_ENTRY]["parent_id"] == pos[P_MARKER]["guid"] and pos[P_ENTRY]["creada_por_mir"]
+    assert pos[P_MARKER]["docking_offsets"] == [{"x_offset": -1.0, "y_offset": 0.1, "orientation_offset": 2.0}]
+    zone = next(d for d in cat.items.values() if cat.kind(d["guid"]) == "zone" and d["map_id"] == g)
+    assert zone["name"] == "Espera" and zone["actions"] == sound    # la zona conserva nombre y sonido
+    # Sincronización lo despliega con su site; en Crear sale el mapa, no sus positions.
+    assert cat.closure([g]) == [SES, g]
+    assert [(d["kind"], d["guid"]) for d in sync.create_choices()["created"]] == [("map", g)]
+    # El original, intacto.
+    assert sum(1 for d in cat.items.values() if d.get("map_id") == MAP) == 5
+
+
+def test_copiar_un_mapa_con_prefijo_y_a_otro_site(sync, tmp_path):
+    ses2 = sync.create_session("nave 2")["guid"]
+    out = sync.copy_map(MAP, "m2", "n2 ", "prefix", session_guid=ses2)
+    assert out["site"] == "nave 2" and out["example"] == ["A", "n2 A"]
+    assert out["guid"] == std_guid("map", 1, 2, 2)                 # padre = su site
+    # Borrarlo (decisión 133) se lleva sus positions y zonas, no las del original.
+    assert sync.delete_blockers(out["guid"], {}, []) == []
+    assert len(sync.forget(out["guid"])) == 5
+    assert sum(1 for d in Catalog.load(tmp_path).items.values() if d.get("map_id") == MAP) == 4
+
+
+def test_copiar_un_mapa_errores(sync):
+    with pytest.raises(CreateError, match="falta el texto"):
+        sync.copy_map(MAP, "copia", "  ", "suffix")
+    with pytest.raises(CreateError, match="prefijo o sufijo"):
+        sync.copy_map(MAP, "copia", "x", "medio")
+    with pytest.raises(CreateError, match="ya hay un mapa 'M'"):
+        sync.copy_map(MAP, "M", "x", "suffix")                    # mayúsculas no cuentan
+    with pytest.raises(CreateError, match="no está en el catálogo"):
+        sync.copy_map("imperialfleet-map0000000-01-0001-099", "copia", "x", "suffix")
+    # Decisión 174: el nombre nuevo no puede estar ya en el catálogo ni en un robot.
+    sync.create_position("B2", MAP)
+    with pytest.raises(CreateError, match=r"«B2» \(ya está en el catálogo \(mapa 'm'\)\)"):
+        sync.copy_map(MAP, "copia", "2", "suffix")
+    otros = {"a-x": ("A-x", "mir-1 (mapa 'suberri')")}
+    with pytest.raises(CreateError, match=r"«A-x» \(ya está en mir-1"):
+        sync.copy_map(MAP, "copia", "-x", "suffix", other_names=otros)
+    out = sync.copy_map(MAP, "copia", "-y", "suffix", other_names=otros)
+    assert out["positions"] == 3                                  # A, VL y B: el borrador B2 no se copia

@@ -36,6 +36,10 @@ y la copia se borra en la web del MiR.
   adoptar una mission, el MiR no deja cambiar el GUID, así que la copia del
   catálogo llega por Sincronización y se activa en su web. Volver a
   capturar el mismo mapa actualiza la copia y conserva sus GUIDs.
+- **Copiar un mapa** del catálogo (#33): otro mapa con la misma imagen y el
+  mismo origen, y copia de sus positions (con un prefijo o un sufijo en el
+  nombre, decisión 174) y de sus zonas, con GUIDs nuevos. Solo el
+  catálogo; las missions no se copian.
 - **Site** (decisión 128): la session del MiR, el entorno donde viven los
   mapas; es lo primero que se crea en una flota nueva. Como el mapa, solo
   se escribe en el catálogo y llega a los robots desde Sincronización.
@@ -300,18 +304,24 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
             "marker": type_id in MARKER_TYPES}
 
 
+def _name_in_use(name: str, every: Mapping[str, dict], cat, robot: Mapping[str, tuple[str, str]],
+                 others: Mapping[str, tuple[str, str]]) -> tuple[str, str] | None:
+    """(nombre tal cual, dónde) de la position del catálogo (con los
+    borradores), de este robot o de los demás que ya se llama `name`, en
+    cualquier mapa; None si está libre."""
+    key = fold_name(name)
+    for g, d in every.items():
+        if cat.kind(g) == "position" and fold_name(d.get("name", "")) == key:
+            mapa = (cat.items.get(d.get("map_id")) or cat.drafts.get(d.get("map_id")) or {}).get("name", "?")
+            return d["name"], f"el catálogo (mapa {mapa!r})"
+    return robot.get(key) or others.get(key)
+
+
 def _check_name_free(name: str, every: Mapping[str, dict], cat, robot: Mapping[str, tuple[str, str]],
                      others: Mapping[str, tuple[str, str]]) -> None:
     """Lanza `CreateError` si `name` ya es el de una position del catálogo
     (con los borradores), de este robot o de los demás, en cualquier mapa."""
-    key = fold_name(name)
-    where: tuple[str, str] | None = None
-    for g, d in every.items():
-        if cat.kind(g) == "position" and fold_name(d.get("name", "")) == key:
-            mapa = (cat.items.get(d.get("map_id")) or cat.drafts.get(d.get("map_id")) or {}).get("name", "?")
-            where = (d["name"], f"el catálogo (mapa {mapa!r})")
-            break
-    where = where or robot.get(key) or others.get(key)
+    where = _name_in_use(name, every, cat, robot, others)
     if where:
         existing, place = where
         same = "" if existing == name else f" ({existing!r})"
@@ -602,6 +612,126 @@ def capture_map(sync, source: str, name: str = "", session_guid: str | None = No
             "source": m["name"]}
 
 
+AFFIX_AT = ("prefix", "suffix")
+
+
+def affixed(name: str, affix: str, at: str) -> str:
+    """El nombre de una position copiada: `affix` delante o detrás, tal cual
+    (el separador, si se quiere, va en el propio texto: «pruebas-», «_2»)."""
+    return (affix + name if at == "prefix" else name + affix).strip()
+
+
+def copy_map(sync, source: str, name: str, affix: str, at: str = "suffix", session_guid: str | None = None,
+             others: Iterable[str] = (), other_names: Mapping[str, tuple[str, str]] | None = None) -> dict:
+    """Copia en el catálogo el mapa `source` del catálogo con su imagen, su
+    origen, sus positions y sus zonas, todo con GUIDs nuevos (#33). Las
+    missions no se copian: las que llevan positions fijas siguen siendo del
+    mapa original (decisión 131).
+
+    Las positions copiadas llevan `affix` como prefijo o sufijo (`at`): su
+    nombre no puede repetir el de ninguna otra, de ningún mapa ni robot
+    (decisión 174; `other_names` lo junta el servidor de todos los robots
+    que respondan). Las zonas conservan el nombre: la web del MiR las lista
+    por mapa, y la vuelta a la espera busca su zona por nombre en el mapa
+    activo. Va al site `session_guid` (por defecto, el del original). Solo
+    escribe en el catálogo; llega a los robots por Sincronización.
+    `others`: GUIDs estándar de mapas de los robots."""
+    name = (name or "").strip()
+    if not name:
+        raise CreateError("falta el nombre del mapa nuevo")
+    if at not in AFFIX_AT:
+        raise CreateError(f"¿prefijo o sufijo? ({at!r} no es ninguno de los dos)")
+    if not (affix or "").strip():
+        raise CreateError("falta el texto que se añade al nombre de las positions copiadas: sin él, se "
+                          "repetirían los nombres del original (decisión 174)")
+    cat = sync.catalog()
+    src = cat.items.get(source)
+    if src is None or cat.kind(source) != "map":
+        raise CreateError(f"el mapa {source} no está en el catálogo")
+    try:
+        png = cat.map_png(source)
+    except (KeyError, OSError):
+        raise CreateError(f"el mapa {src['name']!r} no tiene su imagen en el catálogo ({src.get('base_map')})") from None
+    try:                             # solo para decir el tamaño: la imagen ya se comprobó al entrar
+        size = list(png_size(png))
+    except CreateError:
+        size = None
+    every = {**cat.items, **cat.drafts}
+    if any(cat.kind(g) == "map" and fold_name(d["name"]) == fold_name(name) for g, d in every.items()):
+        raise CreateError(f"ya hay un mapa {name!r} en el catálogo")
+    session_guid = session_guid or src["session_id"]
+    if session_guid not in cat.items or cat.kind(session_guid) != "session":
+        raise CreateError(f"el site {session_guid} no está en el catálogo")
+    session = cat.items[session_guid]
+
+    # Lo del mapa original que está en el catálogo (los borradores, no: aún no
+    # están terminados). Las entradas que crea el MiR (decisión 77) van con su
+    # madre: se copian, y llevan su mismo nombre.
+    on_map = lambda kind: sorted((d for g, d in cat.items.items()  # noqa: E731
+                                  if cat.kind(g) == kind and d.get("map_id") == source), key=lambda d: d["guid"])
+    positions, zones = on_map("position"), on_map("zone")
+    new_names = {p["guid"]: affixed(p["name"], affix, at) for p in positions}
+    clashes, seen = [], {}
+    for p in positions:
+        if p.get("creada_por_mir"):
+            continue
+        new = new_names[p["guid"]]
+        where = _name_in_use(new, every, cat, {}, other_names or {})
+        if where:
+            clashes.append(f"«{new}» (ya está en {where[1]})")
+        elif fold_name(new) in seen:
+            clashes.append(f"«{new}» (sale dos veces: {seen[fold_name(new)]!r} y {p['name']!r} en el original)")
+        seen.setdefault(fold_name(new), p["name"])
+    if clashes:
+        shown = "; ".join(clashes[:5]) + (f"; y {len(clashes) - 5} más" if len(clashes) > 5 else "")
+        raise CreateError(f"con ese {'prefijo' if at == 'prefix' else 'sufijo'} se repetirían nombres de position: "
+                          f"{shown}. Prueba con otro texto")
+
+    taken = set(every) | _retired(sync) | set(others)
+    _, inst, _, session_num = parse_std(session_guid)
+    guid = next_guid("map", inst, session_num, taken, per_parent=False)
+    taken.add(guid)
+    _, _, _, map_num = parse_std(guid)
+    today = date.today().isoformat()
+    # Como un mapa subido, el nuevo es «creado desde aquí» (`_origen.guid` = el
+    # suyo): sale en Crear y se puede borrar. Sus positions y zonas no: van y
+    # vienen con el mapa (decisión 133).
+    docs: list[tuple[str, dict]] = [("map", {
+        "guid": guid, "name": name, "session_id": session_guid,
+        **{k: float(src.get(k) or 0.0) for k in ("resolution", "origin_x", "origin_y", "origin_theta")},
+        "base_map": f"{guid}.png", "_origen": {"copia_de": source, "guid": guid, "capturado": today}})]
+    copied = lambda old: {"copia_de": old, "mapa": src["name"], "capturado": today}  # noqa: E731
+
+    # Primero todos los GUIDs nuevos, para traducir el parent_id de las entradas.
+    new_guid = {}
+    for p in positions:
+        new_guid[p["guid"]] = next_guid("position", inst, map_num, taken, per_parent=True)
+        taken.add(new_guid[p["guid"]])
+    for p in positions:
+        doc = {k: v for k, v in p.items() if k not in ("_origen", "borrador")}
+        doc.update(guid=new_guid[p["guid"]], name=new_names[p["guid"]], map_id=guid,
+                   parent_id=new_guid.get(p["parent_id"]) if p.get("parent_id") else None,
+                   _origen=copied(p["guid"]))
+        docs.append(("position", doc))
+    for z in zones:
+        zg = next_guid("zone", inst, map_num, taken, per_parent=True)
+        taken.add(zg)
+        doc = {k: v for k, v in z.items() if k not in ("_origen", "borrador")}
+        doc.update(guid=zg, map_id=guid, _origen=copied(z["guid"]))
+        docs.append(("zone", doc))
+
+    folder = Path(sync.catalog_dir) / FOLDERS["map"]
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{guid}.png").write_bytes(png)
+    for k, d in docs:
+        write_doc(sync.catalog_dir, k, d)
+    example = next((p for p in positions if not p.get("creada_por_mir")), None)
+    return {"kind": "map", "guid": guid, "name": name, "site": session["name"], "copied_from": src["name"],
+            "positions": sum(1 for p in positions if not p.get("creada_por_mir")), "zones": len(zones),
+            "example": [example["name"], new_names[example["guid"]]] if example else None,
+            "size": size, "meters": [round(n * docs[0][1]["resolution"], 2) for n in size] if size else None}
+
+
 def png_from_b64(data: str) -> bytes:
     """El PNG que manda la web (base64, con o sin prefijo `data:`)."""
     try:
@@ -819,5 +949,5 @@ def delete_blockers(sync, guid: str, definitions: dict, wanted: Iterable[str]) -
     aquí y que nadie use (`remove.usage_blockers`)."""
     cat = sync.catalog()
     if created_here(cat, guid) is None:
-        return ["solo se borra desde aquí lo creado en la pestaña Crear"]
+        return ["solo se borra desde aquí lo creado en «Crear o importar recurso» (en Catálogo)"]
     return usage_blockers(sync, cat, guid, definitions, wanted)

@@ -682,6 +682,11 @@ class MirSync:
         from fm.adapters.mir.create import capture_map
         return capture_map(self, source, name, session_guid, new_session, others)
 
+    def copy_map(self, source: str, name: str, affix: str, at: str = "suffix", session_guid: str | None = None,
+                 others=(), other_names=None) -> dict:
+        from fm.adapters.mir.create import copy_map
+        return copy_map(self, source, name, affix, at, session_guid, others, other_names)
+
     def create_session(self, name: str, description: str = "", others=()) -> dict:
         from fm.adapters.mir.create import create_session
         return create_session(self, name, description, others)
@@ -731,7 +736,15 @@ class MirSync:
         from fm.adapters.mir.create import POSITION_TYPES, ZONE_TYPES
         types = [{"type_id": k, "label": v["label"]} for k, v in POSITION_TYPES.items()]
         zone_types = [{"type_id": k, **v} for k, v in ZONE_TYPES.items()]
-        return {"groups": pick("missiongrp"), "maps": pick("map"), "missions": pick("mission"),
+        # Para «Copiar del catálogo» (#33): qué se lleva cada mapa y un nombre de
+        # ejemplo para enseñar cómo quedará con el prefijo o el sufijo.
+        maps = pick("map")
+        for m in maps:
+            on = [d for g, d in sorted(cat.items.items()) if d.get("map_id") == m["guid"]]
+            pos = [d for d in on if cat.kind(d["guid"]) == "position" and not d.get("creada_por_mir")]
+            m.update(positions=len(pos), zones=sum(1 for d in on if cat.kind(d["guid"]) == "zone"),
+                     example=pos[0]["name"] if pos else None)
+        return {"groups": pick("missiongrp"), "maps": maps, "missions": pick("mission"),
                 "sessions": pick("session"),
                 "position_types": types, "zone_types": zone_types, "created": created}
 

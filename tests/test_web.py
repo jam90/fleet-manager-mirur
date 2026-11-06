@@ -345,6 +345,32 @@ def test_crear_y_capturar(tmp_path):
     assert c.post("/api/create/sim-1/capture", json={"guid": "M1"}).json()["detail"] == "3 actions"
 
 
+def test_copiar_un_mapa_desde_la_web():
+    # #33: solo el catálogo; los demás robots dicen sus números de mapa y sus
+    # nombres de position (decisión 174), aunque el que responde no tenga telemetría.
+    from fm.adapters.base import Telemetry
+    srv, sync = _server_with_sync()
+    srv.robots["sim-1"].last_telemetry = Telemetry(battery=80.0)
+    sync.std_guids = lambda kind, parent=None: {f"std-{kind}"}
+    sync.position_names = lambda: {"mesa": ("Mesa", "suberri")}
+    calls = []
+
+    def copy_map(source, name, affix, at, session, others, other_names=None):
+        calls.append((source, name, affix, at, session, others, other_names))
+        if affix == "x":
+            raise ValueError("con ese sufijo se repetirían nombres de position")
+        return {"kind": "map", "guid": "MAP2", "name": name, "site": "s", "copied_from": "m",
+                "positions": 3, "zones": 1, "example": ["A", "A" + affix], "size": None, "meters": None}
+    sync.copy_map = copy_map
+    c = TestClient(srv.app)
+    r = c.post("/api/create/copy-map", json={"source": "MAP", "name": "copia", "affix": "-p", "at": "suffix"})
+    assert r.status_code == 200 and r.json()["guid"] == "MAP2"
+    assert calls[-1] == ("MAP", "copia", "-p", "suffix", None, {"std-map"},
+                         {"mesa": ("Mesa", "sim-1 (mapa 'suberri')")})
+    bad = c.post("/api/create/copy-map", json={"source": "MAP", "name": "copia", "affix": "x"})
+    assert bad.status_code == 400 and "repetirían" in bad.json()["detail"]
+
+
 def test_crear_no_aplica_sin_la_capacidad():
     srv, _ = _server()
     c = TestClient(srv.app)

@@ -159,6 +159,14 @@ class CaptureMapIn(BaseModel):
     new_session: str = ""        # ...o el nombre de uno nuevo
 
 
+class CopyMapIn(BaseModel):
+    source: str                  # GUID de un mapa del catálogo
+    name: str                    # el del mapa nuevo
+    affix: str                   # texto que se añade al nombre de cada position copiada...
+    at: str = "suffix"           # ...delante ("prefix") o detrás ("suffix")
+    session: str = ""            # GUID de un site del catálogo; vacío = el del original
+
+
 class MapIn(BaseModel):
     name: str
     png: str                     # base64 (o data URL) del PNG en gris de 8 bits
@@ -536,7 +544,7 @@ class WebServer:
         info = (first.catalog_item(guid) if retire else first.describe(guid)) if first else None
         if info is None:
             raise HTTPException(404, f"{guid} no está en el catálogo" if retire
-                                else f"{guid} no es algo creado desde la pestaña Crear")
+                                else f"{guid} no es algo creado desde «Crear o importar recurso» (en Catálogo)")
         wanted = [w for y in self.syncs.values() for w in getattr(y, "wanted", [])]
         check = first.retire_blockers if retire else first.delete_blockers
         blockers = check(guid, self.cfg.actions, wanted)
@@ -719,6 +727,23 @@ class WebServer:
         log.info("[web] mapa %r de %s %s en el catálogo (%s: %d positions, %d zonas%s)", out["source"], serial,
                  "actualizado" if out["updated"] else "capturado", out["guid"], out["positions"], out["zones"],
                  f", {len(out['skipped'])} saltadas" if out["skipped"] else "")
+        return out
+
+    def copy_map(self, body: CopyMapIn) -> dict:
+        """Copiar un mapa del catálogo con sus positions y zonas (#33). Solo
+        escribe en el catálogo; se miran los robots que respondan para no
+        repetir un número de mapa ni un nombre de position (decisión 174)."""
+        y = self._first_creator("copy_map")
+        if y is None:
+            raise HTTPException(400, "ningún robot ofrece el catálogo")
+        with self._create_lock:
+            try:
+                out = y.copy_map(body.source, body.name, body.affix, body.at, body.session or None,
+                                 self._others_guids("", "map", ""), other_names=self._others_position_names(""))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        log.info("[web] mapa %r copiado en el catálogo como %r (%s: %d positions, %d zonas)", out["copied_from"],
+                 out["name"], out["guid"], out["positions"], out["zones"])
         return out
 
     def create_map(self, body: MapIn) -> dict:
@@ -1002,6 +1027,10 @@ class WebServer:
         @app.post("/api/create/{serial}/capture-map")
         def capture_map(serial: str, body: CaptureMapIn):
             return self.capture_map(serial, body)
+
+        @app.post("/api/create/copy-map")
+        def copy_map(body: CopyMapIn):      # `def`: escribe en catalog/ y lee los robots
+            return self.copy_map(body)
 
         @app.post("/api/create/map")
         def create_map(body: MapIn):        # `def`: escribe en catalog/

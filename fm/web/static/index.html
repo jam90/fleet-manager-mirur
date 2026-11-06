@@ -1067,6 +1067,7 @@
         </select>
       </label>
       <a class="btn primary" href="#crear">+ Crear o importar recurso</a>
+      <a class="btn" href="#crear/borrar" title="Lo creado, subido, capturado o copiado desde «Crear o importar recurso». El resto se quita en Sincronización («Retirar de la flota»).">Borrar un recurso</a>
       <label><input type="checkbox" v-model="ui.allSites"> Incluir otros centros</label>
     </div>
     <div class="catalog-browser">
@@ -1129,7 +1130,42 @@
                   :class="{ on: mapForm.mode === 'png' }" @click="mapForm.mode = 'png'">Subir un PNG</button>
           <button type="button" role="radio" id="map-mode-robot" :aria-checked="mapForm.mode === 'robot'"
                   :class="{ on: mapForm.mode === 'robot' }" @click="setMapMode('robot')">Capturar de un robot</button>
+          <button type="button" role="radio" id="map-mode-copy" :aria-checked="mapForm.mode === 'copy'"
+                  :class="{ on: mapForm.mode === 'copy' }" @click="setMapMode('copy')">Copiar del catálogo</button>
         </div>
+        <!-- Copiar un mapa del catálogo (#33): solo al catálogo, sin robot. -->
+        <template v-if="mapForm.mode === 'copy'">
+          <p class="hint">Otro mapa con la <b>misma imagen y el mismo origen</b> que uno del catálogo, con una copia de sus
+            <b>positions</b> y sus <b>zonas</b> (GUIDs nuevos). Las <b>missions no se copian</b>: las que van a positions fijas
+            siguen siendo del original; en la copia valen las que reciben la position como parámetro. No necesita robot: se
+            guarda en el catálogo y se lleva a los robots en <a href="#sincronizacion">Sincronización</a>.</p>
+          <p class="hint" v-if="!createState.maps.length">Todavía no hay ningún mapa en el catálogo.</p>
+          <template v-else>
+          <label class="field">Mapa que se copia
+            <select id="copy-map-source" v-model="copyForm.source" @change="pickCopySource">
+              <option v-for="m in siteMaps" :key="m.guid" :value="m.guid">{{ m.name }}
+                ({{ m.positions }} position{{ m.positions === 1 ? '' : 's' }}, {{ m.zones }} zona{{ m.zones === 1 ? '' : 's' }})</option></select></label>
+          <label class="field">Nombre del mapa nuevo<input id="copy-map-name" v-model="copyForm.name" autocomplete="off"
+                 @input="proposeAffix"></label>
+          <label class="field">Site
+            <select id="copy-map-session" v-model="copyForm.session">
+              <option v-for="x in createState.sessions" :key="x.guid" :value="x.guid">{{ x.name }}</option></select></label>
+          <p class="hint">El nombre de una position no se puede repetir en ningún mapa (la web del MiR las lista todas juntas):
+            a cada position copiada se le añade un texto, delante o detrás.</p>
+          <div class="seg" role="radiogroup" aria-label="Dónde va el texto">
+            <button type="button" role="radio" id="copy-map-prefix" :aria-checked="copyForm.at === 'prefix'"
+                    :class="{ on: copyForm.at === 'prefix' }" @click="setCopyAt('prefix')">Prefijo</button>
+            <button type="button" role="radio" id="copy-map-suffix" :aria-checked="copyForm.at === 'suffix'"
+                    :class="{ on: copyForm.at === 'suffix' }" @click="setCopyAt('suffix')">Sufijo</button>
+          </div>
+          <label class="field">{{ copyForm.at === 'prefix' ? 'Prefijo' : 'Sufijo' }} (con su separador, si quieres uno)
+            <input id="copy-map-affix" v-model="copyForm.affix" autocomplete="off" @input="copyForm.touched = true"></label>
+          <p class="hint" v-if="copyExample">Así quedarán: «{{ copyExample[0] }}» → <b>«{{ copyExample[1] }}»</b>. Las zonas
+            conservan su nombre.</p>
+          <div class="acts"><button class="btn primary" id="copy-map" :disabled="!canCopyMap" @click="copyMap">
+            Copiar en el catálogo</button></div>
+          </template>
+        </template>
         <!-- Capturar un mapa de un robot (decisión 132): solo lee el robot. -->
         <template v-if="mapForm.mode === 'robot'">
           <p class="hint">Un mapa hecho en la web de un MiR (sin GUID de la flota) entra en el catálogo con su imagen, sus
@@ -1164,7 +1200,7 @@
           <div class="acts"><button class="btn primary" id="cap-map" :disabled="!canCaptureMap" @click="captureMap">
             {{ capSelected && capSelected.captured_as ? 'Volver a capturar' : 'Capturar al catálogo' }}</button></div>
         </template>
-        <template v-else>
+        <template v-else-if="mapForm.mode === 'png'">
         <!-- Subir un mapa (decisión 126): solo al catálogo, sin robot. -->
         <p class="hint">Sube un <b>PNG en gris de 8 bits</b> (como los que exporta la web del MiR: negro = obstáculo, blanco =
           libre) a un site del catálogo. No necesita robot: se guarda en el catálogo y se lleva
@@ -1261,6 +1297,15 @@
         <b>Grupo «{{ createState.result.name }}» creado en el catálogo</b> <code class="guid">{{ createState.result.guid }}</code>.
         Ahora crea su primera mission: <button class="link-btn" type="button" @click="setCreateWhat('mission')">Nueva mission</button>.
       </template>
+      <template v-else-if="createState.result.kind === 'map' && createState.result.copied_from">
+        <b>Mapa «{{ createState.result.copied_from }}» copiado en el catálogo</b> como «{{ createState.result.name }}»,
+        en el site <b>{{ createState.result.site }}</b>: {{ createState.result.positions }}
+        position{{ createState.result.positions === 1 ? '' : 's' }}<template v-if="createState.result.example">
+        (p. ej. «{{ createState.result.example[1] }}»)</template> y {{ createState.result.zones }}
+        zona{{ createState.result.zones === 1 ? '' : 's' }}. <code class="guid">{{ createState.result.guid }}</code>
+        Después: llévalo a los robots en <a href="#sincronizacion">Sincronización</a> (marcar el mapa marca sus positions y
+        zonas) y actívalo en la web de cada uno.
+      </template>
       <template v-else-if="createState.result.kind === 'map' && createState.result.source">
         <b>Mapa «{{ createState.result.source }}» de {{ createState.result.robot }}
           {{ createState.result.updated ? 'actualizado' : 'capturado' }} en el catálogo</b> como «{{ createState.result.name }}»,
@@ -1304,7 +1349,8 @@
         <div class="acts"><a class="btn primary" v-if="createState.result.url" :href="createState.result.url" target="_blank" rel="noopener">Abrir en la web del MiR ↗</a></div>
       </template>
     </div>
-    <div class="panel">
+    <!-- `#crear/borrar` (botón «Borrar un recurso» del Catálogo) llega aquí. -->
+    <div class="panel" id="creado-aqui">
       <h3>Creado desde aquí</h3>
       <p class="hint">Los <b>borradores</b> aún no se han capturado: su GUID está reservado en <code>catalog/</code>, pero no se
         despliegan. <b>Capturar</b> lee del robot lo que se ha hecho en su web y lo guarda en el catálogo (se puede repetir).
@@ -1825,12 +1871,13 @@
           <li><b>Dar de alta los robots</b><a class="where" href="#configurador">→ Configuración</a>
             <p>«Editar» → «Añadir robot» con su nombre y su IP, «Guardar» y «Reiniciar el FM ahora». Hace falta al menos uno:
               las pestañas de administración leen y escriben los robots a través del FM.</p></li>
-          <li><b>Crear el site</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Crear el site</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Site»: el entorno donde vivirán los mapas (una planta, un edificio).</p></li>
-          <li><b>Subir o capturar su mapa</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Subir o capturar su mapa</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mapa»: el PNG del mapa, con su resolución y su origen (ver «Subir un mapa nuevo»), o, si ya está hecho
               en un robot, «Capturar de un robot», que se trae también sus positions y zonas (ver «Capturar un mapa de un
-              robot»).</p></li>
+              robot»). Para otro mapa igual que uno del catálogo, «Copiar del catálogo» (ver «Copiar un mapa del
+              catálogo»).</p></li>
           <li><b>Llevar site y mapa a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>En «Mapas de &lt;site&gt;», marca el mapa (arrastra su site), elige cada robot, «Vista previa» y «Desplegar».</p></li>
           <li><b>Activar el mapa en cada robot</b><span class="where">web del MiR</span>
@@ -1838,12 +1885,12 @@
               crean donde está el robot, así que este paso va antes.</p></li>
           <li><b>Elegir el site de la flota</b><span class="where">cabecera, «Centro activo»</span>
             <p>Solo trabajan los robots cuyo mapa activo es de ese site: los demás salen avisados y no reciben orders hasta
-              que se cambie su mapa en su web. Crear, Sincronización y Configuración enseñan solo lo de ese site (con «Incluir
+              que se cambie su mapa en su web. Catálogo, Crear recurso, Sincronización y Configuración enseñan solo lo de ese site (con «Incluir
               otros centros», todo).</p></li>
-          <li><b>Positions y zonas</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Positions y zonas</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Los puntos a los que irán los robots y las zonas del mapa (ver «Añadir una position nueva» y «Añadir una
               zona»). Captúralas y llévalas a los demás robots.</p></li>
-          <li><b>Missions</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Missions</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Las tareas, programadas en el Blockly del MiR (ver «Añadir una mission nueva»). Viven en un grupo de missions:
               si no hay ninguno, arriba, «Grupo», con su nombre. La primera mission del grupo lo lleva al robot y va al site
               de la flota.</p></li>
@@ -1877,7 +1924,7 @@
           <dt>Catálogo</dt><dd>La carpeta <code>catalog/</code>: copia de cada site, mapa, position, zona y mission de la flota, con el mismo GUID
             (<code>imperialfleet-…</code>) en todos los robots. Es de esta instalación: vive fuera del repo del FM, en la carpeta que
             dice <code>FM_CATALOG</code> en <code>.env</code>, con su propio git.</dd>
-          <dt>Borrador</dt><dd>Algo creado desde «Crear» y aún no capturado: tiene su número reservado, pero no se despliega.</dd>
+          <dt>Borrador</dt><dd>Algo creado desde «Crear o importar recurso» (en Catálogo) y aún no capturado: tiene su número reservado, pero no se despliega.</dd>
         </dl>
         <p class="warnline">El mapa <code>suberri</code> y su session no se tocan nunca: son los de trabajo. Las pruebas, en <code>suberri_mirur</code>.</p>
       </details>
@@ -1886,7 +1933,7 @@
         <summary>Añadir una mission nueva
           <span class="hint">Desde cero hasta que una order la puede pedir a la flota.</span></summary>
         <ol class="steps">
-          <li><b>Crearla vacía</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Crearla vacía</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mission». Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
               «Crear mission». El nombre no puede repetirse en el grupo. Para un grupo nuevo, antes «Grupo»: se guarda en el
               catálogo y se crea en el robot junto con su primera mission, que va al site de la flota (elígelo en la
@@ -1895,7 +1942,7 @@
             <p>«Abrir en la web del MiR ↗» lleva directo a su editor Blockly. Lo que la order vaya a mandar (una position,
               un número de piezas…) se declara como <b>variable</b> de la mission: el nombre de esa variable es el
               <code>input</code> que verás luego en Configuración.</p></li>
-          <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>En «Creado desde aquí», «Capturar» lee la mission del robot y la guarda en <code>catalog/</code>. Si usa algo
               que no está en el catálogo (una position o una sub-mission sin capturar), te dice qué falta: captúralo antes.
               Si la vuelves a editar en el MiR, «Volver a capturar».</p></li>
@@ -1925,7 +1972,7 @@
           <li><b>Editarla en la web del MiR, sin «Guardar como»</b><span class="where">web del MiR</span>
             <p>Ábrela y cámbiala <b>en el sitio</b>. No la borres para rehacerla ni la guardes con «Guardar como»: la copia
               nace con otro GUID, el FM no la reconoce y la action que la usaba deja de encontrarla en ese robot.</p></li>
-          <li><b>Llevar el cambio al catálogo</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Llevar el cambio al catálogo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Si se creó desde aquí, «Volver a capturar» en «Creado desde aquí», desde el robot donde la has editado.</p>
             <p><b>Si ya se hizo un «Guardar como»:</b> la copia sale en «Hechas en la web del MiR». Elige «en lugar de
               «su nombre»» (viene propuesta la del catálogo con el mismo nombre) y «Adoptar»: su contenido pasa al
@@ -1953,7 +2000,7 @@
           <li><b>Elige cómo quitarla</b>
             <p><b>Solo de un robot</b><a class="where" href="#sincronizacion">→ Sincronización</a> En «Estado de la flota» sale
               como <i>sobrante</i> del robot: pulsa su ✕. Sigue en el catálogo y se puede volver a desplegar.</p>
-            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear">→ Crear</a> «Borrar» en «Creado desde aquí»: la
+            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear/borrar">→ Catálogo › Borrar un recurso</a> «Borrar» en «Creado desde aquí»: la
               quita de los robots y del catálogo, y su número queda libre.</p>
             <p><b>De toda la flota</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota» junto a
               ella en el catálogo: se borra de todos los robots y del catálogo, y su número queda reservado
@@ -1971,7 +2018,7 @@
           <li><b>Llevar el robot al sitio</b><span class="where">web del MiR o joystick</span>
             <p>La position se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
               (hoy <code>suberri_mirur</code>). Para un marcador, deja el robot delante de él.</p></li>
-          <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Crearla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Position». Elige ese robot, escribe el nombre (no puede repetir el de ninguna position, de ningún mapa ni robot, aunque
               cambien mayúsculas: la web del MiR las lista todas juntas sin decir de qué mapa son), el <b>tipo</b> (Robot position, VL-marker
               o MiR Charge 48V) y «Crear position aquí». <b>El tipo no se puede cambiar después</b>, ni aquí ni en la web
@@ -1980,7 +2027,7 @@
             <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Una Robot position se corrige si hace falta. Un
               <b>VL-marker</b> o un cargador nace con un docking offset provisional y con su entrada (la pone el MiR):
               ábrelo, <b>vuelve a detectar el marcador</b> y ajusta el offset.</p></li>
-          <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>«Capturar» en «Creado desde aquí». En un marcador se capturan también su entrada y su offset.</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Igual que una mission. Un marcador calibrado con un robot puede necesitar ajustar el offset en otro:
@@ -1998,7 +2045,7 @@
           <li><b>Quitarla de las listas de positions admitidas</b><a class="where" href="#configurador">→ Configuración</a>
             <p>Edita las actions que la tengan marcada en «Positions admitidas», desmárcala y «Guardar».</p></li>
           <li><b>Borrarla</b>
-            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear">→ Crear</a> «Borrar»: su número queda libre.</p>
+            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear/borrar">→ Catálogo › Borrar un recurso</a> «Borrar»: su número queda libre.</p>
             <p><b>Si no</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota»: su número queda
               reservado. Un marcador se lleva su entrada.</p></li>
           <li><b>Avisar aguas arriba</b>
@@ -2015,14 +2062,14 @@
             <p>Un <b>PNG en gris de 8 bits</b>: negro = obstáculo, blanco = libre. El que exporta la web del MiR ya viene
               así; uno en color se rechaza. Apunta su resolución (metros por píxel) y su origen (dónde cae, en metros, la
               esquina inferior izquierda).</p></li>
-          <li><b>Subirlo</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Subirlo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mapa» (no hace falta robot): nombre (no puede repetirse en el catálogo), site (si no hay ninguno, créalo
               antes con «Site»), la imagen, la resolución y el origen. Debajo sale cuántos metros mide. «Subir al catálogo» no toca
               ningún robot.</p></li>
           <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>En «Mapas de &lt;site&gt;», márcalo (arrastra su site y marca sus positions y zonas), elige el robot, «Vista previa» y «Desplegar». Crearlo en un robot no
               lo activa: para trabajar en él, cámbialo en la web del MiR.</p></li>
-          <li><b>Si te has equivocado</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Si te has equivocado</b><a class="where" href="#crear/borrar">→ Catálogo › Borrar un recurso</a>
             <p>«Borrar» en «Creado desde aquí» lo quita del catálogo y de los robots que lo tengan, con sus positions y zonas,
               salvo que sea el mapa activo de algún robot o que una mission vaya a sus positions.</p></li>
         </ol>
@@ -2038,7 +2085,8 @@
           <li><b>Retirarlo</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>«Retirar de la flota» junto al mapa, en «Mapas de &lt;site&gt;». La confirmación dice qué positions y zonas se van
               con él: se borran de los robots que lo tienen (el MiR las borra con el mapa) y del catálogo, y sus números quedan
-              reservados. Si era una prueba subida o creada en Crear, «Borrar» allí hace lo mismo y deja libres los números.</p></li>
+              reservados. Si era una prueba subida, copiada o creada en «Crear o importar recurso» (en Catálogo), «Borrar» en su lista
+              «Creado desde aquí» hace lo mismo y deja libres los números.</p></li>
           <li><b>El original del robot</b><span class="where">web del MiR</span>
             <p>Si era un mapa capturado de un robot, su original (sin GUID de la flota) no se toca: bórralo en su web si ya no
               hace falta.</p></li>
@@ -2049,7 +2097,7 @@
         <summary>Capturar un mapa de un robot
           <span class="hint">Un mapa hecho en la web de un MiR, con sus positions y zonas, a toda la flota.</span></summary>
         <ol class="steps">
-          <li><b>Capturarlo</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Capturarlo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mapa» → «Capturar de un robot». Elige el robot y el mapa (salen los que no tienen GUID de la flota),
               el nombre que tendrá en el catálogo y su site (uno del catálogo o uno nuevo). «Capturar al catálogo» solo lee el
               robot. Una zona que use un sonido subido solo a ese robot no se captura: el aviso dice cuál.</p></li>
@@ -2059,10 +2107,32 @@
           <li><b>Activar el del catálogo</b><span class="where">web del MiR</span>
             <p>En cada robot, cambia al mapa del catálogo y localiza el robot. Las missions con positions fijas solo van a un
               robot que esté en su mapa. El original se puede borrar en la web cuando ya no haga falta.</p></li>
-          <li><b>Si se sigue editando el original</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Si se sigue editando el original</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Mientras se trabaje en el mapa original del robot (mover una position, añadir una zona), «Volver a capturar»
               actualiza la copia del catálogo con los mismos GUIDs; lo que ya no está en el robot se avisa, pero no se
               borra.</p></li>
+        </ol>
+      </details>
+
+      <details class="guide-sec">
+        <summary>Copiar un mapa del catálogo
+          <span class="hint">Otro mapa igual, con sus positions y zonas: p. ej. uno de pruebas que no toque el de trabajo.</span></summary>
+        <ol class="steps">
+          <li><b>Copiarlo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
+            <p>Arriba, «Mapa» → «Copiar del catálogo» (no hace falta robot). Elige el mapa, el nombre del nuevo y su site (por
+              defecto, el del original). Las positions copiadas no pueden llamarse igual que las del original (la web del MiR
+              las lista todas juntas): elige un <b>prefijo</b> o un <b>sufijo</b> con su separador («pruebas-», «-pruebas»);
+              debajo sale cómo quedará una. Si algún nombre ya existe, el aviso dice cuál. Las zonas conservan su nombre.</p></li>
+          <li><b>Las missions no se copian</b><span class="where">—</span>
+            <p>Una mission que va a positions fijas sigue siendo del mapa original: en la copia el FM la rechaza. En el mapa
+              copiado valen las que reciben la position como parámetro, pidiendo la position con su nombre nuevo.</p></li>
+          <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
+            <p>En «Mapas de &lt;site&gt;», márcalo: se marcan solas sus positions y zonas. «Vista previa» y «Desplegar».</p></li>
+          <li><b>Activarlo</b><span class="where">web del MiR</span>
+            <p>En cada robot que vaya a trabajar en él, cámbialo en su web y localiza el robot.</p></li>
+          <li><b>Si te has equivocado</b><a class="where" href="#crear/borrar">→ Catálogo › Borrar un recurso</a>
+            <p>«Borrar» en «Creado desde aquí» lo quita con sus positions y zonas, del catálogo y de los robots que lo tengan
+              (el original no se toca).</p></li>
         </ol>
       </details>
 
@@ -2073,7 +2143,7 @@
           <li><b>Llevar el robot cerca del sitio</b><span class="where">web del MiR o joystick</span>
             <p>La zona nace como un cuadrado de 1 m <b>2 m delante del robot</b>, en su mapa activo (hoy
               <code>suberri_mirur</code>). No hace falta que esté justo en el sitio: la forma se da después.</p></li>
-          <li><b>Crearla</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Crearla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Zona». Elige el robot, escribe el nombre (no puede repetirse en el mapa), el <b>tipo</b> (debajo sale qué hace cada
               uno) y «Crear zona aquí».
               <b>El tipo no se puede cambiar después</b>: si te equivocas, «Borrar» y vuelve a crearla. Desde ese momento la
@@ -2082,7 +2152,7 @@
             <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Abre la zona, arrastra sus vértices (pinchando en un lado
               se añade otro) y, si es de velocidad, de sonido y luz o del planificador, añade sus acciones. Un sonido tiene que
               ser de fábrica o del catálogo: uno subido solo a ese robot no se puede capturar.</p></li>
-          <li><b>Capturarla</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>«Capturar» en «Creado desde aquí»: guarda el polígono y las acciones en el catálogo.</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Está en «Zonas de &lt;mapa&gt;»: márcala, elige el robot, «Vista previa» y «Desplegar».</p></li>
@@ -2095,13 +2165,13 @@
         <ol class="steps">
           <li><b>Cambiarla en la web del MiR</b><span class="where">web del MiR</span>
             <p>En el robot donde se creó, edita la zona en el editor del mapa (forma, nombre, acciones). El tipo no.</p></li>
-          <li><b>Volver a capturarla</b><a class="where" href="#crear">→ Crear</a>
+          <li><b>Volver a capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>«Volver a capturar» en «Creado desde aquí».</p></li>
           <li><b>Llevar el cambio</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>En la vista previa de los demás robots sale <b>distinta</b>: marca <b>Sustituir</b> y «Desplegar». Se corrige en
               su sitio, con el mismo GUID. Con el robot ocupado no se deja: espera a que quede libre.</p></li>
           <li><b>Quitarla</b>
-            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear">→ Crear</a> «Borrar»: su número queda libre.</p>
+            <p><b>Era una prueba creada aquí</b><a class="where" href="#crear/borrar">→ Catálogo › Borrar un recurso</a> «Borrar»: su número queda libre.</p>
             <p><b>Si no</b><a class="where" href="#sincronizacion">→ Sincronización</a> «Retirar de la flota»: se borra de todos
               los robots y su número queda reservado.</p></li>
         </ol>
@@ -2115,8 +2185,8 @@
             <p>Una action del catálogo que lleve al robot a su sitio de espera, habilitada en los robots que volverán (p. ej.
               <code>ir_a_espera</code>). Si los dos comparten zona, que la mission elija un punto libre (prueba uno y, si está
               ocupado, va a otro) o da a cada robot el suyo con un parámetro.</p></li>
-          <li><b>Tener la zona de espera en el mapa</b><a class="where" href="#crear">→ Crear</a>
-            <p>Una zona que cubra los puntos de espera, en el catálogo y en los robots (pestaña Crear, «zona del mapa»). Así el
+          <li><b>Tener la zona de espera en el mapa</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
+            <p>Una zona que cubra los puntos de espera, en el catálogo y en los robots (Catálogo › «Crear o importar recurso» › «Zona»). Así el
               FM no manda a la espera a un robot que ya está en ella.</p></li>
           <li><b>Activarla para la flota</b><a class="where" href="#configurador">→ Configuración</a>
             <p>«Editar» → «Vuelta a la espera»: marca la casilla, elige la action, los <b>segundos parado</b> (deja tiempo a que
@@ -2190,7 +2260,7 @@
 
 <script src="/static/vue.global.prod.js"></script>
 <script>
-const { createApp, reactive, computed, watch, ref } = Vue;
+const { createApp, reactive, computed, watch, ref, nextTick } = Vue;
 
 // vda5050/v3/<manufacturer>/<serial>/<subtopic>
 function parseTopic(t) {
@@ -2814,8 +2884,8 @@ createApp({
         flow: ['<b>Crear</b> aquí el site', '<b>Subir</b> su primer mapa (botón «Mapa»)',
                `Llevar los dos a los robots en ${SYNC_LINK}`] },
       { kind: 'map', label: 'Mapa', robot: false,
-        hint: 'Un mapa nuevo de un site, desde un PNG o capturado de un robot. Va al catálogo, no a un robot.',
-        flow: ['<b>Subir</b> aquí el PNG o <b>capturarlo</b> de un robot', `Llevarlo a los robots en ${SYNC_LINK}`,
+        hint: 'Un mapa nuevo de un site, desde un PNG, capturado de un robot o copiado de otro del catálogo. Va al catálogo, no a un robot.',
+        flow: ['<b>Subir</b> aquí el PNG, <b>capturarlo</b> de un robot o <b>copiar</b> uno del catálogo', `Llevarlo a los robots en ${SYNC_LINK}`,
                'Activarlo en la <b>web del MiR</b> de cada robot'] },
       { kind: 'position', label: 'Position', robot: true,
         hint: 'Un punto del mapa, creado donde está el robot. Su nombre no puede repetir el de ninguna position, de ningún ' +
@@ -2867,6 +2937,10 @@ createApp({
     const capSelected = computed(() => capState.list.find(m => m.guid === capState.source) || null);
     function setMapMode(mode) {
       mapForm.mode = mode;
+      if (mode === 'copy' && !copySource.value && siteMaps.value.length) {
+        copyForm.source = siteMaps.value[0].guid;
+        pickCopySource();
+      }
       if (mode === 'robot' && !capState.robot) {
         const ok = createState.robots.filter(r => r.can_create && r.online);
         capState.robot = ok.some(r => r.serial === createState.robot) ? createState.robot : (ok[0] || {}).serial || '';
@@ -2931,6 +3005,42 @@ createApp({
       }
       await loadCreate();
       if (out) createState.mission.parent = out.guid;    // la mission que se cree a continuación, en este grupo
+    }
+    // Copiar un mapa del catálogo (#33). El texto se propone a partir del
+    // nombre del mapa nuevo hasta que se escribe a mano.
+    const copyForm = reactive({ source: '', name: '', session: '', affix: '', at: 'suffix', touched: false });
+    const copySource = computed(() => createState.maps.find(m => m.guid === copyForm.source) || null);
+    function pickCopySource() {
+      const m = copySource.value;
+      if (m) copyForm.session = m.site || copyForm.session;
+    }
+    function proposeAffix() {
+      if (copyForm.touched) return;
+      const n = copyForm.name.trim();
+      copyForm.affix = !n ? '' : copyForm.at === 'prefix' ? `${n}-` : `-${n}`;
+    }
+    function setCopyAt(at) {
+      copyForm.at = at;
+      proposeAffix();
+    }
+    const copyExample = computed(() => {
+      const ex = (copySource.value || {}).example;
+      if (!ex || !copyForm.affix.trim()) return null;
+      return [ex, (copyForm.at === 'prefix' ? copyForm.affix + ex : ex + copyForm.affix).trim()];
+    });
+    const canCopyMap = computed(() => !createState.busy && !!copySource.value && !!copyForm.name.trim()
+      && !!copyForm.affix.trim() && !!copyForm.session);
+    async function copyMap() {
+      const body = { source: copyForm.source, name: copyForm.name.trim(), affix: copyForm.affix, at: copyForm.at,
+                     session: copyForm.session };
+      const out = await postCreate('/api/create/copy-map', body,
+                                   `copiando «${copySource.value.name}» como «${body.name}»…`);
+      if (out) {
+        createState.result = out;
+        Object.assign(copyForm, { name: '', affix: '', touched: false });
+        addEvent('catálogo', `copiado el mapa «${out.copied_from}» como «${out.name}» (${out.guid})`);
+      }
+      loadCreate();
     }
     const canUploadMap = computed(() => !createState.busy && !!mapForm.name.trim() && !!mapForm.png
       && mapForm.resolution > 0 && !!mapForm.session);
@@ -3533,7 +3643,12 @@ createApp({
     // Al entrar en una pestaña de administración se relee lo que puede haber
     // cambiado: el catálogo (al capturar) y los informes de sincronización.
     function onTab() {
-      if (ui.tab === 'crear') loadCreate();
+      // `#crear/borrar`: directos a «Creado desde aquí», donde está «Borrar»
+      // (después de leer la lista, para que esté entera al desplazarse).
+      if (ui.tab === 'crear') loadCreate().then(() => {
+        if (location.hash.slice(1).split('/')[1] === 'borrar')
+          nextTick(() => document.getElementById('creado-aqui')?.scrollIntoView({ block: 'start' }));
+      });
       if (ui.tab === 'catalogo') loadSync();
       if (ui.tab === 'sincronizacion' || ui.tab === 'configurador') loadSync().then(applySyncContext);
       if (ui.tab === 'configurador') loadConfig();
@@ -3554,7 +3669,7 @@ createApp({
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, maintLabel, toggleMaintenance, retryIdle, resetRobot, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
-             capState, capSelected, setMapMode, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
+             capState, capSelected, setMapMode, copyForm, copyExample, pickCopySource, proposeAffix, setCopyAt, canCopyMap, copyMap, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,
              viewActions, cfgChoices, actForm, openActForm, onMissionChange, addInput, allowOptions, acceptActForm,
              deleteAction, undoAction,

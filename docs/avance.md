@@ -3292,6 +3292,76 @@ la configuración, crea y captura una mission, la sincroniza, abre el mapa
 de un robot desde `#flota/mir-2` y comprueba el enlace «sincronizar» del
 Configurador. Falta verla en el navegador con el FM real.
 
+## 2026-11-06 — Copiar un mapa del catálogo (punto #33)
+
+La tercera parte de lo acordado el 2026-10-29 para los mapas (subir un PNG,
+decisión 126; capturar de un robot, 132; copiar uno del catálogo). Alcance
+decidido por el usuario al empezar: **solo se copia el mapa con sus
+positions y zonas, no las missions**, y el texto que distingue los nombres
+de las positions copiadas va **como prefijo o como sufijo, a elegir**.
+
+176. **«Mapa» → «Copiar del catálogo» en Crear** (`create.copy_map`,
+     `POST /api/create/copy-map`). Otro mapa con la imagen, la resolución
+     y el origen del elegido, y copia de sus positions (con docking offset
+     y las entradas que crea el MiR, enganchadas a su madre copiada) y de
+     sus zonas (con sus acciones), todo con GUIDs nuevos del mapa nuevo.
+     **Solo escribe en el catálogo**, como subir un PNG: llega a los
+     robots por Sincronización (marcar el mapa marca sus positions y
+     zonas). Site: por defecto el del original; se puede elegir otro del
+     catálogo. El mapa sale en «Creado desde aquí» y «Borrar» se lleva
+     sus positions y zonas (decisión 133); estas no salen sueltas
+     (`_origen.copia_de`, sin `guid` propio). Los borradores del mapa
+     original no se copian (no están terminados).
+     - **Nombres de las positions** (decisión 174): a cada una se le añade
+       el texto elegido, delante o detrás, tal cual (el separador va en el
+       propio texto: «pruebas-», «-pruebas»); la entrada de un marcador
+       lleva el de su madre, como hace el MiR. El formulario propone el
+       texto a partir del nombre del mapa nuevo hasta que se escribe a
+       mano y enseña cómo quedará una position. Si algún nombre nuevo ya
+       está en el catálogo o en un robot que responda
+       (`_others_position_names("")`, todos), o sale dos veces, no se
+       copia nada y el aviso dice cuáles (hasta 5).
+     - **Las zonas conservan su nombre**: la web del MiR las lista por
+       mapa, y la vuelta a la espera (`idle_return.zone`) busca su zona
+       por nombre en el mapa activo.
+     - **Las missions no se copian**: las de positions fijas siguen siendo
+       del original y el FM las rechaza en la copia (decisión 131); en la
+       copia valen las que reciben la position como input, con el nombre
+       nuevo.
+     `create_choices` da por mapa cuántas positions y zonas tiene y un
+     nombre de ejemplo. Guía: «Copiar un mapa del catálogo» y el paso del
+     mapa en «Acabo de llegar».
+
+Probado: `pytest` 351 (3 nuevos en `tests/adapters/test_mir_create.py`
+y 1 en `tests/test_web.py`). Sobre una copia del catálogo real en el
+scratchpad: `suberri_mirur` → `mapa-pruebas-2` da 20 positions (más sus 5
+entradas) y la zona, 52,65 × 31,55 m; `mapa-pruebas` se rechaza mientras
+exista el actual. Interfaz revisada con un Chromium sin ventana a 1300 y
+390 px (servidor de prueba con robot simulado): sin errores en consola ni
+scroll horizontal. Sin tocar los robots.
+
+**Probado por el usuario con los MiR** (el mismo día, FM real reiniciado):
+«Borrar» el `mapa-pruebas` anterior, copiar `suberri_mirur` como
+`mapa-pruebas` y desplegarlo en los dos robots: «todo ok».
+
+**Rutas de la Guía** (visto por el usuario el mismo día): desde la
+decisión 175, Crear ya no está en el menú; se llega por Catálogo →
+«+ Crear o importar recurso». Los 22 enlaces «→ Crear» de la Guía pasan
+a «→ Catálogo › Crear recurso», y las frases y los dos mensajes de error
+que decían «pestaña Crear» o «en Crear» dicen ahora «Crear o importar
+recurso» (en Catálogo).
+
+**Botón «Borrar un recurso» en el Catálogo** (pedido por el usuario: no
+se encontraba dónde borrar). Junto a «+ Crear o importar recurso», lleva
+a `#crear/borrar`: la misma página, desplazada hasta «Creado desde aquí»
+(`#creado-aqui`), donde están los «Borrar», una vez leída la lista. Su
+`title` recuerda que lo que no se creó allí se quita en Sincronización
+(«Retirar de la flota»). Los pasos «Si te has equivocado» y «Era una
+prueba creada aquí» de la Guía enlazan ahí («→ Catálogo › Borrar un
+recurso»). Comprobado con Chromium sin ventana: el clic y la carga
+directa de `#crear/borrar` dejan la lista a la vista; `#crear` sigue
+empezando arriba.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3316,14 +3386,12 @@ también con los MiR). Y #42 (vuelta a la espera con reintentos, paradas
 de seguridad y reset, decisiones 171–173), probado por el usuario con los
 MiR. Y #37 (nombres de position únicos en todos los mapas y robots,
 decisión 174).
+Cerrado el 2026-11-06: #33 (copiar un mapa del catálogo con sus positions
+y zonas, decisión 176).
 
 **En curso / siguiente** (al cerrar el 2026-11-04; orden decidido por el usuario)
 
-1. **Siguiente día: la creación completa de un mapa** (pedido el
-   2026-11-04). Punto de partida, #33 (copiar un mapa del catálogo con
-   imagen, origen, positions y zonas, abajo); concretar el alcance al
-   empezar.
-2. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
+1. **Pruebas con robot.** Hechas la vuelta a la espera (#35, 2026-10-30)
    y el Configurador con el FM real (#22, 2026-11-04). Lo que queda en el
    bloque «Probar con robot» de abajo espera a otra cosa (una mission con
    parámetro de texto, #8, o llevar mir-2 a `MESA_TKNIKA`, #18b).
@@ -3332,13 +3400,17 @@ Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
 - **Estado al cerrar (2026-11-04):** todo commiteado y subido (último,
-    `1c48e92`, #37). Hecho hoy: #40 cerrado (WebSocket del MiR, decisión
-    166; sale #41), #27 quitado, #22 (corregir bloqueado con el robot
-    ocupado), #36 modo mantenimiento (decisiones 167–170), #42 vuelta a la
-    espera con reintentos, paradas de seguridad y reset (171–173) y #37
-    nombres de position únicos (174). El FM real (arrancado a las 09:05)
-    tiene hasta la decisión 173 pero **no la 174**: reiniciarlo antes de
-    crear positions. Los dos robots en `suberri_mirur` (el site de la
+    `076cbac`, interfaz nueva, decisión 175). Hecho hoy: #40 cerrado
+    (WebSocket del MiR, decisión 166; sale #41), #27 quitado, #22
+    (corregir bloqueado con el robot ocupado), #36 modo mantenimiento
+    (decisiones 167–170), #42 vuelta a la espera con reintentos, paradas de
+    seguridad y reset (171–173), #37 nombres de position únicos (174) y la
+    interfaz con menú lateral y pestaña Catálogo (175, traída de la
+    propuesta de `../preview-fleet-manager/`, que sigue fuera del repo;
+    su `preview.css` aún tiene el select que se sale, arreglado solo en el
+    FM). El FM real (arrancado a las 09:54) tiene hasta la 174; la
+    interfaz es estática y se ve con recargar la página. Falta repasar la
+    interfaz nueva en el navegador pantalla a pantalla. Los dos robots en `suberri_mirur` (el site de la
     flota): reciben orders. En `mirur-instalacion`, el `fleet.yaml` del
     disco es el de git (con `idle_return`; `prueba_cola` quitada al acabar
     la prueba). La mission `prueba-cola` (10 s de espera, no está en el
@@ -3347,15 +3419,6 @@ las del FM son placeholders y no hay tiempos que medir.
     commitear en el catálogo: borrarla en Crear cuando no haga falta.
     `clientes/voz/` es del compañero: solo se toca si un cambio del FM la
     rompe.
-- **#33** **Copiar un mapa del catálogo** con imagen, origen, positions y
-    zonas (GUIDs nuevos de ese mapa). Primer uso: rehacer `mapa-pruebas`
-    como copia de `suberri_mirur` (antes, «Borrar» el actual en Crear, que
-    deja libre su número). Decidir qué pasa con las missions de positions
-    fijas (decisión 131): copiarlas apuntando a las positions copiadas o
-    pasarlas a recibir la position como input. Y cómo nombrar las positions
-    copiadas: no pueden repetir nombre (decisión 174).
-
-
 - **#38** **Capturar una mission con «Prompt user»** (visto el 2026-10-30
     con `prueba-pregunta`). La acción guarda el GUID de un grupo de
     usuarios del robot (`8f8af10e-…`, «Alumno» en mir-1) y la captura lo
