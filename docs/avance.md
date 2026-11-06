@@ -3637,6 +3637,30 @@ en el registro y una `coger` con el *If*). Siguiente paso: editar el
 catálogo y la matriz robot × herramienta en Configuración (hoy, a mano en
 `fleet.yaml`).
 
+## 2026-11-06 — Revisión de la interfaz: términos y decisiones para corregirla
+
+Primera revisión del agente revisor de interfaz (fuera del repo:
+`../.claude/agents/revisor-interfaz.md` y `../revision-interfaz/`) sobre las
+decisiones 180–184. Sin bloqueantes; once problemas importantes y varios
+menores, en `../revision-interfaz/informes/2026-11-06-cambios-del-dia.md`.
+**Nada corregido todavía.** Decisiones al cerrar:
+
+185. **Términos de la interfaz** (decisión del usuario): **misiones** y
+     **posiciones**, en castellano, en todas las pantallas, la Guía y los
+     mensajes (hoy se mezclan con mission/position). **Site** se queda en
+     inglés: no es una traducción directa. Más adelante, una versión completa
+     en inglés.
+186. **La comprobación completa no se pierde**: la rápida de después de
+     desplegar o quitar (solo mira si está) no borra lo que la completa sabía
+     del contenido en lo que no ha cambiado; se ve de cuándo es cada dato.
+187. **Desplegar con varios robots se revisa en la página**, sin `confirm()`,
+     como Quitar: cada robot dice qué se le hace o por qué se queda fuera, y
+     el botón dice lo que hará.
+188. **«Revisado» del aviso de cambiadores vale para todos**: lo guarda el FM
+     (por arranque), con quién y cuándo, en vez de cada navegador.
+
+(186–188, decididas por el implementador con permiso del usuario.)
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3667,6 +3691,10 @@ decisión 179).
 
 **En curso / siguiente** (al cerrar el 2026-11-06, por la tarde; robots apagados)
 
+0. **Corregir lo de la revisión de interfaz** y aplicar 185–188: el informe
+   está en `../revision-interfaz/informes/2026-11-06-cambios-del-dia.md`.
+   Al acabar, volver a pasar el revisor (reiniciar Claude Code para que
+   cargue `revisor-interfaz` como agente propio).
 1. **Herramientas con los MiR** (decisión 184). El usuario dirá qué
    registro PLC usaba para la herramienta montada (hoy, el 1 por defecto).
    Probar con missions falsas: `cambio_herramienta` que solo escribe el
