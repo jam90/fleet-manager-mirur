@@ -11,6 +11,9 @@ robots:
     battery: 90            # batería inicial
     pose: [1.0, 2.0, 0.0]  # opcional; sin pose no se publica mobileRobotPosition
     fail_actions: [dejar]  # estos actionTypes terminan FAILED
+    tool: vgc10            # opcional: herramienta montada al arrancar ("" = ninguna); sin
+                           # la clave, el robot no tiene herramientas. Una order que pide
+                           # otra la "cambia" al empezar, como haría la mission (decisión 184)
     actions:               # qué actionTypes acepta (el valor se ignora)
       coger: {}
       dejar: {}
@@ -25,7 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Mapping
 
-from fm.adapters.base import JOB_ALIVE, ActionInfo, Job, JobStatus, RobotSpec, Telemetry
+from fm.adapters.base import JOB_ALIVE, ActionInfo, Job, JobStatus, ParamInfo, RobotSpec, Telemetry
 from fm.config import ConfigError
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import E_INVALID_ORDER_ACTION, State
@@ -44,6 +47,9 @@ class SimRobotConfig:
     drain_pct_per_s: float = 0.0
     fail_actions: set[str] = field(default_factory=set)
     charge_duration_s: float = 30.0
+    tool: str | None = None                       # herramienta al arrancar (None = no tiene)
+    tool_inputs: dict[str, str] = field(default_factory=dict)   # actionType → parámetro con la herramienta
+    tool_codes: dict[str, int] = field(default_factory=dict)    # catálogo `tools:` (lo pone el core)
 
 
 def parse_config(serial: str, raw: Mapping, defaults: Mapping) -> SimRobotConfig:
@@ -61,6 +67,10 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping) -> SimRobotConfig
         drain_pct_per_s=float(m.get("drain_pct_per_s", 0)),
         fail_actions=set(m.get("fail_actions") or []),
         charge_duration_s=float(m.get("charge_duration_s", 30)),
+        tool=None if m.get("tool") is None else str(m["tool"]),
+        tool_inputs={a: d["tool_input"] for a, d in (m.get("actions") or {}).items()
+                     if isinstance(d, Mapping) and d.get("tool_input")},
+        tool_codes=dict(m.get("tool_codes") or {}),
     )
 
 
@@ -90,6 +100,7 @@ class SimDriver:
         self.clock = clock
         self.last_error: str | None = None
         self.battery = cfg.battery
+        self.tool = cfg.tool
         self._jobs: dict[str, _SimJob] = {}
         self._next_id = 1
         self._paused_since: float | None = None
@@ -121,6 +132,7 @@ class SimDriver:
             charging=current is not None and current.charge,
             available=True,
             foreign_busy=False,      # nadie lanza nada "desde la web" en un sim
+            tool=self.tool,
         )
 
     def pause(self) -> None:
@@ -172,6 +184,10 @@ class SimDriver:
             job, start, start + float(payload.get("duration_s", self.cfg.duration_s)),
             fail=job.action.actionType in self.cfg.fail_actions,
             charge=bool(payload.get("charge", False)))
+        # Lo que haría la mission en un robot real: ponerse la herramienta pedida.
+        key = self.cfg.tool_inputs.get(job.action.actionType)
+        if key and key in job.action.params() and self.tool is not None:
+            self.tool = str(job.action.params()[key])
         log.info("[%s] job %s (%s) %s, termina en %.1fs", self.serial, job_id, job.label,
                  "arranca" if start == now else f"en cola (arranca en {start - now:.1f}s)",
                  self._jobs[job_id].ends - now)
@@ -203,4 +219,6 @@ class SimDriver:
         return RobotSpec("SIM", description="robot simulado sin hardware (fm/adapters/sim)")
 
     def describe_actions(self) -> list[ActionInfo]:
-        return [ActionInfo(t, [], f"sim {self.cfg.duration_s:.0f}s") for t in sorted(self.cfg.action_types)]
+        tools = sorted(self.cfg.tool_codes)
+        return [ActionInfo(t, [ParamInfo(self.cfg.tool_inputs[t], "tool", True, tools)] if t in self.cfg.tool_inputs else [],
+                           f"sim {self.cfg.duration_s:.0f}s") for t in sorted(self.cfg.action_types)]

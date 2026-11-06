@@ -16,6 +16,7 @@ from fm.adapters.mir.client import (STATE_PAUSE, STATE_READY, MirClient, MirStat
                                     loaded_missions, mission_input_names, point_in_polygon, position_map_id)
 from fm.adapters.mir.config import MirRobotConfig
 from fm.adapters.mir.translate import MissionRequest, from_vda_order, render_message, to_telemetry
+from fm.tools import tool_name
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import E_MOBILE_ROBOT_NOT_AVAILABLE, E_NO_ROUTE_TO_TARGET, State
 
@@ -147,7 +148,8 @@ class MirDriver:
             if guid is None:
                 continue
             exposed = self.mission_inputs.get(guid, set())
-            for key in [*a.position_inputs, *a.required_inputs, *a.number_inputs]:
+            inputs = [*a.position_inputs, *a.required_inputs, *a.number_inputs, *filter(None, [a.tool_input])]
+            for key in inputs:
                 if key not in exposed:
                     self.log.warning("actions.%s: la mission '%s' no tiene el input '%s' (tiene %s)",
                                      a.action_type, a.mission, key, sorted(exposed))
@@ -168,7 +170,21 @@ class MirDriver:
             return None
         t = to_telemetry(self.last_status, self._own_queue_ids)
         t.site_id, t.site_name = self._site_of(t.map_id)
+        t.tool = self._tool()
         return t
+
+    def _tool(self) -> str | None:
+        """Herramienta montada (decisión 184): el programa del brazo escribe su
+        código en `tool_register`. None si no se lee o falla la lectura: sin
+        saberlo, el asignador solo le da lo que tenga en su cambiador."""
+        if self.cfg.tool_register is None:
+            return None
+        try:
+            value = self.client.registers_id_get(self.cfg.tool_register)["value"]
+            return tool_name(int(round(float(value))), self.cfg.tool_codes)
+        except Exception as e:
+            self.log.warning("GET registers/%s falló: %s", self.cfg.tool_register, str(e)[:160])
+            return None
 
     def _site_of(self, map_id: str | None) -> tuple[str | None, str | None]:
         """Site (session) del mapa activo, con su nombre (decisión 129). Se
@@ -345,6 +361,8 @@ class MirDriver:
                 r = a.number_ranges.get(k)
                 params.append(ParamInfo(k, "number", True, min=r and r.min, max=r and r.max,
                                         step=r and r.step))
+            if a.tool_input:
+                params.append(ParamInfo(a.tool_input, "tool", True, sorted(self.cfg.tool_codes)))
             name = self.mission_names.get(a.mission, a.mission)
             out.append(ActionInfo(a.action_type, params, f"mission '{name}'"))
         return out

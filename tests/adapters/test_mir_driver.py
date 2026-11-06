@@ -340,3 +340,62 @@ def test_reset_borra_el_error_y_reanuda():
     t = d.poll()
     assert t.errors == [] and t.available and c.status["state_id"] == 3
     assert d.web_url() == f"http://{d.cfg.host}/"
+
+
+# ------------------------------------------------ herramientas (decisión 184)
+class _ToolClient(_FakeClient):
+    """Registro PLC 1 con el código de la herramienta montada; `None` = falla."""
+    def __init__(self, value=2.0):
+        super().__init__()
+        self.value = value
+        self.actions["missions/m-coger/actions"] = [{"parameters": [{"input_name": "garra"}]}]
+
+    def _req(self, method, path, json=None):
+        if method == "GET" and path == "registers/1":
+            if self.value is None:
+                raise ConnectionError("sin red")
+            return {"id": 1, "value": self.value, "label": "herramienta"}
+        return super()._req(method, path, json)
+
+
+def _tool_driver(value=2.0):
+    cfg = MirRobotConfig("mir-1", "h", "a", {"coger": ActionConfig("coger", "coger", tool_input="garra")},
+                         mission_group="g", tool_register=1, tool_codes={"vgc10": 1, "2fg7": 2})
+    c = _ToolClient(value)
+    return MirDriver(cfg, c), c
+
+
+def test_herramienta_montada_se_lee_del_registro_plc():
+    d, c = _tool_driver(2.0)
+    assert d.poll().tool == "2fg7"
+    c.value = 0.0
+    assert d.poll().tool == ""                     # 0 = no lleva ninguna
+    c.value = 9.0
+    assert d.poll().tool == "código 9"             # no está en el catálogo: no vale para nada pedido
+    c.value = None
+    t = d.poll()
+    assert t is not None and t.tool is None        # falla el registro: el robot sigue, la herramienta no se sabe
+    # Sin `tool_register` no se lee nada (robot sin herramientas).
+    assert MirDriver(CFG, _FakeClient()).poll().tool is None
+
+
+def test_herramienta_pedida_va_a_la_mission_como_su_codigo():
+    d, c = _tool_driver()
+    assert d.connect()
+    d.execute(d.translate(Action("coger", "a1", actionParameters=[ActionParameter("garra", "vgc10")])))
+    assert c.posted[-1]["parameters"] == [{"id": "garra", "value": 1}]
+    with pytest.raises(OrderRejected, match="desconocida"):
+        d.translate(Action("coger", "a2", actionParameters=[ActionParameter("garra", "pinza")]))
+    assert [(p.key, p.kind, p.choices) for p in d.describe_actions()[0].params] == [("garra", "tool", ["2fg7", "vgc10"])]
+
+
+def test_tool_register_tiene_que_ser_un_registro_plc():
+    from fm.adapters.mir.config import parse_config
+    from fm.config import ConfigError
+    assert parse_config("mir-1", {"host": "h", "tool_register": 1}, {}, {}).tool_register == 1
+    # Con catálogo de herramientas, el 1 por defecto; sin él, no se lee ninguno.
+    assert parse_config("mir-1", {"host": "h", "tool_codes": {"vgc10": 1}}, {}, {}).tool_register == 1
+    assert parse_config("mir-1", {"host": "h"}, {}, {}).tool_register is None
+    for bad in (0, 201, "1", True):
+        with pytest.raises(ConfigError, match="tool_register"):
+            parse_config("mir-1", {"host": "h", "tool_register": bad}, {}, {})

@@ -264,8 +264,21 @@ def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, st
                                 f"'{key}' = {value} fuera de rango [{_fmt(r.min)}, {_fmt(r.max)}]")
         params.append({"id": key, "value": value})
 
+    # La herramienta (decisión 184) va como su código: es lo que compara la
+    # mission con el registro de la que lleva puesta (Set/If PLC register).
+    if acfg.tool_input:
+        key = acfg.tool_input
+        if key not in given:
+            raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (herramienta)")
+        code = robot.tool_codes.get(str(given[key]))
+        if code is None:
+            raise OrderRejected(E_VALIDATION_FAILURE, f"'{key}': herramienta '{given[key]}' desconocida; "
+                                                      f"hay {sorted(robot.tool_codes)}")
+        params.append({"id": key, "value": code})
+
     # El resto solo si la mission expone ese input_name (compatibilidad hacia delante).
-    handled = set(acfg.position_inputs) | set(acfg.required_inputs) | set(acfg.number_inputs)
+    handled = (set(acfg.position_inputs) | set(acfg.required_inputs) | set(acfg.number_inputs)
+               | ({acfg.tool_input} if acfg.tool_input else set()))
     for key, value in given.items():
         if key not in handled and key in exposed:
             params.append({"id": key, "value": value})

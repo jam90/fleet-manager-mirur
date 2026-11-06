@@ -475,6 +475,10 @@
   .page-title { letter-spacing: -.02em; }
   .page-sub, .hint, .empty, .muted, .feedback { color: var(--ink-2); }
   .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  /* Aviso de revisar los cambiadores de herramienta al arrancar el FM (decisión 184). */
+  .tool-check { border-color: var(--warn-line); background: var(--warn-bg); display: grid; gap: 6px; }
+  .tool-check p, .tool-check ul { margin: 0; }
+  .tool-check .acts { justify-content: flex-start; }
   .summary-card { background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 14px 17px;
     color: var(--ink-2); font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
   .summary-value { color: var(--navy); font-size: 28px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
@@ -797,6 +801,9 @@
             <dt>Estado</dt><dd>{{ rd.info.ROBOT_STATE || '—' }}<span v-if="rd.state.paused"> · en pausa</span></dd>
             <dt>Modo VDA</dt><dd><code>{{ rd.state.operatingMode }}</code></dd>
             <dt>Misión</dt><dd>{{ rd.info.MISSION || '—' }}</dd>
+            <template v-if="rd.tool != null || rd.toolChanger.length">
+              <dt>Herramienta</dt><dd>{{ toolLabel(rd) }}</dd>
+            </template>
             <!-- Vuelta a la espera (decisión 136): contador mientras está parado. -->
             <dt>A la espera</dt><dd :class="{ num: rd.idleIn != null }">{{ idleLabel(rd) }}</dd>
             <dt>Al destino</dt><dd class="num">{{ rd.info.DISTANCE_TO_TARGET != null ? Number(rd.info.DISTANCE_TO_TARGET).toFixed(1) + ' m' : '—' }}</dd>
@@ -932,6 +939,16 @@
   <main v-show="tab === 'operacion'">
     <div class="page-heading"><h2 class="page-title">Operación</h2><p>Supervisa la flota, envía una tarea y sigue su ejecución.</p></div>
     <div class="panel" v-if="robotsView.some(r => r.inError) || fleetQueue.tasks.some(t => t.status === 'ASSIGNING')"><b>Hay situaciones que requieren atención.</b><p>Revisa los avisos de robots o las tareas en duda de la cola.</p></div>
+    <!-- Decisión 184: el FM se fía de lo que dice fleet.yaml de cada cambiador
+         de herramientas. Una vez por arranque del FM, hasta pulsar «Revisado». -->
+    <div class="panel tool-check" v-if="toolCheckDue" role="status">
+      <b>Revisa los cambiadores de herramienta.</b>
+      <p>El FM manda las tareas según lo que dice la configuración que tiene cada cambiador. Si falta una, la mission
+        fallará al intentar cambiarla. Comprueba que tienen:</p>
+      <ul><li v-for="r in robotsView.filter(x => x.toolChanger.length)" :key="r.serial">
+        <b>{{ r.name || r.serial }}</b>: {{ r.toolChanger.join(', ') }}<span class="muted"> · {{ toolLabel(r, false) }}</span></li></ul>
+      <div class="acts"><button class="btn" @click="toolChecked">Revisado</button></div>
+    </div>
     <div class="summary-grid">
       <div class="summary-card"><span class="summary-value">{{ robotsView.filter(r => r.status.key === 'libre').length }}</span><span>Disponibles</span></div>
       <div class="summary-card"><span class="summary-value">{{ robotsView.filter(r => r.status.key === 'ejecutando').length }}</span><span>Trabajando</span></div>
@@ -941,7 +958,7 @@
     <section class="operation-workspace" aria-label="Enviar y seguir tareas">
       <div class="panel">
         <h3>Nueva tarea</h3>
-        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, entre varios, el de más batería. Si están todos ocupados, la order espera en la cola y va al primero que quede libre.</p>
+        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, si la acción pide herramienta, que la lleve o la tenga en su cambiador; entre varios, el que ya la lleva y después el de más batería. Si están todos ocupados, la order espera en la cola y va al primero que quede libre.</p>
         <form class="form" @submit.prevent="sendOrder">
           <label class="field">Acción
             <select id="order-action" v-model="form.actionType" required>
@@ -951,7 +968,7 @@
             </select>
           </label>
           <label class="field" v-for="p in currentParams" :key="p.key">
-            {{ p.key }} <span v-if="p.kind === 'position'">(position)</span><span v-else-if="p.kind === 'number'">(número)</span>
+            {{ p.key }} <span v-if="p.kind === 'position'">(position)</span><span v-else-if="p.kind === 'number'">(número)</span><span v-else-if="p.kind === 'tool'">(herramienta)</span>
             <select v-if="p.choices" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
               <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
             </select>
@@ -1035,6 +1052,9 @@
           </template>
           <template v-if="r.idleIn != null || r.idleGoing">
             <dt>A la espera</dt><dd :class="{ num: r.idleIn != null }">{{ idleLabel(r) }}</dd>
+          </template>
+          <template v-if="r.tool != null || r.toolChanger.length">
+            <dt>Herramienta</dt><dd>{{ toolLabel(r) }}</dd>
           </template>
 
           <dt>Acciones</dt>
@@ -2394,6 +2414,32 @@
         </ol>
       </details>
 
+      <!-- Decisión 184: herramientas. Hoy se configuran a mano en fleet.yaml. -->
+      <details class="guide-sec" id="guia-herramientas">
+        <summary>Robots con cambio de herramienta
+          <span class="hint">Que cada tarea vaya a un robot que lleve, o pueda ponerse, la garra que hace falta.</span></summary>
+        <ol class="steps">
+          <li><b>Las herramientas de la planta</b><span class="where"><code>fleet.yaml</code></span>
+            <p>En <code>tools:</code>, cada una con su <code>code</code>: el número con el que la identifica el programa del brazo
+              (0 es «ninguna»). De momento se escribe a mano en <code>fleet.yaml</code>; se aplica sin reiniciar.</p></li>
+          <li><b>Que el robot diga cuál lleva</b><span class="where">programa del brazo</span>
+            <p>El brazo escribe el <code>code</code> de la que lleva en un registro PLC del MiR (<code>tool_register</code> en
+              <code>drivers.mir</code>; por defecto, el 1). El FM lo lee y lo enseña en <a href="#operacion">Operación</a> y en Robots.</p></li>
+          <li><b>Qué tiene cada cambiador</b><span class="where"><code>fleet.yaml</code></span>
+            <p>En cada robot con cambiador, <code>tool_changer</code> con las que tiene a mano. Un robot sin cambiador solo
+              recibe tareas de la herramienta que lleve puesta.</p></li>
+          <li><b>La mission cambia la herramienta</b><span class="where">web del MiR</span>
+            <p>Recibe la pedida como un número: si no coincide con el registro de la que lleva, <i>Load mission</i> de la de
+              cambio y después sigue. El FM no la cambia: solo elige robot.</p></li>
+          <li><b>La action pide herramienta</b><span class="where"><code>fleet.yaml</code></span>
+            <p>En su definición, <code>tool_input</code> con el nombre del parámetro (p. ej. <code>garra</code>). La order trae el
+              nombre de la herramienta; en «Nueva tarea» sale como desplegable.</p></li>
+          <li><b>Al arrancar el FM, revisar los cambiadores</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Sale el aviso con lo que dice la configuración de cada cambiador: compruébalo y «Revisado». Si falta una
+              herramienta y no se cambió en <code>fleet.yaml</code>, la mission fallará al intentar ponérsela.</p></li>
+        </ol>
+      </details>
+
       <details class="guide-sec">
         <summary>Que un robot parado no estorbe
           <span class="hint">Mandarlo a la zona de espera tras un rato sin trabajo.</span></summary>
@@ -2756,6 +2802,7 @@ createApp({
       const idleIn = s && (s.information || []).find(i => i.infoType === 'IDLE_RETURN_IN');
       const prompt = s && (s.information || []).find(i => i.infoType === 'USER_PROMPT');
       const maint = s && (s.information || []).find(i => i.infoType === 'MAINTENANCE' || i.infoType === 'MAINTENANCE_PENDING');
+      const tool = s && (s.information || []).find(i => i.infoType === 'TOOL');
       return {
         serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
         name: name ? name.infoDescriptor : '',   // el de la web del robot ("Dejavu"), si el driver lo da
@@ -2777,6 +2824,8 @@ createApp({
         // En error (FATAL): hace falta un reset (decisión 173). Y su web, si el driver la da.
         inError: !!s && (s.errors || []).some(e => e.errorLevel === 'FATAL'),
         web: cfg.web || null,
+        // Herramientas (decisión 184): la que lleva ahora (la lee su driver) y su cambiador (fleet.yaml).
+        tool: tool ? tool.infoDescriptor : null, toolChanger: cfg.tool_changer || [],
         errors: s ? (s.errors || []).slice(-3) : [],
         canPause: reachable && !s.paused, canResume: reachable && s.paused, canCancel: reachable && alive,
       };
@@ -3793,6 +3842,19 @@ createApp({
     }, { immediate: true });
     // «A la espera»: el contador, que ya va, o nada.
     const idleLabel = r => r.idleGoing ? 'yendo ahora' : r.idleIn != null ? `en ${r.idleIn} s si sigue parado` : '—';
+    // Herramienta (decisión 184): «vgc10 · cambiador: vgc10, 2fg7». `null` = su driver no la lee.
+    function toolLabel(r, changer = true) {
+      const now = r.tool == null ? 'sin leer' : r.tool === 'ninguna' ? 'no lleva ninguna' : 'lleva ' + r.tool;
+      return now + (changer && r.toolChanger.length ? ' · cambiador: ' + r.toolChanger.join(', ') : '');
+    }
+    // Aviso de revisar los cambiadores: una vez por arranque del FM (`started_at`), hasta «Revisado».
+    const toolSeen = ref(localStorage.getItem('fm-tool-check') || '');
+    const toolCheckDue = computed(() => !!fleet.started_at && fleet.robots.some(r => (r.tool_changer || []).length)
+                                        && toolSeen.value !== String(fleet.started_at));
+    function toolChecked() {
+      toolSeen.value = String(fleet.started_at);
+      localStorage.setItem('fm-tool-check', toolSeen.value);
+    }
     // Mantenimiento: desde cuándo (MAINTENANCE trae la hora ISO) o qué espera (MAINTENANCE_PENDING).
     const maintLabel = r => r.maint === 'service'
       ? `desde las ${new Date(r.maintText).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}: el FM no le manda nada`
@@ -4159,6 +4221,7 @@ createApp({
              syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh,
              canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, syncCheck, prepare, removeFromRobot,
+             toolLabel, toolCheckDue, toolChecked,
              catalogItems, catItem, catCreated, placeOf, openItem, detailRobots, detailQuick, detailUses, detailUsedBy, detailMsg,
              recaptureFrom, captureFromDetail, rmState, rmScopes, rmScopeSerial, rmOpen, rmClose, rmReview, rmApply,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,

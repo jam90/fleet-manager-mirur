@@ -24,6 +24,16 @@ Con `zone` (decisión 138) solo se manda a un robot que esté fuera de esa zona.
 
 `queue` (decisión 156): límites de la cola de `fleet/order` (`fm/tasks.py`):
 cuántas tareas pueden esperar y cuánto tiempo como mucho.
+
+Herramientas (decisión 184): `tools:` en la raíz es el catálogo de las de la
+planta, cada una con el `code` (número) con el que la identifica el programa
+del robot; `robots.<serial>.tool_changer`, las que ese robot tiene a mano en
+su cambiador (puede ponerse cualquiera); `actions.<tipo>.tool_input`, el
+parámetro de la order que dice qué herramienta hace falta. La que lleva
+montada AHORA no se configura: la lee el driver del robot (`Telemetry.tool`).
+El cambio lo hace la propia mission del robot; el FM solo elige robot
+(`fm/tools.py`, `fm/assigner.py`). El driver recibe la tabla nombre → código
+en `raw["tool_codes"]`, para leer la montada y para pasar la pedida.
 """
 from __future__ import annotations
 
@@ -81,6 +91,8 @@ class RobotConfig:
     expected_s: dict[str, float] = field(default_factory=dict)   # actionType → s normales en ejecución
     raw: dict = field(default_factory=dict)       # con `actions` ya expandido: actionType → definición
     idle_return: IdleReturnConfig = field(default_factory=IdleReturnConfig)   # la que vale para ESTE robot
+    tool_changer: frozenset[str] = frozenset()    # herramientas de su cambiador (vacío = no tiene)
+    tool_inputs: dict[str, str] = field(default_factory=dict)   # actionType → parámetro con la herramienta
 
 
 @dataclass
@@ -127,6 +139,8 @@ class FleetConfig:
     # Site de la flota (decisión 129): solo trabajan los robots cuyo mapa
     # activo es de este site. None = sin comprobar (como antes).
     site: str | None = None
+    # Catálogo de herramientas (decisión 184): nombre → {code, description}.
+    tools: dict[str, dict] = field(default_factory=dict)
 
     def driver_defaults(self, name: str) -> dict:
         return dict(self.drivers.get(name) or {})
@@ -181,7 +195,8 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
     if "mission" in ac:
         raise ConfigError("'auto_charge.mission' ya no existe: muévelo a 'drivers.mir.charge_mission'")
 
-    catalog = _parse_catalog(raw.get("actions"))
+    tools = _tools(raw.get("tools"))
+    catalog = _parse_catalog(raw.get("actions"), tools)
     fleet_idle = _idle_return("idle_return", raw.get("idle_return"), IdleReturnConfig())
     robots: dict[str, RobotConfig] = {}
     for serial, r in (raw.get("robots") or {}).items():
@@ -197,8 +212,11 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
             expected_s={a: float(catalog[a]["expected_s"]) for a in enabled if "expected_s" in catalog[a]},
             # Copia profunda: cada driver recibe su propia definición y no
             # puede alterar la de otro robot ni el catálogo.
-            raw={**r, "actions": {a: copy.deepcopy(catalog[a]) for a in enabled}},
+            raw={**r, "actions": {a: copy.deepcopy(catalog[a]) for a in enabled},
+                 "tool_codes": {name: t["code"] for name, t in tools.items()}},
             idle_return=idle,
+            tool_changer=_tool_changer(serial, r.get("tool_changer"), tools),
+            tool_inputs={a: catalog[a]["tool_input"] for a in enabled if "tool_input" in catalog[a]},
         )
 
     auto_charge = AutoChargeConfig(
@@ -228,6 +246,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         idle_return=fleet_idle,
         queue=_queue(raw.get("queue")),
         site=_site(raw.get("site")),
+        tools=tools,
     )
 
     # Histéresis: si battery_min <= battery_floor el robot oscilaría entre
@@ -312,10 +331,51 @@ def _robot_idle_return(serial: str, r: dict, enabled: list[str], fleet: IdleRetu
     return idle
 
 
-def _parse_catalog(raw) -> dict[str, dict]:
+def _tools(raw) -> dict[str, dict]:
+    """`tools:` de la raíz → `{nombre: {code, description}}`. El `code` es el
+    número que escribe el programa del robot (en el MiR, en un registro PLC),
+    así que es entero, mayor que 0 (0 = no lleva ninguna) y no se repite."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError("'tools' debe ser un mapping nombre → {code: N, description: ...}")
+    tools: dict[str, dict] = {}
+    seen: dict[int, str] = {}
+    for name, spec in raw.items():
+        where = f"tools.{name}"
+        if not isinstance(spec, dict) or "code" not in spec:
+            raise ConfigError(f"{where}: falta 'code' (el número con el que la identifica el robot)")
+        code = spec["code"]
+        if isinstance(code, bool) or not isinstance(code, int) or code <= 0:
+            raise ConfigError(f"{where}.code debe ser un entero mayor que 0 (0 = sin herramienta); hay {code!r}")
+        if code in seen:
+            raise ConfigError(f"{where}.code {code} ya es el de '{seen[code]}'")
+        unknown = set(spec) - {"code", "description"}
+        if unknown:
+            raise ConfigError(f"{where}: claves desconocidas {sorted(unknown)} (valen code, description)")
+        seen[code] = str(name)
+        tools[str(name)] = {"code": code, "description": str(spec.get("description") or "")}
+    return tools
+
+
+def _tool_changer(serial: str, raw, tools: dict[str, dict]) -> frozenset[str]:
+    """`robots.<serial>.tool_changer`: las herramientas de su cambiador."""
+    if raw is None:
+        return frozenset()
+    if not isinstance(raw, list):
+        raise ConfigError(f"robots.{serial}.tool_changer debe ser una lista de herramientas")
+    unknown = [str(t) for t in raw if str(t) not in tools]
+    if unknown:
+        raise ConfigError(f"robots.{serial}.tool_changer: {unknown} no están en el catálogo 'tools:' "
+                          f"(hay {sorted(tools)})")
+    return frozenset(str(t) for t in raw)
+
+
+def _parse_catalog(raw, tools: dict[str, dict] | None = None) -> dict[str, dict]:
     """Bloque `actions:` de la raíz → `{actionType: definición}`. Solo se
     comprueba la forma; el contenido (`mission`, `position_inputs`…) es de
-    cada marca y lo valida su driver."""
+    cada marca y lo valida su driver. Salvo `expected_s` y `tool_input`, que
+    son del core."""
     if raw is None:
         return {}
     if not isinstance(raw, dict):
@@ -329,6 +389,12 @@ def _parse_catalog(raw) -> dict[str, dict]:
             v = spec["expected_s"]
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not v > 0:
                 raise ConfigError(f"actions.{name}.expected_s: debe ser un número de segundos > 0 (hay {v!r})")
+        if "tool_input" in spec:
+            v = spec["tool_input"]
+            if not isinstance(v, str) or not v.strip():
+                raise ConfigError(f"actions.{name}.tool_input: debe ser el nombre del parámetro con la herramienta")
+            if not tools:
+                raise ConfigError(f"actions.{name}.tool_input: no hay catálogo 'tools:' con las herramientas")
         catalog[str(name)] = spec
     return catalog
 

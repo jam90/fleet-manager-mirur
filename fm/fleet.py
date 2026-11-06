@@ -22,12 +22,14 @@ from fm.mqtt_bus import FLEET, MqttBus
 from fm.instant import apply_instant_actions
 from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
+from fm.tools import needed_tool, tool_problem
 from fm.tasks import (ASSIGNED, ASSIGNING, CANCELLED, EXPIRED, FAILED, FINISHED, QUEUED, REJECTED,
                       RETRYABLE, MemoryTaskStore, Task, TaskStore, iso)
 from fm.vda5050.header import parse_topic, validate_header
 from fm.vda5050.order import Action, Order, OrderRejected, parse_instant_actions, parse_order
 from fm.vda5050.schemas import validation_errors
 from fm.vda5050.state import (E_INVALID_INSTANT_ACTION, E_NO_MOBILE_ROBOT_AVAILABLE, E_NO_ORDER_TO_CANCEL,
+                              E_TOOL_NOT_AVAILABLE,
                               E_OUTDATED_ORDER_UPDATE, E_QUEUE_FULL, E_VALIDATION_FAILURE, error_for_order)
 
 log = logging.getLogger("fm.fleet")
@@ -200,13 +202,20 @@ class Dispatcher:
     def _check_feasible(self, action: Action) -> None:
         """¿Hay algún robot de la flota que pueda hacerla, aunque ahora esté
         ocupado? Si no, se rechaza ya: en la cola esperaría para siempre.
-        Traducir no toca la red ni el robot."""
+        Traducir no toca la red ni el robot. Con herramienta (decisión 184)
+        vale el que la lleva ahora o la tiene en su cambiador; si no la tiene
+        ninguno, alguien tendría que ponerla a mano: se rechaza y lo dice."""
+        tool = needed_tool(action, self.cfg.actions, self.cfg.tools)
         rejections: dict[str, str] = {}
         failures: dict[str, OrderRejected] = {}
         for serial in sorted(self.robots):
             r = self.robots[serial]
             if action.actionType not in r.cfg.action_types:
                 rejections[serial] = f"no soporta '{action.actionType}'"
+                continue
+            problem = tool and tool_problem(tool, r.snapshot().tool, r.cfg.tool_changer)
+            if problem:
+                failures[serial] = OrderRejected(E_TOOL_NOT_AVAILABLE, problem)
                 continue
             try:
                 r.driver.translate(action)
@@ -238,11 +247,17 @@ class Dispatcher:
 
     def _try_assign(self, task: Task) -> None:
         snaps = {s: r.snapshot() for s, r in self.robots.items()}
-        result = assign(task.action_type, snaps, self.cfg)
+        try:
+            # Se vuelve a mirar en cada intento: la config puede haber cambiado en caliente.
+            tool = needed_tool(pick_action(task.order), self.cfg.actions, self.cfg.tools)
+        except OrderRejected as e:
+            self._drop(task, e)
+            return
+        result = assign(task.action_type, snaps, self.cfg, tool)
         if not result.ok:
             self._wait(task, result.reason)
             return
-        # El asignador solo mira batería y ocupación; el robot elegido aún
+        # El asignador mira batería, ocupación y herramienta; el robot elegido aún
         # puede rechazar al traducir (p.ej. tiene activo otro mapa). En ese
         # caso se prueba el siguiente del ranking (decisión 89). Traducir no
         # toca la red ni el robot, así que probar varios no tiene efectos.

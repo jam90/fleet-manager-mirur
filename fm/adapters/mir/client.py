@@ -209,6 +209,10 @@ class MirClient:
     def missions_get(self) -> list[dict]:
         return self._req("GET", "missions")
 
+    def registers_id_get(self, register: int) -> dict:
+        """Registro PLC del MiR: `{id, value, label}` (`value` es un número)."""
+        return self._req("GET", f"registers/{register}")
+
     def mission_groups_get(self) -> list[dict]:
         return self._req("GET", "mission_groups")
 

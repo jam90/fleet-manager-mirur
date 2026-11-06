@@ -45,6 +45,9 @@ class Telemetry:
     available: bool = True             # puede aceptar orders (no Manual / Error / E-stop)
     foreign_busy: bool = False         # ejecuta algo que NO lanzó el FM (decisión 16)
     unavailable_reason: str = ""       # texto para el rechazo cuando available=False
+    # Herramienta montada (decisión 184), con el nombre del catálogo `tools:`.
+    # "" = no lleva ninguna; None = el driver no la lee (robot sin herramientas).
+    tool: str | None = None
     errors: list[Error] = field(default_factory=list)   # ya en formato VDA
     information: list[Info] = field(default_factory=list)
 
@@ -67,7 +70,7 @@ class Job:
 class ParamInfo:
     """Un parámetro de una action, para formularios (UI) y `factsheet.agvActions`."""
     key: str
-    kind: str = "text"                   # "position" | "text" | "number"
+    kind: str = "text"                   # "position" | "text" | "number" | "tool" (decisión 184)
     required: bool = True
     choices: list[str] | None = None     # valores admitidos, si el driver los conoce
     # Solo kind "number": límites para validar y para el deslizador de la UI.

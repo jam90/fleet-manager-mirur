@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fm.vda5050.state import (E_ROBOT_UNREACHABLE, ActionState, Error, Info,
+from fm.vda5050.state import (E_ROBOT_UNREACHABLE, I_TOOL, ActionState, Error, Info,
                               MobileRobotPosition, PowerSupply, SafetyState, State, Velocity)
 
 if TYPE_CHECKING:   # solo para tipos: evita el import circular adapters ↔ vda5050
@@ -74,4 +74,7 @@ def to_vda_state(header: dict, t: Telemetry | None, overlay: StateOverlay | None
                                 fieldViolation=False)
     s.errors.extend(t.errors)
     s.information.extend(t.information)
+    # Del core, para cualquier driver que la lea: la herramienta montada (decisión 184).
+    if t.tool is not None:
+        s.information.append(Info(I_TOOL, infoDescriptor=t.tool or "ninguna"))
     return s

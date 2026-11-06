@@ -1,7 +1,9 @@
 """Asignador de flota: función pura `assign(order_action_type, snapshots, cfg)`.
 
-Filtros en orden (CLAUDE.md §6): soporta el actionType → batería ≥ battery_min
-→ no ocupado → (opcional) no cargando si hay otro libre. Ranking: mayor
+Filtros en orden (CLAUDE.md §6): soporta el actionType → (si la order pide
+herramienta) la lleva o la tiene en su cambiador → batería ≥ battery_min → no
+ocupado → (opcional) no cargando si hay otro libre. Ranking: primero los que
+ya llevan la herramienta pedida (sin cambio, decisión 184), luego mayor
 batería, desempate alfabético. Sin candidatos → rechazo con el detalle por robot.
 
 Devuelve el ranking completo, no solo el mejor: si el elegido no puede
@@ -13,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from fm.config import FleetConfig
+from fm.tools import tool_problem
 from fm.vda5050.state import E_NO_MOBILE_ROBOT_AVAILABLE
 
 
@@ -25,6 +28,7 @@ class RobotSnapshot:
     charging: bool = False
     position: tuple[float, float] | None = None   # hueco para "menor distancia" (futuro)
     reason: str = ""                  # por qué no está disponible, si se sabe (p. ej. fuera del site)
+    tool: str | None = None           # herramienta montada ("" = ninguna; None = el driver no lo sabe)
 
 
 @dataclass
@@ -40,7 +44,9 @@ class AssignResult:
         return self.serial is not None
 
 
-def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConfig) -> AssignResult:
+def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConfig,
+           tool: str | None = None) -> AssignResult:
+    """`tool`: la herramienta que pide la order (`fm.tools.needed_tool`), o None."""
     rejections: dict[str, str] = {}
     candidates: list[RobotSnapshot] = []
     for serial in sorted(snapshots):
@@ -48,6 +54,8 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
         rcfg = cfg.robots.get(serial)
         if rcfg is None or action_type not in rcfg.action_types:
             rejections[serial] = f"no soporta '{action_type}'"
+        elif tool and tool_problem(tool, s.tool, rcfg.tool_changer):
+            rejections[serial] = tool_problem(tool, s.tool, rcfg.tool_changer)
         elif not s.available:
             rejections[serial] = s.reason or "no disponible (manual/error/sin REST)"
         elif s.battery < rcfg.battery_min:
@@ -57,9 +65,10 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
         else:
             candidates.append(s)
 
-    # Ranking: más batería primero; alfabético en empate. Sustituir aquí por
-    # "menor distancia al destino" (usar `position`) cuando haga falta.
-    candidates.sort(key=lambda c: (-c.battery, c.serial))
+    # Ranking: el que ya lleva la herramienta pedida primero (cambiarla lleva
+    # su tiempo); después, más batería; alfabético en empate. Sustituir la
+    # batería por "menor distancia al destino" (usar `position`) cuando haga falta.
+    candidates.sort(key=lambda c: (bool(tool) and c.tool != tool, -c.battery, c.serial))
 
     if cfg.prefer_not_charging and candidates:
         free = [c for c in candidates if not c.charging]

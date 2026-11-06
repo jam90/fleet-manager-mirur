@@ -49,6 +49,20 @@ drivers:
     #   - Almacen
     #   - Montaje
 
+# Herramientas (opcional, decisión 184): robots con brazo y cambio de
+# herramienta. `tools:` es el catálogo de la planta: cada una con el número
+# (`code`) que escribe el programa del brazo en el registro PLC del MiR
+# `drivers.mir.tool_register`. Una action con `tool_input` pide herramienta en
+# ese parámetro de la order (`garra: vgc10`); el FM elige un robot que la
+# lleve o la tenga en su `tool_changer`, y la mission recibe su código y la
+# cambia si hace falta.
+# tools:
+#   vgc10: { code: 1, description: "Ventosa VGC10" }
+#   2fg7:  { code: 2, description: "Pinza 2FG7" }
+# (en drivers.mir:)   tool_register: 1     (por defecto, el 1)
+# (en una action:)    coger: { mission: "coger", tool_input: garra }
+# (en un robot:)      tool_changer: [vgc10, 2fg7]
+
 # Vuelta a la espera (opcional): si un robot lleva `after_s` segundos parado,
 # el FM le manda esta action del catálogo, una vez, para que no estorbe donde
 # acabó. Una order que llegue mientras va, la cancela. Cada robot puede usar

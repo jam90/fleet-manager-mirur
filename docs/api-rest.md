@@ -323,6 +323,7 @@ Response: `{"actionId": "ui-xxxxxxxx"}`. The result shows up in the robot's
 | `NO_ROUTE_TO_TARGET` | Mission or position does not exist on that robot | Fix `actionType` / `params` |
 | `VALIDATION_FAILURE` | Missing required parameter or invalid order | Fix the request |
 | `ORDER_EXECUTION_FAILED` | Mission aborted or cancelled while running | Check the robot; resend if needed |
+| `TOOL_NOT_AVAILABLE` | The order asks for a tool (e.g. `garra`) that no robot has mounted or in its tool changer | Check `tools:` / `tool_changer` in `fleet.yaml`, or the tool you ask for |
 
 ---
 

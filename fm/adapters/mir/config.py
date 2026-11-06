@@ -6,6 +6,8 @@ drivers:
   mir:
     mission_group: "mirur-tknika"          # opcional: solo se indexan estas missions
     charge_mission: "Carga en estación"    # opcional: auto-carga (H4)
+    tool_register: 1                       # registro PLC con la herramienta montada (decisión 184);
+                                           # con catálogo `tools:`, por defecto el 1
     # positions_allowlist: [H2D1-VL]       # opcional: positions admitidas como parámetro
 robots:
   mir-1:
@@ -53,6 +55,7 @@ class ActionConfig:
     number_inputs: list[str] = field(default_factory=list)     # inputs obligatorios numéricos ("5" → 5)
     number_ranges: dict[str, NumberRange] = field(default_factory=dict)   # límites opcionales por input
     positions_allowlist: set[str] | None = None   # None = las que admita el robot
+    tool_input: str | None = None                 # input con la herramienta pedida (va su código, decisión 184)
 
 
 @dataclass
@@ -64,6 +67,11 @@ class MirRobotConfig:
     mission_group: str | None = None              # None = todas las missions del robot
     charge_mission: str | None = None             # None = auto-carga desactivada
     positions_allowlist: set[str] | None = None   # None = cualquier position del robot
+    # Herramientas (decisión 184): el registro PLC donde el programa del
+    # brazo escribe el código de la que lleva (None = no se lee) y el
+    # catálogo `tools:` nombre → código, que pone el core.
+    tool_register: int | None = None
+    tool_codes: dict[str, int] = field(default_factory=dict)
 
 
 def _parse_numbers(serial: str, atype: str, raw) -> dict:
@@ -111,9 +119,16 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
             required_inputs=list(a.get("required_inputs") or []),
             **_parse_numbers(serial, atype, a.get("number_inputs")),
             positions_allowlist=set(a["positions_allowlist"]) if a.get("positions_allowlist") else None,
+            tool_input=str(a["tool_input"]) if a.get("tool_input") else None,
         )
 
     allow = merged.get("positions_allowlist")
+    # Con catálogo `tools:` se lee el registro 1 salvo que se diga otro (el que
+    # usa el usuario en otro proyecto, 2026-11-06); sin catálogo, ninguno.
+    reg = merged.get("tool_register", 1 if merged.get("tool_codes") else None)
+    # Registros PLC del MiR: 1–200 (1–100 enteros, 101–200 decimales).
+    if reg is not None and (isinstance(reg, bool) or not isinstance(reg, int) or not 1 <= reg <= 200):
+        raise ConfigError(f"[{serial}] tool_register debe ser un registro PLC del MiR (1–200); hay {reg!r}")
     return MirRobotConfig(
         serial=serial,
         host=str(host),
@@ -122,4 +137,6 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
         mission_group=merged.get("mission_group") or None,
         charge_mission=merged.get("charge_mission") or None,
         positions_allowlist=set(allow) if allow else None,
+        tool_register=reg,
+        tool_codes=dict(merged.get("tool_codes") or {}),
     )

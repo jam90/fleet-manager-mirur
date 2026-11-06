@@ -3580,6 +3580,63 @@ sincronizar desde la ficha, vista previa y despliegue en dos robots con
 mission que la usa, borrar un borrador, Guía y todas las pestañas sin
 errores en la consola. **Falta probarlo con los MiR.**
 
+## 2026-11-06 — Herramientas: elegir robot según la que lleva o puede ponerse
+
+Primer paso de la idea de un FM generalista (notas fuera del repo, en
+`../ideas/fm-generalista.md`). Caso del usuario: brazos con cambio
+automático de herramienta; la herramienta que necesita cada tarea depende
+de la pieza, y en una planta así el FM tiene que saber solo qué lleva cada
+robot, sin que una persona lo vigile. Se pensó en «capacidades» fijas por
+robot (`requires: [brazo]`), pero con la lista `actions` de cada robot eso
+repite lo mismo: no se hace hasta que un caso lo pida.
+
+184. **Herramientas en el asignador.**
+     - `tools:` en la raíz de `fleet.yaml`: catálogo de la planta, cada
+       una con su `code` (entero > 0, sin repetir; 0 = ninguna), el número
+       con el que la identifica el programa del brazo.
+     - `robots.<serial>.tool_changer`: las de su cambiador, puede ponerse
+       cualquiera. Sin cambiador, solo vale la que lleve.
+     - `actions.<tipo>.tool_input`: el parámetro de la order con el nombre
+       de la herramienta (ausente o desconocida → `VALIDATION_FAILURE`).
+       Qué herramienta necesita cada pieza es del MES o de otro servicio,
+       no del FM.
+     - La **montada ahora** la lee el driver (`Telemetry.tool`; `None` = no
+       la sabe). En el MiR, del registro PLC `tool_register` (por defecto
+       el 1, el que usa el usuario en otro proyecto; se lee solo si hay
+       catálogo `tools:`), donde el brazo escribe el `code`. Sale en
+       `state.information[]` como `TOOL` (Operación y Robots).
+     - **El cambio lo hace la mission**, no el FM: recibe el `code` de la
+       pedida y, si no coincide con el registro, carga la de cambio. Así el
+       FM sigue con una mission por action (las tareas de varios pasos
+       siguen descartadas). En el otro proyecto se lanzaban dos órdenes
+       (cambio y recogida); el usuario acepta el cambio dentro de la mission.
+     - Asignador (`fm/tools.py`, `fm/assigner.py`): vale un robot que la
+       lleve o la tenga en su cambiador; entre los que valen, primero el que
+       ya la lleva (cambiarla lleva tiempo), después el de más batería. Al
+       llegar, una `fleet/order` que nadie puede hacer se rechaza con
+       `TOOL_NOT_AVAILABLE` (nuevo) y el motivo de cada robot; si alguno
+       puede pero está ocupado, espera en la cola. Las orders dirigidas se
+       comprueban igual (`Robot.translate_order`).
+     - El FM se fía de lo que dice `fleet.yaml` de cada cambiador: al
+       arrancar avisa en el log y en Operación de revisarlos (una vez por
+       arranque, hasta «Revisado»), a petición del usuario.
+     - `tools:` y los `tool_changer` se aplican en caliente; si cambia el
+       catálogo, se rehace el driver (traduce nombre ↔ código).
+     - El driver `sim` tiene herramienta (`tool:`) y se la «cambia» al
+       ejecutar, para probar sin robots.
+
+Probado: `pytest` 382 (`tests/test_tools.py`: config, asignador, cola,
+orders dirigidas, `state` y recarga; MiR: lectura del registro, el código
+en la mission y `tool_register`). En Chromium contra la web con dos robots
+`sim` (uno con cambiador): «Nueva tarea» con el desplegable de la
+herramienta, el reparto (al que ya la lleva; luego al del cambiador, que se
+la cambia), la espera en la cola con el motivo y el aviso de arranque.
+**Falta con los MiR:** confirmar el registro (el usuario dirá cuál usaba) y
+las missions de prueba (una `cambio_herramienta` falsa que escriba el código
+en el registro y una `coger` con el *If*). Siguiente paso: editar el
+catálogo y la matriz robot × herramienta en Configuración (hoy, a mano en
+`fleet.yaml`).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3608,35 +3665,46 @@ Cerrado el 2026-11-06: #33 (copiar un mapa del catálogo con sus positions
 y zonas, decisión 176), y #31 (contestar a un `fleet/order` repetido con su estado,
 decisión 179).
 
-**En curso / siguiente** (al cerrar el 2026-11-06)
+**En curso / siguiente** (al cerrar el 2026-11-06, por la tarde; robots apagados)
 
-1. **Probar con los MiR los PUT de «Sustituir»** (decisión 178), en
+1. **Herramientas con los MiR** (decisión 184). El usuario dirá qué
+   registro PLC usaba para la herramienta montada (hoy, el 1 por defecto).
+   Probar con missions falsas: `cambio_herramienta` que solo escribe el
+   código pedido en el registro, y una `coger` con el *If* (si no coincide,
+   *Load mission* de la de cambio). Hace falta un catálogo `tools:` y un
+   `tool_changer` en el `fleet.yaml` de `mirur-instalacion` (aún no tiene).
+2. **Herramientas en Configuración**: editar el catálogo `tools:` y la
+   matriz robot × herramienta (hoy, a mano en `fleet.yaml`).
+3. **Probar con los MiR la interfaz nueva de administración** (decisiones
+   182–183): ficha del Catálogo, «Quitar…», traer al catálogo y desplegar a
+   los dos robots a la vez. Y el arreglo de «Traer al catálogo» (180).
+4. **Probar con los MiR los PUT de «Sustituir»** (decisión 178), en
    `mapa-pruebas`: una position movida en un robot, traída y sustituida en
    el otro; un docking offset (cambiar el del propio marcador o volver a
    detectarlo: al recalibrar `FM-mapa-pruebasH2D1-VL` el MiR solo movió su
    entrada, y el registro del offset no cambió en ningún robot); y un mapa
    retocado. Probado hasta ahora: traer una position hecha en la web
    (`prueba-mapaprueba`, decisión 177) y la entrada de un marcador.
-2. **Pruebas con robot** (lo de siempre). Lo que queda en el bloque
+5. **Pruebas con robot** (lo de siempre). Lo que queda en el bloque
    «Probar con robot» de abajo espera a otra cosa (una mission con
    parámetro de texto, #8, o llevar mir-2 a `MESA_TKNIKA`, #18b).
 
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
-- **Estado al cerrar (2026-11-06):** todo commiteado y subido salvo esta
-    nota (último, `a1cf67f`, decisión 179). Hecho hoy: copiar un mapa del
-    catálogo (#33, decisión 176; `mapa-pruebas` rehecho como copia de
-    `suberri_mirur` y desplegado en los dos), botón «Borrar un recurso» y
-    rutas de la Guía tras la 175, traer al catálogo lo cambiado o hecho en
-    la web de un robot (177), sustituir positions y mapas en su sitio (178,
-    parte de #19) y contestar a un `fleet/order` repetido (#31, 179). El FM
-    real (arrancado a las 12:55) tiene hasta la 179. De la propuesta de
-    `../preview-fleet-manager/` se ha traído (sin commitear) la ficha del
-    Catálogo con un «Quitar…» único y la sincronización a varios robots
-    (decisiones 180–183); el FM en marcha no la tiene hasta recargar la
-    página y, para el arreglo de «Traer al catálogo» (180), reiniciarlo. **El compañero** va
-    a hacer que la pasarela de voz reintente con el mismo `orderId`
+- **Estado al cerrar (2026-11-06):** todo commiteado y subido. Hecho hoy:
+    copiar un mapa del catálogo (#33, decisión 176; `mapa-pruebas` rehecho
+    como copia de `suberri_mirur` y desplegado en los dos), traer al
+    catálogo lo cambiado o hecho en la web de un robot (177), sustituir
+    positions y mapas en su sitio (178, parte de #19), contestar a un
+    `fleet/order` repetido (#31, 179); de la propuesta de
+    `../preview-fleet-manager/`, la ficha del Catálogo con un «Quitar…»
+    único y la sincronización a varios robots, con el arreglo de «Traer al
+    catálogo» y «site» en vez de «centro» (180–183); y las herramientas en
+    el asignador (184, primer paso de la idea del FM generalista,
+    `../ideas/fm-generalista.md`). El FM real (arrancado a las 12:55)
+    tiene hasta la 179: reiniciarlo para tener lo demás. **El compañero**
+    va a hacer que la pasarela de voz reintente con el mismo `orderId`
     (`clientes/voz/AGENTS.md`). En `mirur-instalacion`: `prueba-mapaprueba`
     (`…-position00-01-0002-026`) está en mir-2 y en el catálogo, commiteada;
     retirarla de la flota (su ficha en Catálogo, «Quitar…») si era solo una prueba.

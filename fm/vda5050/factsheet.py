@@ -43,6 +43,8 @@ def _param_description(p) -> str:
     if p.kind == "position" and p.choices:
         return f"nombre de position: {', '.join(p.choices)}" if len(p.choices) <= 10 \
             else f"nombre de position ({len(p.choices)} conocidas)"
+    if p.kind == "tool" and p.choices:          # decisión 184: el nombre, del catálogo `tools:`
+        return f"herramienta: {', '.join(p.choices)}"
     if p.kind == "number" and (p.min is not None or p.max is not None):
         lo = "-∞" if p.min is None else f"{p.min:g}"
         hi = "∞" if p.max is None else f"{p.max:g}"

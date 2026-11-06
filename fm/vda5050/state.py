@@ -35,6 +35,7 @@ E_ROBOT_UNREACHABLE = "ROBOT_UNREACHABLE"                     # propio: el drive
 E_ROBOT_OUTSIDE_SITE = "ROBOT_OUTSIDE_SITE"                   # propio: su mapa activo es de otro site
 E_QUEUE_FULL = "QUEUE_FULL"                                   # propio: la cola de fleet/order está llena
 E_IDLE_RETURN_FAILED = "IDLE_RETURN_FAILED"                   # propio: la vuelta a la espera acabó FAILED (decisión 171)
+E_TOOL_NOT_AVAILABLE = "TOOL_NOT_AVAILABLE"                   # propio: no lleva ni puede ponerse la herramienta (decisión 184)
 
 # infoType propios (decisión 110). La norma no fija ninguno: `information[]`
 # es "solo para visualización o depuración" y la pestaña Robot los pinta.
@@ -50,6 +51,7 @@ I_UPTIME = "UPTIME"                       # s desde el arranque, como texto
 I_MANUAL_DRIVE = "MANUAL_DRIVE"           # alguien lo conduce a mano (joystick)
 I_SAFETY_MUTED = "SAFETY_MUTED"           # sistema de seguridad silenciado
 I_MAP_UNSAVED = "MAP_UNSAVED"             # cambios de mapa sin guardar en el robot
+I_TOOL = "TOOL"                           # herramienta montada (decisión 184; "ninguna" si no lleva)
 # Del core, no de un driver (como AUTO_CHARGE): el FM lo manda a la espera (decisión 136).
 I_IDLE_RETURN = "IDLE_RETURN"
 I_IDLE_RETURN_IN = "IDLE_RETURN_IN"       # s que faltan para mandarlo a la espera, como texto

@@ -17,6 +17,8 @@ comentarios que explican el *porqué*.
   sobrevive a reiniciar el FM
 - `fm/mqtt_bus.py` — paho; **sin broker no arranca** (`TimeoutError`)
 - `fm/charge.py` — auto-carga bajo `battery_floor`, no aborta orders
+- `fm/tools.py` — herramientas (decisión 184): la order pide una (`tool_input`), vale el robot
+  que la lleva (la lee el driver) o la tiene en su `tool_changer`; el cambio lo hace la mission
 - `fm/adapters/<marca>/` — drivers (`mir`, `sim`); el core no importa MiR
   (`grep -rn mir fm/*.py fm/vda5050` debe dar vacío salvo `mir_client.py`)
 - `fm/vda5050/` — header (topic≡header), state, order, schemas, factsheet

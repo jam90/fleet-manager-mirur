@@ -37,6 +37,7 @@ from fm.mqtt_bus import MqttBus, running_fm  # noqa: E402
 from fm.reload import Reloader  # noqa: E402
 from fm.robot import Robot  # noqa: E402
 from fm.tasks import SqliteTaskStore  # noqa: E402
+from fm.tools import changer_notice  # noqa: E402
 from fm.vda5050.factsheet import factsheet_for  # noqa: E402
 from fm.vda5050.state import State  # noqa: E402
 
@@ -159,6 +160,11 @@ def main(argv=None) -> int:
 
     list(pool.map(lambda r: r.connect(), robots.values()))
     poll_all(timeout=10.0)
+    # Herramientas (decisión 184): el FM se fía de lo que dice fleet.yaml de
+    # cada cambiador; quien arranca el FM lo comprueba (también sale en la web).
+    for r in robots.values():
+        if r.cfg.tool_changer:
+            r.log.warning("herramientas: %s", changer_notice(r.cfg.tool_changer, r.snapshot().tool))
 
     def publish_factsheet(r: Robot) -> None:
         fs = factsheet_for(bus.next_header(r.serial, "factsheet"), r.driver,

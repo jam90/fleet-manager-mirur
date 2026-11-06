@@ -2,8 +2,9 @@
 
 Qué se aplica en caliente: lo "ligero", lo que el FM consulta en cada tick o
 en cada order — umbrales de auto-carga, `assigner.*`, `battery_min`, la
-vuelta a la espera (`idle_return`) y qué actions tiene cada robot (y su
-definición). Lo "estructural" (robots que
+vuelta a la espera (`idle_return`), qué actions tiene cada robot (y su
+definición) y las herramientas (`tools:` y cada `tool_changer`, decisión
+184). Lo "estructural" (robots que
 entran o salen, host, driver, manufacturer, bloque `drivers:`, MQTT) pide
 reiniciar el FM: un robot nuevo necesita su cliente MQTT con Last Will, su
 hilo de poll y su `connection` retained, y eso solo se monta al arrancar.
@@ -28,7 +29,13 @@ log = logging.getLogger("fm.reload")
 
 # Claves de `robots.<serial>` que se aplican en caliente; cualquier otra que
 # cambie (host, pose…) es del driver y pide reiniciar.
-HOT_ROBOT_KEYS = {"actions", "battery_min", "idle_return"}
+HOT_ROBOT_KEYS = {"actions", "battery_min", "idle_return", "tool_changer", "tool_codes"}
+
+
+def _driver_changes(old, new) -> bool:
+    """¿Cambia algo que tiene el driver y obliga a rehacerlo (`reconfigure`)?
+    Sus actions, o el catálogo de herramientas (traduce nombre ↔ código)."""
+    return any(old.raw.get(k) != new.raw.get(k) for k in ("actions", "tool_codes"))
 
 
 def restart_reasons(old: FleetConfig, new: FleetConfig, robots: dict) -> list[str]:
@@ -48,9 +55,9 @@ def restart_reasons(old: FleetConfig, new: FleetConfig, robots: dict) -> list[st
         if keys:
             reasons.append(f"robots.{s}: cambia {', '.join(keys)}")
         r = robots.get(s)
-        if (r is not None and o.raw.get("actions") != n.raw.get("actions")
-                and not hasattr(r.driver, "reconfigure")):
-            reasons.append(f"robots.{s}: el driver '{n.driver}' no admite cambiar sus actions en caliente")
+        if r is not None and _driver_changes(o, n) and not hasattr(r.driver, "reconfigure"):
+            reasons.append(f"robots.{s}: el driver '{n.driver}' no admite cambiar sus actions "
+                           "ni sus herramientas en caliente")
     if old.drivers != new.drivers:
         reasons.append("cambia el bloque drivers:")
     if old.mqtt != new.mqtt:
@@ -109,7 +116,7 @@ class Reloader:
         # Primero todo lo que puede fallar (construir drivers), luego los cambios:
         # si un driver no acepta su bloque, no queda nada a medias.
         fresh = {s: make_driver(new.robots[s], new) for s, r in self.robots.items()
-                 if new.robots[s].raw.get("actions") != r.cfg.raw.get("actions")}
+                 if _driver_changes(r.cfg, new.robots[s])}
         for s, r in self.robots.items():
             r.cfg = new.robots[s]
             r.charge.cfg = new.auto_charge

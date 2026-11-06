@@ -16,8 +16,9 @@ from fm.idle import IdleGuard
 from fm.maintenance import MaintenanceStore
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
+from fm.tools import needed_tool, tool_problem
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
-                              E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, I_MAINTENANCE,
+                              E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, E_TOOL_NOT_AVAILABLE, I_MAINTENANCE,
                               I_MAINTENANCE_PENDING, Error, Info, State)
 from fm.tasks import iso
 from fm.vda5050.state_builder import to_vda_state
@@ -215,7 +216,7 @@ class Robot:
                   else self.outside_reason if self.outside_site else "")
         return RobotSnapshot(self.serial, t.battery if t else 0.0, self.busy,
                              self.available, charging, t.pose[:2] if t and t.pose else None,
-                             reason=reason)
+                             reason=reason, tool=t.tool if t else None)
 
     # ---------------------------------------------------------- mantenimiento
     # Decisiones 167–170. Pedirlo saca al robot del reparto en el acto; si
@@ -286,7 +287,22 @@ class Robot:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE,
                                 "el robot ejecuta un trabajo ajeno al FM (lanzado desde la web)")
         action = pick_action(order, self.orders.done_action_ids(order))
+        self._check_tool(action)
         return self.driver.translate(action)
+
+    def _check_tool(self, action) -> None:
+        """Si la order pide herramienta (decisión 184), este robot tiene que
+        llevarla o tenerla en su cambiador. En una `fleet/order` ya lo ha
+        mirado el asignador; aquí cuenta para las dirigidas a este robot y por
+        si ha cambiado lo que lleva desde entonces."""
+        key = self.cfg.tool_inputs.get(action.actionType)
+        if not key:
+            return
+        tool = needed_tool(action, {action.actionType: {"tool_input": key}}, self.cfg.raw.get("tool_codes") or {})
+        t = self.last_telemetry
+        problem = tool_problem(tool, t.tool if t else None, self.cfg.tool_changer)
+        if problem:
+            raise OrderRejected(E_TOOL_NOT_AVAILABLE, problem)
 
     def execute(self, order: Order, job: Job, priority: int = 0) -> str:
         """Lanza el job en el robot y lo registra en el tracker. Devuelve el job_id.

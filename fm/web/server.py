@@ -218,6 +218,9 @@ class WebServer:
         self.syncs = {s: r.driver.make_sync(catalog_dir) for s, r in robots.items()
                       if hasattr(r.driver, "make_sync")}
         self._deploying: set[str] = set()
+        # Cuándo arrancó este FM: la web avisa una vez por arranque de revisar
+        # los cambiadores de herramienta (decisión 184).
+        self.started_at = time.time()
         # Pestaña Robot: fuente de misiones por robot, creada al pedirla la
         # primera vez (`make_missions`, capacidad opcional) y guardada por su caché.
         self.missions: dict[str, Any] = {}
@@ -414,12 +417,15 @@ class WebServer:
                            # largo × ancho en m, para pintarlo a escala en el mapa (decisión 141)
                            "size": [spec.length, spec.width] if spec else None,
                            # su interfaz propia, si el driver la sabe (decisión 173)
-                           "web": r.driver.web_url() if hasattr(r.driver, "web_url") else None})
+                           "web": r.driver.web_url() if hasattr(r.driver, "web_url") else None,
+                           # las de su cambiador, según fleet.yaml (decisión 184)
+                           "tool_changer": sorted(r.cfg.tool_changer)})
         return {"robots": robots,
                 "site": self.cfg.site, "sites": self.sites(),
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "auto_charge": asdict(self.cfg.auto_charge),
-                "instant_actions": list(INSTANT_ALLOWED)}
+                "instant_actions": list(INSTANT_ALLOWED),
+                "tools": self.cfg.tools, "started_at": self.started_at}
 
     def robot_summary(self, serial: str) -> dict:
         """Resumen plano de un robot a partir de su último `state`/`connection`."""

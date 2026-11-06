@@ -392,6 +392,7 @@ tiene: vuelve a la cola en su sitio y cuenta desde ese momento. Respuesta:
 | `errors[]` | `errors[] {errorType: MIR_<code>}` |
 | `mission_queue/<id>.state` de la order | `actionStates[].actionStatus`: Pending→WAITING, Executing→RUNNING, Done→FINISHED, Aborted/Cancelled→FAILED |
 | `mission_queue/<id>.message` al terminar | `actionStates[].actionResult` y final de `errorDescription` (p.ej. `Aborted - User Request` = parada a mano). El MiR usa `Aborted` para todo; el motivo solo está aquí |
+| `registers/<tool_register>` (registro PLC con el código de la herramienta) | `information[] {infoType: TOOL}` con su nombre del catálogo, o `ninguna` |
 
 `powerSupply.charging` solo es `true` cuando la mission de carga del FM está
 en ejecución (pendiente de validar en el dock).
@@ -406,7 +407,9 @@ Predefinidos v3: `VALIDATION_FAILURE`, `INVALID_ORDER_ACTION`,
 del MiR), `ROBOT_UNREACHABLE`, `ORDER_DURATION_EXCEEDED` (WARNING: la order
 supera el `expected_s` de su action), `ROBOT_OUTSIDE_SITE` (WARNING: el mapa
 activo del robot es de otro site que el de la flota; no recibe orders),
-`QUEUE_FULL` (la cola de `fleet/order` está llena).
+`QUEUE_FULL` (la cola de `fleet/order` está llena), `TOOL_NOT_AVAILABLE`
+(ningún robot lleva ni tiene en su cambiador la herramienta pedida; ver
+«Herramientas»).
 
 ## Scripts (`scripts/`)
 
@@ -715,6 +718,50 @@ La mission de carga del MiR debe terminar sola (porcentaje objetivo o tiempo
 mínimo, **no** "cargar hasta nueva mission"): si no, nunca pasa a `Done`, el
 robot queda ocupado para siempre y no sale del dock. La de `mirur-tknika`
 (`Carga en estación MIRUR`) carga hasta el 70 % y sale del dock.
+
+## Herramientas (cambio automático de herramienta)
+
+Para robots con brazo que cambian de herramienta (decisión 184). Qué
+herramienta necesita cada pieza **no es cosa del FM**: lo decide quien manda
+la order (el MES, otro servicio) y la manda como parámetro. El FM elige un
+robot que la **lleve puesta** o la **tenga en su cambiador**, y entre los que
+valen prefiere el que ya la lleva (cambiarla lleva su tiempo); después, el de
+más batería. El cambio lo hace la propia mission del robot: recibe la
+herramienta pedida y, si no coincide con la que lleva, la cambia (en el MiR,
+un *If* sobre el registro PLC y *Load mission* de la de cambio). El FM sigue
+mandando una mission por action.
+
+```yaml
+tools:                                   # las de la planta
+  vgc10: { code: 1, description: "Ventosa VGC10" }
+  2fg7:  { code: 2, description: "Pinza 2FG7" }
+actions:
+  coger: { mission: coger, tool_input: garra }   # la order trae {"key": "garra", "value": "vgc10"}
+drivers:
+  mir: { tool_register: 1 }              # registro PLC donde el brazo escribe el `code` que lleva (0 = ninguna); por defecto, el 1
+robots:
+  mir-1: { tool_changer: [vgc10, 2fg7], actions: [coger], ... }   # con cambiador
+  mir-2: { actions: [coger], ... }                                # sin cambiador: solo la que lleve
+```
+
+- `tools:` — el catálogo: cada herramienta con su `code` (entero > 0, sin
+  repetir), el número con el que la identifica el programa del robot.
+- `actions.<tipo>.tool_input` — el parámetro de la order con el nombre de la
+  herramienta. Ausente o desconocida → `VALIDATION_FAILURE`. A la mission le
+  llega su **código** (en el MiR, como un número para *Set/If PLC register*).
+- `robots.<serial>.tool_changer` — las de su cambiador; puede ponerse
+  cualquiera. Sin cambiador, solo vale la que lleve montada.
+- La **montada ahora** no se configura: la lee el driver (MiR:
+  `tool_register`) y sale en `state.information[]` como `TOOL`, en Operación
+  y en Robots.
+
+Una `fleet/order` que ningún robot puede hacer (nadie la lleva ni la tiene
+en su cambiador) se rechaza al llegar con `TOOL_NOT_AVAILABLE` y el motivo de
+cada robot; si alguno puede pero está ocupado, espera en la cola. Una order
+dirigida a un robot que no la lleva ni la tiene se rechaza igual. Al arrancar,
+el FM avisa (log y Operación) de revisar que los cambiadores tienen lo que
+dice `fleet.yaml`: si alguien quitó una y no lo cambió, la mission fallará al
+intentar ponérsela. `tools:` y los `tool_changer` se aplican en caliente.
 
 ## Vuelta a la espera
 
