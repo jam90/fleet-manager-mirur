@@ -30,7 +30,7 @@ def test_mir_factsheet_valida_y_lista_actions():
     assert [(p["key"], p["valueDataType"], p["isOptional"]) for p in acts["ir_a"]["actionParameters"]] == [
         ("target_pos", "STRING", False), ("pieza", "STRING", False), ("n_piezas_pedidas", "NUMBER", False)]
     descr = [p["description"] for p in acts["ir_a"]["actionParameters"]]
-    assert descr == ["nombre de position: Deshecho, Montaje", "text", "number en [1, 10]"]
+    assert descr == ["nombre de posición: Deshecho, Montaje", "text", "number en [1, 10]"]
     assert acts["cancelOrder"]["actionScopes"] == ["INSTANT"] and acts["factsheetRequest"]["actionScopes"] == ["INSTANT"]
     assert fs["protocolLimits"]["maximumArrayLengths"]["node.actions"] == 1
     assert fs["manufacturer"] == "MiR" and fs["serialNumber"] == "mir-1"

@@ -99,7 +99,7 @@ def test_connect_indices_y_translate():
                           "m-coger": "m-coger", "m-ir": "m-ir", "m-carga": "m-carga"}
     assert d.positions == {"P1": "p-1"}
     job = d.translate(Action("ir_a", "a1", actionParameters=[ActionParameter("target_pos", "P1")]))
-    assert job.label == "mission 'Ir a posición'"
+    assert job.label == "misión 'Ir a posición'"
     assert job.payload.parameters == [{"id": "target_pos", "value": "p-1"}]
     with pytest.raises(OrderRejected) as e:
         d.translate(Action("volar", "a2"))
@@ -262,7 +262,7 @@ def test_mission_con_positions_fijas_solo_en_su_mapa():
     d.translate(Action("ir_a", "a2", actionParameters=[ActionParameter("target_pos", "P1")]))
     c.status["map_id"] = "m-otro"
     d.poll()
-    assert d.translate(Action("coger", "a3")).label == "mission 'coger'"
+    assert d.translate(Action("coger", "a3")).label == "misión 'coger'"
 
 
 def test_las_positions_fijas_de_una_sub_mission_tambien_atan():

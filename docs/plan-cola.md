@@ -96,8 +96,13 @@ aunque esté vacía.
   "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "tasks": [ { "orderId": "b3", "orderUpdateId": 0, "actionType": "coger", "status": "QUEUED",
                "receivedAt": "2026-10-30T11:01:21.918Z",
-               "waiting": "ningún robot puede atender la order: sim-1: ocupado; sim-2: ocupado" } ] }
+               "waiting": "ahora no puede ningún robot: sim-1: ocupado; sim-2: ocupado" } ] }
 ```
+
+Una tarea cuya action pide herramienta (decisión 184) lleva además `"tool"`
+con la que pide. El motivo empieza por «ahora no puede ningún robot» (no
+por «ningún robot puede atender la order», que es el de un rechazo:
+revisión de la interfaz, 2026-11-07).
 
 Cancelar (D3): `fleet/instantActions` con `cancelOrder` y el parámetro
 `orderId`. Si la tarea espera, sale de la cola; si está en un robot, es el

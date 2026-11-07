@@ -67,9 +67,9 @@ def usage_blockers(sync, cat: Catalog, guid: str, definitions: dict, wanted: Ite
     if cat.kind(guid) == "mission":
         names = {n for n, a in (definitions or {}).items() if a and a.get("mission") in (guid, d["name"])}
         if names:
-            out.append(f"está en fleet.yaml (actions: {', '.join(sorted(names))}): quítala antes en Configuración")
+            out.append(f"la usa un tipo de tarea de fleet.yaml (actions: {', '.join(sorted(names))}): quítala antes en Configuración")
         elif guid in refs or d["name"] in wanted:
-            out.append("la necesita algún robot según fleet.yaml (¿mission de carga?)")
+            out.append("la necesita algún robot según fleet.yaml (¿misión de carga?)")
     elif cat.kind(guid) == "position":
         names = {n for n, a in (definitions or {}).items()
                  if a and d["name"] in (a.get("positions_allowlist") or [])}
@@ -82,18 +82,25 @@ def usage_blockers(sync, cat: Catalog, guid: str, definitions: dict, wanted: Ite
         names = {n for n, a in (definitions or {}).items()
                  if a and set(a.get("positions_allowlist") or []) & (here - elsewhere)}
         if names:
-            out.append(f"tiene positions de la allowlist de fleet.yaml (actions: {', '.join(sorted(names))})")
+            out.append(f"tiene posiciones de la allowlist de fleet.yaml (actions: {', '.join(sorted(names))})")
     elif cat.kind(guid) == "missiongrp":
         # Las capturadas salen abajo (dependen del grupo); los borradores no
         # tienen dependencias calculadas, pero viven en el grupo igual.
         drafts = sorted(x["name"] for g, x in cat.drafts.items()
                         if cat.kind(g) == "mission" and x.get("group_id") == guid)
         if drafts:
-            out.append(f"tiene missions en borrador: {', '.join(drafts)}")
+            out.append(f"tiene misiones en borrador: {', '.join(drafts)}")
     users = sorted(cat.items[g]["name"] for g in cat.items if g not in going and going & cat.deps(g))
     if users:
-        out.append(f"la usan otros recursos del catálogo: {', '.join(users)}")
+        out.append(f"la usan otros recursos del catálogo: {', '.join(users)}" + sub_note(cat, guid))
     return out
+
+
+def sub_note(cat: Catalog, guid: str) -> str:
+    """Si lo que se quita es una misión, quien la usa la carga como sub-misión
+    (decisión 189): se dice, con lo que es."""
+    return (" (la cargan como sub-misión: una misión dentro de otra, con «Load mission»)"
+            if cat.kind(guid) == "mission" else "")
 
 
 def retire_blockers(sync, guid: str, definitions: dict, wanted: Iterable[str]) -> list[str]:
@@ -101,7 +108,7 @@ def retire_blockers(sync, guid: str, definitions: dict, wanted: Iterable[str]) -
     if guid not in cat.items or not is_std(guid):
         return [f"{guid} no está en el catálogo"]
     if cat.kind(guid) not in REMOVABLE:
-        return ["desde aquí solo se retiran missions, positions, zonas y mapas"]
+        return ["desde aquí solo se retiran misiones, posiciones, zonas y mapas"]
     if cat.items[guid].get("creada_por_mir"):
         return ["es la entrada de un marcador: se retira con su marcador"]
     return usage_blockers(sync, cat, guid, definitions, wanted)
@@ -111,17 +118,17 @@ def remove_blockers(sync, guid: str) -> list[str]:
     """Por qué no se puede quitar `guid` del robot de `sync` (vacío = se puede)."""
     cat = sync.catalog()
     if guid not in cat.items or cat.kind(guid) != "mission":
-        return ["de un robot solo se quitan missions del catálogo (una position se retira de la flota)"]
+        return ["de un robot solo se quitan misiones del catálogo (una posición se retira de la flota)"]
     required, _ = sync.required(cat)
     if guid in required:
-        return ["la necesita este robot según su fleet.yaml (una action, la carga o algo que usan)"]
+        return ["la necesita este robot según su fleet.yaml (un tipo de tarea, la carga o algo que usan)"]
     with sync.lock:
         here = presence(sync.client, cat)
     if not here.get(guid):
         return ["este robot no la tiene"]
     users = sorted(cat.items[g]["name"] for g in cat.items if g != guid and guid in cat.deps(g) and here.get(g))
     if users:
-        return [f"la usan en este robot: {', '.join(users)}"]
+        return [f"la usan en este robot: {', '.join(users)}" + sub_note(cat, guid)]
     return []
 
 
@@ -147,7 +154,7 @@ def in_use_on(client, guid: str) -> list[str]:
         if e.status == 404:
             return []
         raise
-    return [f"el grupo tiene missions: {', '.join(names)} (bórralas o muévelas antes en su web)"] if names else []
+    return [f"el grupo tiene misiones: {', '.join(names)} (bórralas o muévelas antes en su web)"] if names else []
 
 
 def delete_on(client, guid: str) -> None:

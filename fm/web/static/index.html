@@ -44,6 +44,10 @@
     --warn-line: #e9c84a;
     --bad: #e53935;         /* rojo de los botones de borrar */
     --bad-bg: #fdeceb;
+    /* Para TEXTO de esos colores (≥ 4,5:1 sobre el fondo): los de arriba son de rellenos y bordes. */
+    --ok-ink: #3d7a0f; --warn-ink: #8f5400; --bad-ink: #c62828; --run-ink: #5a6b10;
+    --link: var(--accent);   /* texto en color de acento; en oscuro, más claro (≥ 4,5:1) */
+    --bad-btn: #c62828;      /* fondo de los botones de peligro: texto blanco ≥ 4,5:1 en los dos temas */
     --shadow: 0 1px 2px rgba(20, 30, 50, .05);
     --radius: 10px;         /* tarjetas y paneles */
     --radius-sm: 6px;       /* botones, campos, etiquetas y recuadros internos */
@@ -54,6 +58,7 @@
       --ink-3: #7c8694; --line: #2e3645; --line-strong: #3d4759; --navy: #c8d4f2; --accent: #4a6fd0; --accent-ink: #ffffff;
       --ok: #7cc63a; --ok-bg: #22301a; --run: #b3cc45; --run-bg: #2a3119; --warn: #f0a63a;
       --warn-bg: #352b14; --warn-line: #8a6d1e; --bad: #ef5f5b; --bad-bg: #3a1e1f;
+      --ok-ink: #8fd14f; --warn-ink: #f5b65a; --bad-ink: #ff8a85; --run-ink: #b3cc45; --link: #9db4f5;
       --shadow: 0 1px 2px rgba(0,0,0,.4);
     }
   }
@@ -62,6 +67,7 @@
     --ink-3: #7c8694; --line: #2e3645; --line-strong: #3d4759; --navy: #c8d4f2; --accent: #4a6fd0; --accent-ink: #ffffff;
     --ok: #7cc63a; --ok-bg: #22301a; --run: #b3cc45; --run-bg: #2a3119; --warn: #f0a63a;
     --warn-bg: #352b14; --warn-line: #8a6d1e; --bad: #ef5f5b; --bad-bg: #3a1e1f;
+    --ok-ink: #8fd14f; --warn-ink: #f5b65a; --bad-ink: #ff8a85; --run-ink: #b3cc45; --link: #9db4f5;
     --shadow: 0 1px 2px rgba(0,0,0,.4);
   }
 
@@ -124,9 +130,9 @@
   .todo { display: block; padding: 12px 14px; border: 1px dashed var(--line-strong);
     border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-2); font-size: 14px; }
   .todo b { color: var(--ink); display: block; margin-bottom: 4px; }
-  .todo a, .page-sub a { color: var(--accent); font-weight: 700; }
+  .todo a, .page-sub a { color: var(--link); font-weight: 700; }
   .tag { display: table; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-    padding: 1px 7px; border-radius: var(--radius-sm); color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
+    padding: 1px 7px; border-radius: var(--radius-sm); color: var(--warn-ink); background: var(--warn-bg); border: 1px solid var(--warn-line); }
   /* Crear: selector de qué se crea (botones segmentados) y un formulario de ancho contenido. */
   .seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
   .seg button { font: inherit; font-weight: 700; font-size: 14px; padding: 7px 16px; cursor: pointer;
@@ -150,10 +156,10 @@
   .pill { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     padding: 2px 8px; border-radius: var(--radius-sm); white-space: nowrap;
     color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line); }
-  .pill.libre { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
-  .pill.ejecutando { color: var(--run); background: var(--run-bg); border-color: var(--run); }
-  .pill.pausado, .pill.cargando, .pill.encola { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
-  .pill.error, .pill.sinconexion, .pill.manual { color: var(--bad); background: var(--bad-bg); border-color: var(--bad); }
+  .pill.libre { color: var(--ok-ink); background: var(--ok-bg); border-color: var(--ok); }
+  .pill.ejecutando { color: var(--run-ink); background: var(--run-bg); border-color: var(--run); }
+  .pill.pausado, .pill.cargando, .pill.encola { color: var(--warn-ink); background: var(--warn-bg); border-color: var(--warn-line); }
+  .pill.error, .pill.sinconexion, .pill.manual { color: var(--bad-ink); background: var(--bad-bg); border-color: var(--bad); }
 
   /* Batería: barra fina como la de "Disk space". */
   .battery { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; }
@@ -171,8 +177,8 @@
   .act { font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 1px 8px; background: var(--surface); }
   .act b { font-weight: 700; } .act .s { margin-left: 6px; font-size: 11px; font-weight: 700; letter-spacing: .05em; }
   .act .why { margin-left: 6px; font-size: 12px; color: var(--ink-2); font-weight: 400; }   /* actionResult: motivo del FAILED */
-  .s-RUNNING { color: var(--run); } .s-FINISHED { color: var(--ok); } .s-FAILED { color: var(--bad); }
-  .s-WAITING, .s-PAUSED, .s-INITIALIZING { color: var(--warn); }
+  .s-RUNNING { color: var(--run-ink); } .s-FINISHED { color: var(--ok-ink); } .s-FAILED { color: var(--bad-ink); }
+  .s-WAITING, .s-PAUSED, .s-INITIALIZING { color: var(--warn-ink); }
 
   .errs { display: grid; gap: 4px; font-size: 13px; }
   .err { border: 1px solid var(--bad); background: var(--bad-bg); padding: 4px 8px; border-radius: var(--radius-sm); }
@@ -188,7 +194,7 @@
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .btn.primary { background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 9px 22px; justify-self: start; }
-  .btn.danger { background: var(--bad); color: #fff; }
+  .btn.danger { background: var(--bad-btn); color: #fff; }
   .feedback { font-size: 12px; color: var(--ink-3); align-self: center; }
 
   /* ---- paneles inferiores ---- */
@@ -259,24 +265,25 @@
   .sync-robot.off { cursor: not-allowed; opacity: .6; }
   .sync-sum { display: flex; flex-wrap: wrap; gap: 6px; }
   .verb { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-sm); border: 1px solid var(--line); }
-  .verb.v-crear { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
-  .verb.v-corregir { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
-  .verb.v-distinta { color: var(--bad); background: var(--bad-bg); border-color: var(--bad); }
-  .verb.v-sustituir { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+  .verb.v-crear { color: var(--ok-ink); background: var(--ok-bg); border-color: var(--ok); }
+  .verb.v-corregir { color: var(--warn-ink); background: var(--warn-bg); border-color: var(--warn-line); }
+  .verb.v-distinta { color: var(--bad-ink); background: var(--bad-bg); border-color: var(--bad); }
+  .verb.v-sustituir { color: var(--warn-ink); background: var(--warn-bg); border-color: var(--warn-line); }
   .ops { list-style: none; margin: 0; padding: 0; display: grid; font-size: 13px; max-height: 560px; overflow: auto; }
   .ops li { display: grid; grid-template-columns: 2ch minmax(0, 1.1fr) minmax(0, 1.3fr) 9ch; gap: 10px;
     padding: 7px 6px; border-bottom: 1px solid var(--line); align-items: start; }
   .ops li.head { font-weight: 700; color: var(--navy); background: var(--surface-2); border-bottom: 0;
     border-radius: var(--radius-sm); position: sticky; top: 0; }
   .ops .mark { font-weight: 800; text-align: center; }
-  .ops .v-crear .mark { color: var(--ok); } .ops .v-corregir .mark { color: var(--warn); }
-  .ops .v-distinta .mark { color: var(--bad); } .ops li.v-igual { color: var(--ink-3); }
-  .ops .v-sustituir .mark { color: var(--warn); }
+  .ops .v-crear .mark { color: var(--ok-ink); } .ops .v-corregir .mark { color: var(--warn-ink); }
+  .ops .v-distinta .mark { color: var(--bad-ink); } .ops li.v-igual { color: var(--ink-3); }
+  .ops .v-sustituir .mark { color: var(--warn-ink); }
   .ops .replace { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-weight: 700; font-size: 13px; }
   .ops .link-btn { margin-left: 8px; font-size: 13px; }
-  .ops .warnline { display: block; color: var(--warn); font-weight: 700; }
+  .ops .hint.block { display: block; margin-top: 2px; }
+  .ops .warnline { display: block; color: var(--warn-ink); font-weight: 700; }
   .ops .st { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  .st-hecho { color: var(--ok); } .st-error { color: var(--bad); } .st-saltada { color: var(--warn); }
+  .st-hecho { color: var(--ok-ink); } .st-error { color: var(--bad-ink); } .st-saltada { color: var(--warn-ink); }
   .st-sin-cambios { color: var(--ink-3); }
   .fleet-sync { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   .fleet-sync li { display: grid; grid-template-columns: 7ch auto 1fr auto; grid-template-areas: "s p w a" "d d d d";
@@ -288,17 +295,17 @@
   .d-sobra { color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .chip-btn { font: inherit; font-size: 12px; padding: 0 6px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong);
               background: var(--surface); color: var(--ink); cursor: pointer; }
-  .chip-btn:hover { border-color: var(--bad); color: var(--bad); }
+  .chip-btn:hover { border-color: var(--bad); color: var(--bad-ink); }
   .link-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; color: var(--ink-3); cursor: pointer;
               text-decoration: underline; justify-self: start; }
-  .link-btn:hover { color: var(--bad); }
-  .d-falta { color: var(--warn); } .d-distinta, .d-error { color: var(--bad); } .d-fuera { color: var(--ink-2); }
+  .link-btn:hover { color: var(--bad-ink); }
+  .d-falta { color: var(--warn-ink); } .d-distinta, .d-error { color: var(--bad-ink); } .d-fuera { color: var(--ink-2); }
   .where { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
   .where span { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: var(--radius-sm); border: 1px solid var(--line); }
   /* En qué robots está cada recurso (Sincronización y Catálogo): verde si lo tiene, rojo si le falta o es distinto. */
-  .w-ok { color: var(--ok); border-color: var(--ok) !important; } .w-falta { color: var(--bad); border-color: var(--bad) !important; }
-  .w-distinta, .w-corregir { color: var(--bad); border-color: var(--bad) !important; }
-  .w-mixto { color: var(--ink-2); }
+  .w-ok { color: var(--ok-ink); border-color: var(--ok) !important; } .w-falta { color: var(--bad-ink); border-color: var(--bad) !important; }
+  .w-distinta, .w-corregir { color: var(--bad-ink); border-color: var(--bad) !important; }
+  .w-mixto, .w-sin { color: var(--ink-2); }
   /* Configuración */
   .grid-2 > .panel, main > .panel { min-width: 0; }   /* que la matriz haga scroll dentro, no la página */
   .matrix-wrap { overflow-x: auto; }            /* con muchos robots, scroll dentro del panel */
@@ -309,20 +316,20 @@
   .matrix .sub { display: block; font-size: 11px; }
   .matrix td .cm { margin-left: 6px; }
   .matrix td:not(.on) .cm { opacity: .5; }       /* no habilitada: el estado es solo informativo */
-  .matrix .fix { margin-left: 6px; font-size: 12px; color: var(--accent); font-weight: 700; }
+  .matrix .fix { margin-left: 6px; font-size: 12px; color: var(--link); font-weight: 700; }
   .cm { font-weight: 800; }
-  .c-ok { color: var(--ok); } .c-falta { color: var(--warn); } .c-distinta { color: var(--bad); } .c-nd { color: var(--ink-3); }
-  .warns { margin: 0; padding-left: 18px; font-size: 13px; color: var(--warn); }
-  .warnline { display: block; color: var(--warn); font-weight: 700; font-size: 13px; }
+  .c-ok { color: var(--ok-ink); } .c-falta { color: var(--warn-ink); } .c-distinta { color: var(--bad-ink); } .c-nd { color: var(--ink-3); }
+  .warns { margin: 0; padding-left: 18px; font-size: 13px; color: var(--warn-ink); }
+  .warnline { display: block; color: var(--warn-ink); font-weight: 700; font-size: 13px; }
   .cfg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-block: 12px; }
   .cfg-bar .tag { margin: 0; }
-  .cfg-msg.ok { color: var(--ok); font-weight: 700; } .cfg-msg.bad { color: var(--bad); font-weight: 700; }
-  .cfg-msg.warn { color: var(--warn); font-weight: 700; }
+  .cfg-msg.ok { color: var(--ok-ink); font-weight: 700; } .cfg-msg.bad { color: var(--bad-ink); font-weight: 700; }
+  .cfg-msg.warn { color: var(--warn-ink); font-weight: 700; }
   .num-in { font: inherit; width: 6em; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
             background: var(--surface); color: var(--ink); }
   .num-in:focus { outline: 2px solid var(--accent); outline-offset: 0; }
   .flow { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
-  .flow a { color: var(--accent); font-weight: 700; }
+  .flow a { color: var(--link); font-weight: 700; }
   .sync-robots.row { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
   .drafts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   .drafts li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;
@@ -343,7 +350,7 @@
   .steps li::marker { color: var(--navy); font-weight: 700; }
   .steps .where { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; margin-left: 6px;
     border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
-  .steps a.where { color: var(--accent); text-decoration: none; }
+  .steps a.where { color: var(--link); text-decoration: none; }
   .steps a.where:hover { border-color: var(--accent); }
   .steps p { margin: 2px 0 0; color: var(--ink-2); }
   .guide dl.kv { font-size: 14px; }
@@ -430,13 +437,13 @@
        parte de lo de arriba (la barra de iconos, la cabecera, los paneles). */
   :root {
     --bg: #f1f3f6;
-    --ink-3: #697482;
+    --ink-3: #5f6a77;       /* ≥ 4,5:1 también sobre el gris de los paneles */
     --nav-width: 220px;
     --header-height: 76px;
   }
   html { scroll-behavior: smooth; scroll-padding-top: 154px; }
   body { min-width: 0; }
-  a { color: var(--accent); }
+  a { color: var(--link); }
   button, a, input, select, summary { -webkit-tap-highlight-color: transparent; }
   button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
     outline: 3px solid var(--accent); outline-offset: 3px;
@@ -492,7 +499,7 @@
   .card-head h2 { font-size: 20px; }
   .card-head .pill { margin-left: auto; }
   .robot-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 12px; padding-top: 3px; }
-  .robot-links a { color: var(--accent); text-decoration: none; font-weight: 700; }
+  .robot-links a { color: var(--link); text-decoration: none; font-weight: 700; }
   .robot-links a:hover { text-decoration: underline; }
   .detail-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface);
     border: 1px solid var(--line); border-radius: 9px; padding: 14px 18px; }
@@ -542,7 +549,7 @@
   .detail-robots li > b { color: var(--navy); min-width: 6ch; }
   .detail-robots li > .btn { margin-left: auto; }
   .detail-deps dd { display: flex; flex-wrap: wrap; gap: 4px; font-weight: 400; }
-  .detail-deps .chip-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .detail-deps .chip-btn:hover { border-color: var(--accent); color: var(--link); }
   .detail-remove { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; justify-items: start; }
   .detail-remove .rm-scopes, .detail-remove .rm-plan { justify-self: stretch; }
   .detail-robots .muted { font-size: 12px; }
@@ -553,11 +560,22 @@
   .rm-scope > span { display: grid; gap: 2px; }
   .rm-scope select { justify-self: start; margin-top: 4px; }
   .rm-plan { display: grid; gap: 6px; font-size: 14px; }
+  .rm-plan:focus { outline: none; }
   .rm-plan p { margin: 0; }
-  .rm-blockers { margin: 0; padding-left: 20px; color: var(--bad); font-size: 13px; }
+  .rm-blockers { margin: 0; padding-left: 20px; color: var(--bad-ink); font-size: 13px; }
+  .rm-todo { display: grid; gap: 4px; font-size: 13px; }
+  .rm-todo p { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .detail-check { justify-content: flex-start; align-items: center; }
+  .detail-check .hint { flex: 1 1 240px; }
   .catalog-detail.none h3 { font-size: 16px; }
   /* Sincronización con varios robots (decisión 183): una vista previa por robot. */
   .sync-plan { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; display: grid; gap: 8px; }
+  .sync-plan h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
+  .sync-plan .plan-out { color: var(--bad-ink); font-weight: 700; }
+  .sync-plan .plan-go { color: var(--ok-ink); font-weight: 700; }
+  .sync-plan .plan-note { color: var(--ink-2); font-weight: 400; }
+  .sync-plan details.same summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  #sync-robots-title:focus { outline: none; }
   .sync-plan h4 { margin: 0; display: flex; align-items: center; gap: 10px; color: var(--navy); }
   .sync-plan h4 .pill { margin-left: 0; }
   .sync-plan p { margin: 0; }
@@ -801,7 +819,7 @@
             <dt>Estado</dt><dd>{{ rd.info.ROBOT_STATE || '—' }}<span v-if="rd.state.paused"> · en pausa</span></dd>
             <dt>Modo VDA</dt><dd><code>{{ rd.state.operatingMode }}</code></dd>
             <dt>Misión</dt><dd>{{ rd.info.MISSION || '—' }}</dd>
-            <template v-if="rd.tool != null || rd.toolChanger.length">
+            <template v-if="rd.tool != null || rd.toolChanger.length || rd.toolWanted">
               <dt>Herramienta</dt><dd>{{ toolLabel(rd) }}</dd>
             </template>
             <!-- Vuelta a la espera (decisión 136): contador mientras está parado. -->
@@ -810,7 +828,7 @@
             <dt>Velocidad</dt>
             <dd class="num" v-if="rd.state.velocity">{{ fixed(rd.state.velocity.vx, 2) }} m/s · {{ fixed(deg(rd.state.velocity.omega), 0) }} °/s</dd>
             <dd v-else class="empty">—</dd>
-            <dt>Posición</dt>
+            <dt>Pose robot</dt>
             <dd class="num" v-if="rd.pose">({{ rd.pose.x.toFixed(2) }}, {{ rd.pose.y.toFixed(2) }}) · {{ deg(rd.pose.theta).toFixed(0) }}°</dd>
             <dd v-else class="empty">—</dd>
           </dl>
@@ -827,9 +845,9 @@
           </div>
           <h3>En el FM</h3>
           <dl class="kv">
-            <dt>Acciones</dt>
+            <dt>Tipos de tarea</dt>
             <dd><div class="acts" v-if="rd.actions.length"><span class="act" v-for="a in rd.actions" :key="a"><b>{{ a }}</b></span></div>
-                <span v-else class="empty">ninguna habilitada</span></dd>
+                <span v-else class="empty">ninguno habilitado</span></dd>
             <dt>Tarea</dt>
             <dd>
               <template v-if="rd.state.orderId"><code>{{ rd.state.orderId }}</code>/{{ rd.state.orderUpdateId }}</template>
@@ -940,15 +958,24 @@
     <div class="page-heading"><h2 class="page-title">Operación</h2><p>Supervisa la flota, envía una tarea y sigue su ejecución.</p></div>
     <div class="panel" v-if="robotsView.some(r => r.inError) || fleetQueue.tasks.some(t => t.status === 'ASSIGNING')"><b>Hay situaciones que requieren atención.</b><p>Revisa los avisos de robots o las tareas en duda de la cola.</p></div>
     <!-- Decisión 184: el FM se fía de lo que dice fleet.yaml de cada cambiador
-         de herramientas. Una vez por arranque del FM, hasta pulsar «Revisado». -->
-    <div class="panel tool-check" v-if="toolCheckDue" role="status">
-      <b>Revisa los cambiadores de herramienta.</b>
-      <p>El FM manda las tareas según lo que dice la configuración que tiene cada cambiador. Si falta una, la mission
+         de herramientas. Una vez por arranque del FM, hasta pulsar «Revisado»;
+         lo guarda el FM y vale para todos los navegadores (decisión 188). -->
+    <div class="panel tool-check" v-if="toolCheckDue" role="status" aria-labelledby="tool-check-title">
+      <b id="tool-check-title">Revisa los cambiadores de herramienta.</b>
+      <p>El FM manda las tareas según lo que dice la configuración que tiene cada cambiador. Si falta una, la misión
         fallará al intentar cambiarla. Comprueba que tienen:</p>
       <ul><li v-for="r in robotsView.filter(x => x.toolChanger.length)" :key="r.serial">
         <b>{{ r.name || r.serial }}</b>: {{ r.toolChanger.join(', ') }}<span class="muted"> · {{ toolLabel(r, false) }}</span></li></ul>
-      <div class="acts"><button class="btn" @click="toolChecked">Revisado</button></div>
+      <p><b>Si no coincide</b>, pon en el cambiador las que faltan o corrige <code>tool_changer</code> de ese robot en
+        <code>fleet.yaml</code> y «Aplicar el fichero» en <a href="#configurador">Configuración</a> (sin reiniciar). Hasta
+        entonces, el FM le mandaría tareas que no puede hacer. <a href="#guia/herramientas">Cómo funciona</a></p>
+      <div class="acts"><button class="btn" id="tool-checked" @click="toolChecked">Revisado</button>
+        <span class="feedback" aria-live="polite">{{ toolCheckMsg }}</span></div>
     </div>
+    <p class="hint tool-checked" v-else-if="fleet.tool_check && robotsView.some(x => x.toolChanger.length)" id="tool-check-done" tabindex="-1">
+      Cambiadores de herramienta revisados a las {{ dayTime(new Date(fleet.tool_check.at * 1000).toISOString()) }}<template
+      v-if="fleet.tool_check.by"> desde {{ fleet.tool_check.by }}</template>. Lo que tiene cada cambiador sigue en la
+      tarjeta de su robot.</p>
     <div class="summary-grid">
       <div class="summary-card"><span class="summary-value">{{ robotsView.filter(r => r.status.key === 'libre').length }}</span><span>Disponibles</span></div>
       <div class="summary-card"><span class="summary-value">{{ robotsView.filter(r => r.status.key === 'ejecutando').length }}</span><span>Trabajando</span></div>
@@ -958,9 +985,9 @@
     <section class="operation-workspace" aria-label="Enviar y seguir tareas">
       <div class="panel">
         <h3>Nueva tarea</h3>
-        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, si la acción pide herramienta, que la lleve o la tenga en su cambiador; entre varios, el que ya la lleva y después el de más batería. Si están todos ocupados, la order espera en la cola y va al primero que quede libre.</p>
+        <p class="hint">El FM elige el robot: libre, con batería ≥ mínimo y, si el tipo de tarea pide herramienta, que la lleve o la tenga en su cambiador; entre varios, el que ya la lleva y después el de más batería. Si están todos ocupados, la order espera en la cola y va al primero que quede libre.</p>
         <form class="form" @submit.prevent="sendOrder">
-          <label class="field">Acción
+          <label class="field">Tipo de tarea
             <select id="order-action" v-model="form.actionType" required>
               <option v-for="a in actionCatalog" :key="a.action_type" :value="a.action_type">
                 {{ a.action_type }} — {{ a.robots.join(', ') }}
@@ -968,9 +995,10 @@
             </select>
           </label>
           <label class="field" v-for="p in currentParams" :key="p.key">
-            {{ p.key }} <span v-if="p.kind === 'position'">(position)</span><span v-else-if="p.kind === 'number'">(número)</span><span v-else-if="p.kind === 'tool'">(herramienta)</span>
+            <!-- Un solo elemento: en .field (grid) cada trozo iría en su línea. -->
+            <span>{{ p.key }}<template v-if="PARAM_KIND[p.kind]"> ({{ PARAM_KIND[p.kind] }})</template></span>
             <select v-if="p.choices" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
-              <option v-for="c in p.choices" :key="c" :value="c">{{ c }}</option>
+              <option v-for="c in p.choices" :key="c" :value="c">{{ p.kind === 'tool' ? toolText(c) : c }}</option>
             </select>
             <template v-else-if="p.kind === 'number' && hasRange(p)">
               <!-- Los dos inputs comparten v-model: mover uno actualiza el otro. -->
@@ -990,7 +1018,7 @@
           <button class="btn primary" id="order-send" type="submit" :disabled="!form.actionType || sending">Enviar tarea</button>
         </form>
         <div class="resp" v-for="o in fleetOrders" :key="o.orderId" :class="o.status || 'pending'">
-          <code>{{ o.orderId }}</code> <b>{{ o.actionType }}</b>
+          <code>{{ o.orderId }}</code> <b>{{ o.actionType }}</b><template v-if="o.tool"> · pide {{ o.tool }}</template>
           <template v-if="!o.status"> · esperando respuesta…</template>
           <template v-else-if="o.status === 'ASSIGNED'"> → <b>{{ o.assignedSerial }}</b> · {{ o.description }}</template>
           <template v-else-if="o.status === 'QUEUED'"> · en cola (puesto {{ o.queuePosition }}) · {{ o.description }}
@@ -1004,7 +1032,7 @@
         <ol class="queue" v-if="fleetQueue.tasks.length">
           <li v-for="t in fleetQueue.tasks" :key="t.orderId" :class="{ doubt: t.status === 'ASSIGNING' }">
             <span class="pos num">{{ queuePos(t) }}</span>
-            <span><code>{{ t.orderId }}</code> <b>{{ t.actionType }}</b>
+            <span><code>{{ t.orderId }}</code> <b>{{ t.actionType }}</b><template v-if="t.tool"> · pide {{ t.tool }}</template>
               <template v-if="t.status === 'ASSIGNING'"> · <b>en duda</b> ({{ t.serial }})</template>
               · {{ waitedFor(t.receivedAt) }}
               <span class="why">{{ t.waiting }}</span></span>
@@ -1019,7 +1047,7 @@
         <p class="empty" v-else>No hay orders esperando. Si llega una fleet/order con todos los robots ocupados, aparece aquí hasta que uno quede libre.</p>
         <p class="hint" v-if="fleetQueue.tasks.some(t => t.status === 'ASSIGNING')">
           <b>En duda</b>: el FM se reinició mientras la mandaba a ese robot y no puede saber si le llegó (si es porque el robot no responde, lo vuelve a mirar solo cada 30 s).
-          Mira la cola de missions del robot en su web: la entrada lleva el orderId en la descripción. Si no está, «Relanzar»;
+          Mira la cola de misiones del robot en su web: la entrada lleva el orderId en la descripción. Si no está, «Relanzar»;
           si está, «Descartar» (el robot la hace igual).</p>
       </div>
     </section>
@@ -1053,11 +1081,11 @@
           <template v-if="r.idleIn != null || r.idleGoing">
             <dt>A la espera</dt><dd :class="{ num: r.idleIn != null }">{{ idleLabel(r) }}</dd>
           </template>
-          <template v-if="r.tool != null || r.toolChanger.length">
+          <template v-if="r.tool != null || r.toolChanger.length || r.toolWanted">
             <dt>Herramienta</dt><dd>{{ toolLabel(r) }}</dd>
           </template>
 
-          <dt>Acciones</dt>
+          <dt>Tarea</dt>
           <dd>
             <div class="acts" v-if="r.state.actionStates.length">
               <span class="act" v-for="a in r.state.actionStates" :key="a.actionId"><b>{{ a.actionType }}</b><span class="s" :class="'s-' + a.actionStatus">{{ a.actionStatus }}</span><span class="why" v-if="a.actionResult">{{ a.actionResult }}</span></span>
@@ -1103,7 +1131,7 @@
   </main>
 
   <!-- ===== Crear (fm/adapters/mir/create.py). Alta en UN robot de una
-       mission vacía, de una position (donde está el robot) o de una zona
+       misión vacía, de una posición (donde está el robot) o de una zona
        (delante del robot) con GUID estándar; se sigue en la web del MiR y
        se vuelve aquí a capturar. ===== -->
   <!-- ===== Catálogo (decisión 182): lista + ficha del recurso. La ficha
@@ -1128,12 +1156,15 @@
         </select>
       </label>
       <a class="btn primary" href="#crear">+ Crear o importar recurso</a>
-      <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label>
+      <label v-if="fleet.site"><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label>
     </div>
+    <!-- Lo que pasó al quitar algo que ya no tiene ficha: encima de la lista, que en
+         móvil es lo único que se ve (la ficha vacía está oculta). -->
+    <div aria-live="polite"><div class="resp" :class="rmState.cls" v-if="rmState.text && !catItem">{{ rmState.text }}</div></div>
     <div class="catalog-layout" :class="{ open: !!catItem }">
       <ul class="catalog-browser" aria-label="Recursos del catálogo">
         <li v-for="it in catalogItems" :key="it.guid">
-          <button type="button" class="catalog-resource" :class="{ sel: catItem && catItem.guid === it.guid }"
+          <button type="button" class="catalog-resource" :class="{ sel: catItem && catItem.guid === it.guid }" :data-guid="it.guid"
                   :aria-current="catItem && catItem.guid === it.guid ? 'true' : null" @click="openItem(it.guid)">
             <span class="chip">{{ KIND_LABEL[it.kind] || it.kind }}</span>
             <span class="cat-name">{{ it.name }}</span>
@@ -1146,7 +1177,7 @@
       </ul>
 
       <section class="panel catalog-detail" v-if="catItem" aria-labelledby="cat-detail-title">
-        <button type="button" class="link-btn back" @click="openItem('')">← Volver a la lista</button>
+        <button type="button" class="link-btn back" @click="backToList()">← Volver a la lista</button>
         <span class="chip">{{ KIND_LABEL[catItem.kind] || catItem.kind }}</span>
         <h3 id="cat-detail-title" tabindex="-1">{{ catItem.name }}</h3>
         <p class="resource-meta">{{ [placeOf(catItem), catItem.extra].filter(Boolean).join(' · ') }}</p>
@@ -1160,6 +1191,7 @@
             <button class="btn primary" v-if="!CATALOG_ONLY.includes(catItem.kind)" :disabled="!!createState.busy"
                     @click="captureFromDetail(catItem)">Capturar</button>
           </div>
+          <div aria-live="polite"><div class="resp" id="detail-msg" tabindex="-1" :class="detailMsg.cls" v-if="detailMsg.text">{{ detailMsg.text }}</div></div>
         </template>
 
         <template v-else>
@@ -1171,10 +1203,21 @@
               <span class="muted" v-if="row.when">{{ row.when }}</span>
               <button class="btn" v-if="row.bring" :disabled="syncState.loading" @click="recaptureFrom(catItem, row.serial)"
                       :title="'Guardar en el catálogo la versión de ' + row.serial + ' (no escribe en el robot)'">Traer al catálogo</button>
+              <!-- Recién traído de otro robot: este tiene la versión anterior; traerla desharía lo traído. -->
+              <span class="muted" v-if="row.push">versión anterior a la traída de {{ syncState.brought[catItem.guid].from }}
+                · {{ ago(syncState.brought[catItem.guid].at) }}</span>
+              <button class="btn" v-if="row.push" @click="syncResource(catItem, [row.serial], true)"
+                      :title="'Llevar a ' + row.serial + ' la versión del catálogo (Sincronización, con la vista previa)'">Llevarle la del catálogo →</button>
             </li>
           </ul>
-          <p class="hint" v-if="detailQuick">La comprobación rápida solo mira si el robot lo tiene, no si es igual:
-            para saber si alguien lo cambió en su web, «A fondo» en <a href="#sincronizacion">Sincronización</a>.</p>
+          <div class="acts detail-check">
+            <button class="btn" :disabled="detailChecking || !detailRobots.some(r => r.online)" @click="deepCheckAll()">
+              {{ detailChecking ? 'Comprobando a fondo…' : 'Comprobar a fondo' }}</button>
+            <span class="hint" v-if="detailQuick">La comprobación rápida solo mira si el robot lo tiene, no si es igual que el
+              catálogo: «Comprobar a fondo» compara también el contenido.</span>
+          </div>
+          <!-- Lo que pasa al comprobar, traer o capturar: junto a los botones, y con el foco (el botón pulsado puede irse). -->
+          <div aria-live="polite"><div class="resp" id="detail-msg" tabindex="-1" :class="detailMsg.cls" v-if="detailMsg.text">{{ detailMsg.text }}</div></div>
           <dl class="kv detail-deps">
             <dt>Usa</dt><dd><template v-if="detailUses.length"><button v-for="d in detailUses" :key="d.guid" type="button" class="chip-btn" @click="openItem(d.guid)">{{ KIND_LABEL[d.kind] }} {{ d.name }}</button></template><span v-else class="muted">nada más del catálogo</span></dd>
             <dt>Lo usan</dt><dd><template v-if="detailUsedBy.length"><button v-for="d in detailUsedBy" :key="d.guid" type="button" class="chip-btn" @click="openItem(d.guid)">{{ KIND_LABEL[d.kind] }} {{ d.name }}</button></template><span v-else class="muted">ningún recurso del catálogo</span></dd>
@@ -1190,9 +1233,9 @@
         <!-- Quitar (decisión 182): un solo sitio con los alcances de remove.py que
              valen para este recurso; primero el plan del servidor, luego confirmar. -->
         <div class="detail-remove" v-if="rmScopes.length">
-          <button class="btn" v-if="!rmState.open" @click="rmOpen()">Quitar…</button>
+          <button class="btn" id="rm-open" v-if="!rmState.open" @click="rmOpen()">Quitar…</button>
           <template v-else>
-            <h4>Quitar «{{ catItem.name }}»</h4>
+            <h4 id="rm-title" tabindex="-1">Quitar «{{ catItem.name }}»</h4>
             <div class="rm-scopes" role="radiogroup" aria-label="Cómo quitarlo">
               <label v-for="s in rmScopes" :key="s.id" class="rm-scope" :class="{ on: rmState.scope === s.id }">
                 <input type="radio" name="rm-scope" :value="s.id" v-model="rmState.scope" :disabled="rmState.busy">
@@ -1206,7 +1249,7 @@
               <button class="btn" :disabled="!rmState.scope || rmState.busy" @click="rmReview()">Ver qué se quita</button>
               <button class="btn" :disabled="rmState.busy" @click="rmClose()">Cancelar</button>
             </div>
-            <div class="rm-plan" v-if="rmState.plan">
+            <div aria-live="polite"><div class="rm-plan" id="rm-plan" tabindex="-1" v-if="rmState.plan">
               <p v-if="rmState.plan.robots.length">Está en <b>{{ rmState.plan.robots.join(' y ') }}</b><template v-if="!rmState.plan.blockers.length">:
                 se borra de ahí<template v-if="rmState.plan.scope !== 'robot'"> y del catálogo</template></template>.</p>
               <p v-else>No está en ningún robot<template v-if="!rmState.plan.blockers.length">: se borra del catálogo</template>.</p>
@@ -1214,30 +1257,38 @@
               <template v-if="rmState.plan.blockers.length">
                 <p class="warnline">No se puede:</p>
                 <ul class="rm-blockers"><li v-for="b in rmState.plan.blockers" :key="b">{{ b }}</li></ul>
+                <!-- Qué hacer (punto 7 de la revisión): lo que lo usa se abre desde aquí. -->
+                <div class="rm-todo" v-if="rmTodo.users.length || rmTodo.config || rmTodo.wait">
+                  <p v-if="rmTodo.users.length">Primero quita lo que lo usa, o cámbialo en la web del MiR para que no lo use, y
+                    vuelve a «Ver qué se quita»:
+                    <button v-for="d in rmTodo.users" :key="d.guid" type="button" class="chip-btn" @click="openItem(d.guid)">{{ KIND_LABEL[d.kind] }} {{ d.name }}</button></p>
+                  <p v-if="rmTodo.config">Lo pide <code>fleet.yaml</code>: quítalo antes de los tipos de tarea en
+                    <a href="#configurador">Configuración</a>.</p>
+                  <p v-if="rmTodo.wait">Un robot ocupado, desplegando o sin conexión: espera a que quede libre o responda y vuelve a
+                    «Ver qué se quita».</p>
+                </div>
               </template>
               <div class="acts" v-else>
                 <button class="btn danger" :disabled="rmState.busy || rmState.plan.scope !== rmState.scope || rmState.plan.serial !== rmScopeSerial"
-                        @click="rmApply()">{{ rmScopes.find(s => s.id === rmState.plan.scope).verb }}</button>
+                        @click="rmApply()">{{ rmState.plan.verb }}</button>
               </div>
-            </div>
+            </div></div>
           </template>
         </div>
-        <div class="resp" :class="rmState.cls" v-if="rmState.text" aria-live="polite">{{ rmState.text }}</div>
-        <div class="resp" :class="detailMsg.cls" v-if="detailMsg.text" aria-live="polite">{{ detailMsg.text }}</div>
+        <div aria-live="polite"><div class="resp" :class="rmState.cls" v-if="rmState.text">{{ rmState.text }}</div></div>
         <details><summary>Información técnica</summary><code class="guid">{{ catItem.guid }}</code></details>
       </section>
       <section class="panel catalog-detail none" v-else>
         <h3>Elige un recurso</h3>
         <p class="hint">Su ficha dice en qué robots está, qué usa y qué lo usa, y desde ella se trae al catálogo lo cambiado
           en un robot, se sincroniza o se quita. Lo creado y aún sin capturar sale con «borrador».</p>
-        <div class="resp" :class="rmState.cls" v-if="rmState.text" aria-live="polite">{{ rmState.text }}</div>
       </section>
     </div>
   </main>
 
   <main v-show="tab === 'crear'">
     <div class="robot-links"><a href="#catalogo">← Volver al catálogo</a></div><h2 class="page-title">Crear o importar recurso</h2>
-    <p class="page-sub">Dar de alta con GUID de la flota un mapa en el catálogo, o una position, una zona o una mission
+    <p class="page-sub">Dar de alta con GUID de la flota un mapa en el catálogo, o una posición, una zona o una misión
       vacía en un MiR para terminarla en su web.</p>
     <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
       <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
@@ -1289,22 +1340,22 @@
         <!-- Copiar un mapa del catálogo (#33): solo al catálogo, sin robot. -->
         <template v-if="mapForm.mode === 'copy'">
           <p class="hint">Otro mapa con la <b>misma imagen y el mismo origen</b> que uno del catálogo, con una copia de sus
-            <b>positions</b> y sus <b>zonas</b> (GUIDs nuevos). Las <b>missions no se copian</b>: las que van a positions fijas
-            siguen siendo del original; en la copia valen las que reciben la position como parámetro. No necesita robot: se
+            <b>posiciones</b> y sus <b>zonas</b> (GUIDs nuevos). Las <b>misiones no se copian</b>: las que van a posiciones fijas
+            siguen siendo del original; en la copia valen las que reciben la posición como parámetro. No necesita robot: se
             guarda en el catálogo y se lleva a los robots en <a href="#sincronizacion">Sincronización</a>.</p>
           <p class="hint" v-if="!createState.maps.length">Todavía no hay ningún mapa en el catálogo.</p>
           <template v-else>
           <label class="field">Mapa que se copia
             <select id="copy-map-source" v-model="copyForm.source" @change="pickCopySource">
               <option v-for="m in siteMaps" :key="m.guid" :value="m.guid">{{ m.name }}
-                ({{ m.positions }} position{{ m.positions === 1 ? '' : 's' }}, {{ m.zones }} zona{{ m.zones === 1 ? '' : 's' }})</option></select></label>
+                ({{ m.positions }} {{ m.positions === 1 ? 'posición' : 'posiciones' }}, {{ m.zones }} zona{{ m.zones === 1 ? '' : 's' }})</option></select></label>
           <label class="field">Nombre del mapa nuevo<input id="copy-map-name" v-model="copyForm.name" autocomplete="off"
                  @input="proposeAffix"></label>
           <label class="field">Site
             <select id="copy-map-session" v-model="copyForm.session">
               <option v-for="x in createState.sessions" :key="x.guid" :value="x.guid">{{ x.name }}</option></select></label>
-          <p class="hint">El nombre de una position no se puede repetir en ningún mapa (la web del MiR las lista todas juntas):
-            a cada position copiada se le añade un texto, delante o detrás.</p>
+          <p class="hint">El nombre de una posición no se puede repetir en ningún mapa (la web del MiR las lista todas juntas):
+            a cada posición copiada se le añade un texto, delante o detrás.</p>
           <div class="seg" role="radiogroup" aria-label="Dónde va el texto">
             <button type="button" role="radio" id="copy-map-prefix" :aria-checked="copyForm.at === 'prefix'"
                     :class="{ on: copyForm.at === 'prefix' }" @click="setCopyAt('prefix')">Prefijo</button>
@@ -1322,7 +1373,7 @@
         <!-- Capturar un mapa de un robot (decisión 132): solo lee el robot. -->
         <template v-if="mapForm.mode === 'robot'">
           <p class="hint">Un mapa hecho en la web de un MiR (sin GUID de la flota) entra en el catálogo con su imagen, sus
-            positions y sus zonas. <b>El robot no se toca:</b> el MiR no deja cambiar el GUID de un mapa, así que la copia del
+            posiciones y sus zonas. <b>El robot no se toca:</b> el MiR no deja cambiar el GUID de un mapa, así que la copia del
             catálogo se lleva a los robots en <a href="#sincronizacion">Sincronización</a> (también a este) y se activa en su
             web. Volver a capturar el mismo mapa actualiza su copia.</p>
           <label class="field">Robot
@@ -1334,7 +1385,7 @@
           <ul class="drafts" v-else>
             <li v-for="m in capState.list" :key="m.guid">
               <label><input type="radio" name="cap-map" :value="m.guid" v-model="capState.source" @change="pickCapturable(m)">
-                <b>{{ m.name }}</b> <span class="muted">· site {{ m.site }} · {{ m.positions }} positions · {{ m.zones }} zonas</span>
+                <b>{{ m.name }}</b> <span class="muted">· site {{ m.site }} · {{ m.positions }} posiciones · {{ m.zones }} zonas</span>
                 <span class="chip" v-if="m.captured_as">ya en el catálogo</span></label>
               <a class="btn" :href="m.url" target="_blank" rel="noopener">Ver en el MiR ↗</a>
             </li>
@@ -1376,7 +1427,7 @@
         </template>
       </template>
       <template v-else-if="createWhat === 'position'">
-        <h3>Nueva position</h3>
+        <h3>Nueva posición</h3>
         <p class="hint">Se crea <b>donde está ahora el robot</b>, con el tipo elegido (en la web del MiR no se puede cambiar
           después). Un marcador o cargador se termina en el editor del mapa del MiR: volver a detectarlo y ajustar el offset.
           El robot tiene que estar trabajando en ese mapa.</p>
@@ -1387,7 +1438,7 @@
         <label class="field">Mapa
           <select id="new-position-map" v-model="createState.position.parent">
             <option v-for="m in siteMaps" :key="m.guid" :value="m.guid">{{ m.name }}</option></select></label>
-        <div class="acts"><button class="btn primary" id="new-position" :disabled="!canCreate('position')" @click="createRes('position')">Crear position aquí</button></div>
+        <div class="acts"><button class="btn primary" id="new-position" :disabled="!canCreate('position')" @click="createRes('position')">Crear posición aquí</button></div>
       </template>
       <template v-else-if="createWhat === 'zone'">
         <h3>Nueva zona</h3>
@@ -1406,26 +1457,26 @@
         <div class="acts"><button class="btn primary" id="new-zone" :disabled="!canCreate('zone')" @click="createRes('zone')">Crear zona aquí</button></div>
       </template>
       <template v-else-if="createWhat === 'missiongrp'">
-        <h3>Nuevo grupo de missions</h3>
+        <h3>Nuevo grupo de misiones</h3>
         <!-- Crear un grupo (decisión 134): solo al catálogo, sin robot. -->
-        <p class="hint">Un <b>grupo</b> reúne missions en la web del MiR (como una carpeta). Es de toda la flota, no de un site.
-          No necesita robot: se guarda en el catálogo y llega a cada robot al crear en él su primera mission (o desde
+        <p class="hint">Un <b>grupo</b> reúne misiones en la web del MiR (como una carpeta). Es de toda la flota, no de un site.
+          No necesita robot: se guarda en el catálogo y llega a cada robot al crear en él su primera misión (o desde
           <a href="#sincronizacion">Sincronización</a>).</p>
         <label class="field">Nombre<input id="new-group-name" v-model="groupForm.name" autocomplete="off"></label>
         <div class="acts"><button class="btn primary" id="new-group" :disabled="!groupForm.name.trim() || !!createState.busy"
                                   @click="createGroup">Crear grupo</button></div>
       </template>
       <template v-else>
-        <h3>Nueva mission</h3>
+        <h3>Nueva misión</h3>
         <p class="hint">Se crea vacía en el grupo elegido y se programa en el Blockly del MiR. Si el grupo aún no está en el
           robot, se crea en él.</p>
         <label class="field">Nombre<input id="new-mission-name" v-model="createState.mission.name" autocomplete="off"></label>
         <label class="field" v-if="createState.groups.length">Grupo
           <select id="new-mission-group" v-model="createState.mission.parent">
             <option v-for="g in createState.groups" :key="g.guid" :value="g.guid">{{ g.name }}</option></select></label>
-        <p class="hint" v-else>Todavía no hay ningún grupo de missions en el catálogo: una mission vive dentro de uno.
+        <p class="hint" v-else>Todavía no hay ningún grupo de misiones en el catálogo: una misión vive dentro de uno.
           <button class="link-btn" type="button" @click="setCreateWhat('missiongrp')">Crear el grupo primero</button></p>
-        <div class="acts"><button class="btn primary" id="new-mission" :disabled="!canCreate('mission')" @click="createRes('mission')">Crear mission</button></div>
+        <div class="acts"><button class="btn primary" id="new-mission" :disabled="!canCreate('mission')" @click="createRes('mission')">Crear misión</button></div>
       </template>
     </div>
     <div class="resp" :class="createState.result ? 'ASSIGNED' : createState.error ? 'REJECTED' : 'pending'"
@@ -1448,22 +1499,22 @@
       </template>
       <template v-else-if="createState.result.kind === 'missiongrp'">
         <b>Grupo «{{ createState.result.name }}» creado en el catálogo</b> <code class="guid">{{ createState.result.guid }}</code>.
-        Ahora crea su primera mission: <button class="link-btn" type="button" @click="setCreateWhat('mission')">Nueva mission</button>.
+        Ahora crea su primera misión: <button class="link-btn" type="button" @click="setCreateWhat('mission')">Nueva misión</button>.
       </template>
       <template v-else-if="createState.result.kind === 'map' && createState.result.copied_from">
         <b>Mapa «{{ createState.result.copied_from }}» copiado en el catálogo</b> como «{{ createState.result.name }}»,
         en el site <b>{{ createState.result.site }}</b>: {{ createState.result.positions }}
-        position{{ createState.result.positions === 1 ? '' : 's' }}<template v-if="createState.result.example">
+        {{ createState.result.positions === 1 ? 'posición' : 'posiciones' }}<template v-if="createState.result.example">
         (p. ej. «{{ createState.result.example[1] }}»)</template> y {{ createState.result.zones }}
         zona{{ createState.result.zones === 1 ? '' : 's' }}. <code class="guid">{{ createState.result.guid }}</code>
-        Después: llévalo a los robots en <a href="#sincronizacion">Sincronización</a> (marcar el mapa marca sus positions y
+        Después: llévalo a los robots en <a href="#sincronizacion">Sincronización</a> (marcar el mapa marca sus posiciones y
         zonas) y actívalo en la web de cada uno.
       </template>
       <template v-else-if="createState.result.kind === 'map' && createState.result.source">
         <b>Mapa «{{ createState.result.source }}» de {{ createState.result.robot }}
           {{ createState.result.updated ? 'actualizado' : 'capturado' }} en el catálogo</b> como «{{ createState.result.name }}»,
         en el site <b>{{ createState.result.site }}</b><template v-if="createState.result.new_site"> (nuevo)</template>:
-        {{ createState.result.positions }} position{{ createState.result.positions === 1 ? '' : 's' }} y
+        {{ createState.result.positions }} {{ createState.result.positions === 1 ? 'posición' : 'posiciones' }} y
         {{ createState.result.zones }} zona{{ createState.result.zones === 1 ? '' : 's' }}.
         <code class="guid">{{ createState.result.guid }}</code>
         <ul class="warns" v-if="createState.result.skipped.length || createState.result.gone.length">
@@ -1484,7 +1535,7 @@
       <template v-else-if="createState.result.captured">
         <b>«{{ createState.result.name }}» capturada al catálogo</b> ({{ createState.result.detail }}).
         Ahora se puede llevar a otros robots: <a href="#sincronizacion" @click.prevent="syncResource(createState.result)">Sincronizar este recurso →</a><template v-if="createState.result.kind === 'mission'">
-        y habilitar como action en <a href="#configurador">Configuración</a></template>.
+        y darla de alta como tipo de tarea en <a href="#configurador">Configuración</a></template>.
       </template>
       <template v-else>
         <b>{{ CREATED_LABEL[createState.result.kind] }} «{{ createState.result.name }}» creada en {{ createState.result.robot }}</b>
@@ -1534,28 +1585,28 @@
          del MiR, sin GUID de la flota. Solo escribe en el catálogo. -->
     <div class="panel" v-if="createWhat === 'mission'">
       <h3>Hechas en la web del MiR <small class="muted" v-if="createState.robot">· en {{ createState.robot }}</small></h3>
-      <p class="hint">Missions de un grupo del catálogo que <b>no tienen GUID de la flota</b> (p. ej. un «Guardar como»):
-        el FM no las ve. <b>Adoptar</b> las guarda en el catálogo con el GUID de la mission que sustituyen, o con uno nuevo.
+      <p class="hint">Misiones de un grupo del catálogo que <b>no tienen GUID de la flota</b> (p. ej. un «Guardar como»):
+        el FM no las ve. <b>Adoptar</b> las guarda en el catálogo con el GUID de la misión que sustituyen, o con uno nuevo.
         Después: llevarla a los robots en <a href="#sincronizacion">Sincronización</a> (marcando <b>Sustituir</b> donde
         tengan la antigua) y borrar esta copia en la web del MiR.</p>
       <p class="empty" v-if="adoptState.loading">Mirando el robot…</p>
       <p class="err warn" v-else-if="adoptState.error">{{ adoptState.error }}</p>
       <ul class="drafts" v-else-if="adoptState.list.length">
         <li v-for="m in adoptState.list" :key="m.guid">
-          <span><span class="muted">mission</span> <b>{{ m.name }}</b> <span class="muted">· grupo {{ m.group }}</span>
+          <span><span class="muted">misión</span> <b>{{ m.name }}</b> <span class="muted">· grupo {{ m.group }}</span>
             <code class="guid">{{ m.guid }}</code>
             <span class="chip" v-if="m.adopted_as">adoptada como «{{ missionName(m.adopted_as) }}»: bórrala en la web del MiR</span></span>
           <span class="acts">
             <a class="btn" :href="m.url" target="_blank" rel="noopener">Abrir en el MiR ↗</a>
             <select v-model="adoptState.target[m.guid]" :aria-label="'adoptar ' + m.name + ' como'">
-              <option value="">como mission nueva</option>
+              <option value="">como misión nueva</option>
               <option v-for="c in createState.missions" :key="c.guid" :value="c.guid">en lugar de «{{ c.name }}» ({{ c.guid.slice(-3) }})</option>
             </select>
             <button class="btn primary" @click="adoptRes(m)" :disabled="!!createState.busy">Adoptar</button>
           </span>
         </li>
       </ul>
-      <p class="empty" v-else-if="createState.robot">Todas las missions de sus grupos del catálogo tienen GUID de la flota.</p>
+      <p class="empty" v-else-if="createState.robot">Todas las misiones de sus grupos del catálogo tienen GUID de la flota.</p>
     </div>
   </main>
 
@@ -1569,10 +1620,10 @@
        resultado llega por el WebSocket (topic fm/config). ===== -->
   <main v-show="tab === 'configurador'">
     <h2 class="page-title">Configuración</h2>
-    <p class="page-sub">Acciones disponibles, reglas de funcionamiento y conexión de los robots.</p>
+    <p class="page-sub">Tipos de tarea, reglas de funcionamiento y conexión de los robots.</p>
     <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
       <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
-    <nav class="cfg-subnav" aria-label="Apartados de configuración"><button class="btn" @click="cfgJump('cfg-actions')">Acciones y asignación</button><button class="btn" @click="cfgJump('cfg-thresholds')">Batería y carga</button><button class="btn" @click="cfgJump('cfg-idle')">Vuelta a la espera</button><button class="btn" @click="cfgJump('cfg-robots')">Alta y conexión</button></nav>
+    <nav class="cfg-subnav" aria-label="Apartados de configuración"><button class="btn" @click="cfgJump('cfg-actions')">Tipos de tarea y asignación</button><button class="btn" @click="cfgJump('cfg-thresholds')">Batería y carga</button><button class="btn" @click="cfgJump('cfg-idle')">Vuelta a la espera</button><button class="btn" @click="cfgJump('cfg-robots')">Alta y conexión</button></nav>
     <div class="panel cfg-bar">
       <template v-if="!cfgState.editable">
         <span class="tag">solo lectura</span>
@@ -1602,9 +1653,9 @@
     <p class="empty" v-if="cfgState.error">{{ cfgState.error }}</p>
 
     <div class="panel" id="cfg-actions">
-      <h3>Qué robot hace qué action</h3>
-      <p class="hint">La casilla marcada indica que el robot tiene la action habilitada en <code>fleet.yaml</code>. La marca de
-        al lado dice si el robot tiene grabada la mission y todo lo que usa, según la última comprobación de
+      <h3>Qué robot hace cada tipo de tarea</h3>
+      <p class="hint">La casilla marcada indica que el robot tiene ese tipo de tarea habilitado en <code>fleet.yaml</code>. La marca de
+        al lado dice si el robot tiene grabada la misión y todo lo que usa, según la última comprobación de
         <a href="#sincronizacion">Sincronización</a>:
         <span class="cm c-ok">✓</span> grabada, <span class="cm c-falta">✗</span> falta,
         <span class="cm c-distinta">!</span> distinta (editada en el robot; solo se ve con «A fondo»),
@@ -1612,16 +1663,16 @@
       <div class="matrix-wrap" v-if="cfgState.actions.length">
         <table class="matrix">
           <thead>
-            <tr><th scope="col">action</th>
+            <tr><th scope="col">tipo de tarea</th>
               <th scope="col" v-for="r in cfgState.robots" :key="r.serial">{{ r.serial }}
-                <span class="muted sub">{{ (cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions : r.actions).length }} actions</span></th></tr>
+                <span class="muted sub">{{ (cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions : r.actions).length }} tipos</span></th></tr>
           </thead>
           <tbody>
             <tr v-for="a in viewActions" :key="a.name" :class="{ deleted: a.status === 'borrada' }">
               <th scope="row"><b>{{ a.name }}</b> <span class="chip" v-if="a.status">{{ a.status }}</span>
                 <span class="muted sub" v-if="missionLabel(a)">{{ missionLabel(a) }}</span>
                 <span class="muted sub" v-if="a.needs && a.needs.maps && a.needs.maps.length"
-                      title="Va a positions fijas de este mapa: solo la hace un robot que esté en él">mapa {{ a.needs.maps.join(', ') }}</span></th>
+                      title="Va a posiciones fijas de este mapa: solo la hace un robot que esté en él">mapa {{ a.needs.maps.join(', ') }}</span></th>
               <td v-for="r in cfgState.robots" :key="r.serial" :class="{ on: cell(a, r).enabled }" :title="cell(a, r).title">
                 <input type="checkbox" :disabled="!cfgEdit.on || a.status === 'borrada'" :checked="cell(a, r).enabled" @change="toggleAction(a, r)"
                        :aria-label="a.name + ' en ' + r.serial">
@@ -1632,7 +1683,7 @@
           </tbody>
         </table>
       </div>
-      <p class="empty" v-else-if="!cfgState.error">No hay actions en el catálogo de <code>fleet.yaml</code>.</p>
+      <p class="empty" v-else-if="!cfgState.error">No hay tipos de tarea en <code>fleet.yaml</code> (<code>actions:</code>).</p>
       <ul class="warns" v-if="cfgWarnings.length">
         <li v-for="(w, i) in cfgWarnings" :key="i">{{ w }}</li>
       </ul>
@@ -1642,7 +1693,7 @@
          flota y, por robot, la misma, otra o ninguna. -->
     <div class="panel" id="cfg-idle">
       <h3>Vuelta a la espera</h3>
-      <p class="hint">El FM manda esta action a un robot <b>una vez</b>, para que no estorbe donde acabó, cuando se cumplen
+      <p class="hint">El FM manda este tipo de tarea a un robot <b>una vez</b>, para que no estorbe donde acabó, cuando se cumplen
         las dos condiciones:</p>
       <ul class="hint">
         <li><b>Tiempo:</b> lleva esos segundos <b>parado</b> (en automático, sin pausa, en el site de la flota y sin nada
@@ -1661,7 +1712,7 @@
       <template v-else>
         <label><input type="checkbox" id="idle-on" v-model="cfgEdit.draft.idle.on"> Mandar a los robots parados a la espera</label>
         <div class="act-form" v-if="cfgEdit.draft.idle.on">
-          <label class="field">Action
+          <label class="field">Tipo de tarea
             <select id="idle-action" v-model="cfgEdit.draft.idle.fleet.action">
               <option v-for="a in viewActions.filter(x => x.status !== 'borrada')" :key="a.name" :value="a.name">{{ a.name }}</option></select></label>
           <label class="field">Tras (segundos parado)
@@ -1686,9 +1737,9 @@
               <option v-for="(label, m) in IDLE_MODES" :key="m" :value="m">{{ label }}</option></select>
             <span class="warnline" v-if="cfgEdit.draft.idle.robots[r.serial].mode === 'fleet' && cfgEdit.draft.idle.on
                   && !cfgEdit.draft.robots[r.serial].actions.includes(cfgEdit.draft.idle.fleet.action)">
-              ⚠ no tiene la action {{ cfgEdit.draft.idle.fleet.action }}: no vuelve</span>
+              ⚠ no tiene el tipo de tarea {{ cfgEdit.draft.idle.fleet.action }}: no vuelve</span>
             <div class="act-form" v-if="cfgEdit.draft.idle.robots[r.serial].mode === 'own'">
-              <label class="field">Action
+              <label class="field">Tipo de tarea
                 <select v-model="cfgEdit.draft.idle.robots[r.serial].own.action">
                   <option v-for="a in cfgEdit.draft.robots[r.serial].actions" :key="a" :value="a">{{ a }}</option></select></label>
               <label class="field">Tras (segundos; vacío = los de la flota)
@@ -1756,7 +1807,7 @@
           <div v-for="(n, serial) in cfgEdit.draft.newRobots" :key="serial" class="cfg-robot">
             <b class="serial">{{ serial }} <span class="chip">nuevo</span></b>
             <span class="muted">driver {{ n.driver }}<template v-if="n.host"> · host {{ n.host }}</template> · batería mínima {{ n.battery_min }} %
-              · actions: {{ n.actions.length ? n.actions.join(', ') : 'ninguna' }}</span>
+              · tipos de tarea: {{ n.actions.length ? n.actions.join(', ') : 'ninguna' }}</span>
             <div class="acts"><button class="btn" @click="delete cfgEdit.draft.newRobots[serial]">Deshacer</button></div>
           </div>
           <div class="acts" v-if="!robotForm.open"><button class="btn" id="robot-new" @click="openRobotForm">Añadir robot</button></div>
@@ -1768,10 +1819,10 @@
                 <option v-for="d in cfgState.drivers_available" :key="d" :value="d">{{ d }}</option></select></label>
             <label class="field" v-if="robotForm.driver !== 'sim'">Host (IP del robot)<input id="robot-host" v-model.trim="robotForm.host" placeholder="192.168.15.25" autocomplete="off"></label>
             <label class="field">Batería mínima para aceptar orders (%)<input class="num-in" type="number" min="0" max="100" v-model.number="robotForm.battery_min"></label>
-            <div class="field">Actions habilitadas
+            <div class="field">Tipos de tarea habilitados
               <div class="allow"><label v-for="a in viewActions.filter(x => x.status !== 'borrada')" :key="a.name">
                 <input type="checkbox" :value="a.name" v-model="robotForm.actions"> {{ a.name }}</label></div>
-              <span class="hint">Si el robot no tiene sus missions, despliégalas en Sincronización después de reiniciar.</span></div>
+              <span class="hint">Si el robot no tiene sus misiones, despliégalas en Sincronización después de reiniciar.</span></div>
             <p class="err" v-if="robotForm.error">{{ robotForm.error }}</p>
             <div class="acts"><button class="btn primary" id="robot-ok" @click="acceptRobotForm">Aceptar</button>
               <button class="btn" @click="robotForm.open = false">Cancelar</button></div>
@@ -1788,37 +1839,37 @@
     </div>
 
     <div class="panel">
-      <h3>Definición de acciones</h3>
-      <p class="hint">Cada action se define una vez para toda la flota (<code>actions:</code> en <code>fleet.yaml</code>).
-        El nombre es el <code>actionType</code> que llega en las orders: no se renombra (crea la nueva y borra la vieja).</p>
+      <h3>Definición de los tipos de tarea</h3>
+      <p class="hint">Cada tipo de tarea se define una vez para toda la flota (<code>actions:</code> en <code>fleet.yaml</code>).
+        El nombre es el <code>actionType</code> que llega en las orders: no se renombra (crea uno nuevo y borra el viejo).</p>
       <div class="acts" v-if="cfgEdit.on && !actForm.open">
-        <button class="btn" id="act-new" @click="openActForm(null)">Nueva action</button>
+        <button class="btn" id="act-new" @click="openActForm(null)">Nuevo tipo de tarea</button>
       </div>
 
       <!-- Formulario de una action (claves del driver MiR: mission e inputs). -->
       <div class="act-form" v-if="actForm.open">
-        <h4>{{ actForm.isNew ? 'Nueva action' : 'Editar ' + actForm.name }}</h4>
+        <h4>{{ actForm.isNew ? 'Nuevo tipo de tarea' : 'Editar ' + actForm.name }}</h4>
         <label class="field" v-if="actForm.isNew">Nombre (<code>actionType</code>)
           <input id="act-name" v-model.trim="actForm.name" placeholder="p. ej. traer" autocomplete="off"></label>
-        <label class="field">Mission
+        <label class="field">Misión
           <select id="act-mission" v-model="actForm.mission" @change="onMissionChange">
             <option value="">— elige —</option>
             <option v-for="m in cfgChoices.missions.filter(x => inSite(x.site) || x.guid === actForm.mission)" :key="m.guid"
                     :value="m.guid">{{ m.name }}</option>
             <option value="__otra__">Otra (nombre exacto en la web del MiR)…</option>
           </select></label>
-        <label class="field" v-if="actForm.mission === '__otra__'">Nombre de la mission en la web del MiR
+        <label class="field" v-if="actForm.mission === '__otra__'">Nombre de la misión en la web del MiR
           <input id="act-mission-other" v-model.trim="actForm.missionOther" autocomplete="off"></label>
         <p class="hint" v-if="actForm.mission === '__otra__'">No está en el catálogo: no se podrá comprobar ni sincronizar, y sus inputs hay que escribirlos a mano.</p>
 
-        <div class="field">Inputs de la mission
+        <div class="field">Inputs de la misión
           <table class="inputs" v-if="actForm.inputs.length">
             <thead><tr><th>input</th><th>qué es</th><th>rango opcional: mín · máx · paso</th><th></th></tr></thead>
             <tbody>
               <tr v-for="(i, n) in actForm.inputs" :key="n">
                 <td><code>{{ i.name }}</code></td>
                 <td><select v-model="i.kind" :aria-label="'tipo de ' + i.name">
-                  <option value="position">position (nombre → GUID)</option>
+                  <option value="position">posición (nombre → GUID)</option>
                   <option value="number">número</option>
                   <option value="text">texto obligatorio</option>
                   <option value="none">no declarar</option></select></td>
@@ -1830,20 +1881,20 @@
               </tr>
             </tbody>
           </table>
-          <p class="hint" v-else>Esta mission no tiene inputs.</p>
+          <p class="hint" v-else>Esta misión no tiene inputs.</p>
           <div class="acts"><input class="num-in" style="width: 14em" v-model.trim="actForm.newInput" placeholder="añadir input a mano" @keyup.enter="addInput">
             <button class="btn" @click="addInput" :disabled="!actForm.newInput">Añadir</button></div>
-          <span class="hint">«No declarar»: si la order lo trae y la mission lo tiene, se pasa igual, pero no es obligatorio.</span>
+          <span class="hint">«No declarar»: si la order lo trae y la misión lo tiene, se pasa igual, pero no es obligatorio.</span>
         </div>
 
-        <div class="field" v-if="actForm.inputs.some(i => i.kind === 'position')">Positions admitidas (ninguna marcada = cualquiera del robot)
+        <div class="field" v-if="actForm.inputs.some(i => i.kind === 'position')">Posiciones admitidas (ninguna marcada = cualquiera del robot)
           <div class="allow">
             <label v-for="p in allowOptions" :key="p"><input type="checkbox" :value="p" v-model="actForm.allow"> {{ p }}</label>
           </div>
         </div>
         <label class="field">Tiempo normal en ejecución, en segundos (opcional)
           <input id="act-expected" class="num-in" type="number" min="1" step="1" v-model.number="actForm.expected" placeholder="sin aviso"></label>
-        <p class="hint">Si una order de esta action pasa más tiempo en ejecución (sin contar la espera en cola ni las pausas), su robot muestra un aviso. <code>scripts/mission_durations.py</code> propone un valor a partir de la historia del robot.</p>
+        <p class="hint">Si una tarea de este tipo pasa más tiempo en ejecución (sin contar la espera en cola ni las pausas), su robot muestra un aviso. <code>scripts/mission_durations.py</code> propone un valor a partir de la historia del robot.</p>
         <p class="err" v-if="actForm.error">{{ actForm.error }}</p>
         <div class="acts">
           <button class="btn primary" id="act-ok" @click="acceptActForm">Aceptar</button>
@@ -1855,13 +1906,13 @@
       <ul class="cfg-actions">
         <li v-for="a in viewActions" :key="a.name" :class="{ deleted: a.status === 'borrada' }">
           <div><b>{{ a.name }}</b> <span class="chip" v-if="a.status">{{ a.status }}</span>
-            <span class="muted"> · {{ enabledIn(a).length ? 'en ' + enabledIn(a).join(', ') : 'ningún robot la tiene habilitada' }}</span></div>
+            <span class="muted"> · {{ enabledIn(a).length ? 'en ' + enabledIn(a).join(', ') : 'ningún robot lo tiene habilitado' }}</span></div>
           <dl class="kv" v-if="a.status !== 'borrada'">
             <template v-for="(v, k) in a.definition" :key="k">
               <dt>{{ k }}</dt>
               <dd v-if="k === 'mission' && a.needs && a.needs.mission_name">{{ a.needs.mission_name }}<code class="guid">{{ v }}</code></dd>
               <dd v-else>{{ fmtVal(v) }}
-                <span class="warnline" v-if="k === 'mission' && a.needs && !a.needs.mission_guid">no está en el catálogo de missions: no se puede comprobar ni sincronizar</span></dd>
+                <span class="warnline" v-if="k === 'mission' && a.needs && !a.needs.mission_guid">no está en el catálogo de misiones: no se puede comprobar ni sincronizar</span></dd>
             </template>
           </dl>
           <div class="acts" v-if="cfgEdit.on && !actForm.open">
@@ -1883,13 +1934,14 @@
        servidor (fm/adapters/mir/sync.py). ===== -->
   <main v-show="tab === 'sincronizacion'">
     <h2 class="page-title">Sincronización</h2>
-    <p class="page-sub">Llevar a un robot lo que hay en el catálogo (<code>catalog/</code>), con los mismos GUIDs en toda la flota.</p>
+    <p class="page-sub">Llevar a los robots lo que hay en el catálogo (<code>catalog/</code>), con los mismos GUIDs en toda la flota.</p>
     <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
       <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
     <div class="panel">
       <h3>Estado de la flota</h3>
-      <p class="hint">Qué le falta a cada robot de lo que necesita según <code>fleet.yaml</code>: sus missions y todo lo que usan.
-        Se comprueba sola cada 5 min y tras cada despliegue (rápida: ¿existe?); <b>A fondo</b> compara además el contenido.</p>
+      <p class="hint">Qué le falta a cada robot de lo que necesita según <code>fleet.yaml</code>: sus misiones y todo lo que usan.
+        Se comprueba sola cada 5 min y tras cada despliegue (rápida: ¿existe?); <b>A fondo</b> compara además el contenido.
+        Lo que vio la última «A fondo» se conserva mientras no cambie (desplegar o traer lo actualiza).</p>
       <ul class="fleet-sync">
         <li v-for="row in fleetRows" :key="row.serial">
           <b class="serial">{{ row.serial }}</b>
@@ -1909,12 +1961,12 @@
         </li>
       </ul>
     </div>
-    <div class="resp" :class="syncState.rm.cls" v-if="syncState.rm.text">{{ syncState.rm.text }}</div>
+    <div aria-live="polite"><div class="resp" :class="syncState.rm.cls" v-if="syncState.rm.text">{{ syncState.rm.text }}</div></div>
     <div class="sync-grid">
       <div class="panel">
         <h3>Catálogo</h3>
-        <p class="hint">Marca lo que quieras sincronizar. Lo que necesita (grupo, mapa, positions, sub-missions, sonidos)
-          se añade solo, y lo que el robot ya tiene igual no se toca.</p>
+        <p class="hint">Marca lo que quieras sincronizar. Lo que necesita se añade solo: su grupo, su mapa, sus posiciones, sus
+          sonidos y sus sub-misiones (misiones dentro de otra, con «Load mission»). Lo que el robot ya tiene igual no se toca.</p>
         <div class="acts">
           <button class="btn" id="sync-all" @click="selectAll(true)">Todo</button>
           <button class="btn" id="sync-none" @click="selectAll(false)">Nada</button>
@@ -1959,7 +2011,7 @@
            Un robot que no responde, está desplegando o está ocupado y habría
            que corregirle algo se queda fuera y lo dice. -->
       <div class="panel">
-        <h3>Robots</h3>
+        <h3 id="sync-robots-title" tabindex="-1">Robots</h3>
         <div class="sync-robots">
           <label v-for="r in syncState.robots" :key="r.serial" class="sync-robot" :class="{ off: !r.supported }">
             <input type="checkbox" :value="r.serial" v-model="syncState.targets[r.serial]" :disabled="!r.supported">
@@ -1967,38 +2019,49 @@
             <span class="pill" :class="syncRobotState(r).key">{{ syncRobotState(r).label }}</span>
           </label>
         </div>
+        <!-- Decisión 187: se revisa aquí, sin confirm(). Cada robot dice qué se le hará o
+             por qué se queda fuera, y el botón dice en cuáles se despliega. -->
         <div class="acts">
           <button class="btn" id="sync-preview" :disabled="!canPreview" @click="syncPreview">Vista previa</button>
-          <button class="btn primary" id="sync-deploy" :disabled="!canDeploy" @click="syncDeploy">Desplegar</button>
-          <span class="feedback">{{ syncState.msg }}</span>
+          <button class="btn primary" id="sync-deploy" :disabled="!canDeploy" @click="syncDeploy">{{ deployLabel }}</button>
+          <span class="feedback" id="sync-msg" tabindex="-1" aria-live="polite">{{ syncState.msg }}</span>
         </div>
         <p class="hint" v-if="syncPlans.some(p => p.ops.length) && !previewFresh">La selección o los robots han cambiado: vuelve a pedir la vista previa.</p>
+        <p class="hint" v-else-if="previewFresh && canDeploy">Lo que ya está igual, o es distinto y no tiene «Sustituir», no se toca.</p>
 
-        <section class="sync-plan" v-for="p in syncPlans" :key="p.serial" :aria-label="'Vista previa de ' + p.serial">
-          <h4>{{ p.serial }} <span class="pill" :class="syncRobotState(p.info).key">{{ syncRobotState(p.info).label }}</span></h4>
+        <section class="sync-plan" v-for="p in syncPlans.filter(x => x.ops.length || x.msg || x.why)" :key="p.serial" :aria-label="'Vista previa de ' + p.serial">
+          <h4>{{ p.serial }} <span class="pill" :class="syncRobotState(p.info).key">{{ syncRobotState(p.info).label }}</span>
+            <span class="plan-go" v-if="p.ready">· se despliega: {{ p.goText }}</span>
+            <span class="plan-out" v-else-if="p.fresh && p.short">· se queda fuera: {{ p.short }}</span>
+            <span class="plan-note" v-else-if="p.fresh && p.note">· {{ p.note }}</span></h4>
           <p class="warnline" v-if="p.fresh && p.why">{{ p.why }}</p>
-          <p class="hint" v-else-if="p.info.busy">{{ p.serial }} está ocupado (una order, la carga o una mission lanzada desde su web):
+          <p class="hint" v-else-if="p.info.busy && p.n">{{ p.serial }} está ocupado (una order, la carga o una misión lanzada desde su web):
             solo se puede desplegar lo que hay que <b>crear</b>, que no toca lo que está ejecutando.</p>
-          <p class="feedback" v-if="p.msg">{{ p.msg }}</p>
+          <p class="warnline" v-if="p.ready && p.gone.length">Se <b>borran</b> y se vuelven a crear, con el mismo GUID: {{ p.gone.join(', ') }}.</p>
+          <p class="hint" v-if="p.ready && p.fixed.length">Se corrigen en su sitio, con el mismo GUID: {{ p.fixed.join(', ') }}.</p>
+          <p class="feedback" v-if="p.msg" aria-live="polite">{{ p.msg }}</p>
           <template v-if="p.ops.length">
             <div class="sync-sum">
               <span v-for="v in ['crear', 'corregir', 'sustituir', 'igual', 'distinta']" :key="v" v-show="p.counts[v]" class="verb" :class="'v-' + v">
-                {{ p.counts[v] }} {{ VERB_LABEL[v] }}</span>
+                {{ p.counts[v] }} {{ v === 'igual' && p.counts[v] > 1 ? 'ya están igual' : VERB_LABEL[v] }}</span>
             </div>
-            <ul class="ops">
+            <ul class="ops" v-if="p.ops.some(o => !quietOp(o))">
               <li class="head"><span></span><span>recurso</span><span>qué pasa</span><span>estado</span></li>
-              <li v-for="o in p.ops" :key="o.guid" :class="'v-' + o.verb">
+              <li v-for="o in p.ops.filter(o => !quietOp(o))" :key="o.guid" :class="'v-' + o.verb">
                 <span class="mark">{{ VERB_MARK[o.verb] }}</span>
                 <span><span class="muted">{{ KIND_LABEL[o.kind] || o.kind }}</span> <b>{{ o.name }}</b><code class="guid">{{ o.guid }}</code></span>
                 <span>{{ VERB_LABEL[o.verb] }}<template v-if="o.detail"> · {{ o.detail }}</template>
                   <!-- Sustituir (decisiones 117, 124 y 178): missions distintas (se borran y se crean con el mismo
-                       GUID); zonas, positions y mapas distintos (se corrigen en su sitio). Lo dice el servidor. -->
+                       GUID); zonas, posiciones y mapas distintos (se corrigen en su sitio). Lo dice el servidor. -->
                   <label class="replace" v-if="o.replaceable && (o.verb === 'distinta' || o.verb === 'sustituir') && o.status === 'pendiente'">
                     <input type="checkbox" :checked="!!(syncState.replace[p.serial] || {})[o.guid]"
                            @change="toggleReplace(p.serial, o.guid, $event.target.checked)" :disabled="syncState.loading"> Sustituir</label>
                   <!-- #19: o al revés, la versión del robot al catálogo (mismo GUID; solo lee el robot). -->
                   <!-- La entrada de un marcador movida en el robot sale «corregir»: traerla trae su marcador. -->
-                  <button class="link-btn" type="button" v-if="o.status === 'pendiente' && ((o.verb === 'distinta' && RECAPTURABLE.includes(o.kind))
+                  <!-- Si este robot tiene la versión de antes de traerla de otro, no: desharía lo traído. -->
+                  <span class="hint block" v-if="o.status === 'pendiente' && hasOld(o.guid, p.serial)">tiene la versión anterior
+                    a la traída de {{ syncState.brought[o.guid].from }}: «Sustituir» le lleva la del catálogo</span>
+                  <button class="link-btn" type="button" v-else-if="o.status === 'pendiente' && ((o.verb === 'distinta' && RECAPTURABLE.includes(o.kind))
                                                                                            || (o.verb === 'corregir' && o.kind === 'position'))"
                           :disabled="syncState.loading" @click="recaptureOp(o, p.serial)"
                           :title="'Guardar en el catálogo la versión de ' + p.serial + (o.verb === 'corregir' ? ' (con su marcador o cargador)' : '') + ' (no escribe en el robot)'">Traer al catálogo</button>
@@ -2006,6 +2069,18 @@
                 <span class="st" :class="'st-' + o.status.replace(' ', '-')">{{ o.status === 'pendiente' ? '' : o.status }}</span>
               </li>
             </ul>
+            <!-- Lo que ya está igual no pide nada: plegado, para que se vea lo que cambia. -->
+            <details class="same" v-if="p.ops.some(quietOp)">
+              <summary>{{ p.ops.filter(quietOp).length }} ya {{ p.ops.filter(quietOp).length === 1 ? 'está' : 'están' }} igual (no se tocan)</summary>
+              <ul class="ops">
+                <li v-for="o in p.ops.filter(quietOp)" :key="o.guid" :class="'v-' + o.verb">
+                  <span class="mark">{{ VERB_MARK[o.verb] }}</span>
+                  <span><span class="muted">{{ KIND_LABEL[o.kind] || o.kind }}</span> <b>{{ o.name }}</b><code class="guid">{{ o.guid }}</code></span>
+                  <span>{{ VERB_LABEL[o.verb] }}<template v-if="o.detail"> · {{ o.detail }}</template></span>
+                  <span class="st" :class="'st-' + o.status.replace(' ', '-')">{{ o.status === 'pendiente' ? '' : o.status }}</span>
+                </li>
+              </ul>
+            </details>
           </template>
         </section>
         <p class="empty" v-if="!syncPlans.some(p => p.ops.length)">Elige qué sincronizar y en qué robots, y pide la vista previa: aquí verás, robot a robot, qué se crearía, qué se corrige y qué ya está.</p>
@@ -2015,9 +2090,9 @@
          catálogo con GUID del proyecto, y el FM lo sustituye en ese robot. -->
     <div class="panel" id="hecho-en-la-web">
       <h3>Hecho en la web de un robot</h3>
-      <p class="hint">Positions y zonas creadas en la web del MiR sobre un mapa del catálogo, y missions en un grupo del catálogo,
+      <p class="hint">Posiciones y zonas creadas en la web del MiR sobre un mapa del catálogo, y misiones en un grupo del catálogo,
         que aún llevan el GUID del robot. <b>Traer al catálogo</b> les da el GUID del proyecto y, en ese robot, crea la copia y
-        <b>borra el original</b> (el MiR no deja cambiar un GUID). No se hace si el robot está ocupado o si una mission suya usa
+        <b>borra el original</b> (el MiR no deja cambiar un GUID). No se hace si el robot está ocupado o si una misión suya usa
         el original. Los mapas hechos en su web se traen en Catálogo › Crear recurso › Mapa › «Capturar de un robot».</p>
       <!-- Su propio robot (no el del panel «Robot», que queda muy arriba); por defecto, el mismo. -->
       <div class="sync-robots">
@@ -2059,7 +2134,7 @@
   <main v-show="tab === 'guia'">
     <h2 class="page-title">Guía</h2>
     <p class="page-sub">Usa el menú de la izquierda para cambiar de apartado sin perder la orientación. Cada procedimiento incluye enlaces al siguiente paso.</p>
-    <div class="panel"><h3>Cómo se organiza el FM</h3><p><b>Trabajo diario:</b> Operación para enviar y supervisar tareas; Mapa para localizar robots; Robots para consultar su detalle y actuar.</p><p><b>Administración:</b> Catálogo para buscar un recurso y, en su ficha, ver en qué robots está, traer lo cambiado en un robot o quitarlo; también para crear o importar recursos. Sincronización para llevarlos a los robots, a varios a la vez; Configuración para definir acciones, asignaciones y reglas.</p><p>Recorrido de ejemplo: <a href="#catalogo">buscar un recurso</a> → sincronizarlo con un robot → <a href="#configurador">habilitar su acción</a> → <a href="#operacion">enviar una tarea</a>.</p></div>
+    <div class="panel"><h3>Cómo se organiza el FM</h3><p><b>Trabajo diario:</b> Operación para enviar y supervisar tareas; Mapa para localizar robots; Robots para consultar su detalle y actuar.</p><p><b>Administración:</b> Catálogo para buscar un recurso y, en su ficha, ver en qué robots está, traer lo cambiado en un robot o quitarlo; también para crear o importar recursos. Sincronización para llevarlos a los robots, a varios a la vez; Configuración para definir los tipos de tarea, en qué robots y las reglas.</p><p>Recorrido de ejemplo: <a href="#catalogo">buscar un recurso</a> → sincronizarlo con un robot → <a href="#configurador">habilitar su acción</a> → <a href="#operacion">enviar una tarea</a>.</p></div>
     <div class="panel guide">
 
       <!-- Para quien llega sin nada (decisión 128): el orden de todo lo demás. -->
@@ -2074,30 +2149,30 @@
             <p>Arriba, «Site»: el entorno donde vivirán los mapas (una planta, un edificio).</p></li>
           <li><b>Subir o capturar su mapa</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mapa»: el PNG del mapa, con su resolución y su origen (ver «Subir un mapa nuevo»), o, si ya está hecho
-              en un robot, «Capturar de un robot», que se trae también sus positions y zonas (ver «Capturar un mapa de un
+              en un robot, «Capturar de un robot», que se trae también sus posiciones y zonas (ver «Capturar un mapa de un
               robot»). Para otro mapa igual que uno del catálogo, «Copiar del catálogo» (ver «Copiar un mapa del
               catálogo»).</p></li>
           <li><b>Llevar site y mapa a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>En «Mapas de &lt;site&gt;», marca el mapa (arrastra su site), marca los robots, «Vista previa» y «Desplegar».</p></li>
           <li><b>Activar el mapa en cada robot</b><span class="where">web del MiR</span>
-            <p>Crear un mapa en un robot no lo activa: cámbialo en su web y localiza el robot en él. Las positions y zonas se
+            <p>Crear un mapa en un robot no lo activa: cámbialo en su web y localiza el robot en él. Las posiciones y zonas se
               crean donde está el robot, así que este paso va antes.</p></li>
           <li><b>Elegir el site de la flota</b><span class="where">cabecera, «Site»</span>
             <p>Solo trabajan los robots cuyo mapa activo es de ese site: los demás salen avisados y no reciben orders hasta
               que se cambie su mapa en su web. Catálogo, Crear recurso, Sincronización y Configuración enseñan solo lo de ese site (con «Ver
               todo el catálogo», todo).</p></li>
-          <li><b>Positions y zonas</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>Los puntos a los que irán los robots y las zonas del mapa (ver «Añadir una position nueva» y «Añadir una
+          <li><b>Posiciones y zonas</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
+            <p>Los puntos a los que irán los robots y las zonas del mapa (ver «Añadir una posición nueva» y «Añadir una
               zona»). Captúralas y llévalas a los demás robots.</p></li>
-          <li><b>Missions</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>Las tareas, programadas en el Blockly del MiR (ver «Añadir una mission nueva»). Viven en un grupo de missions:
-              si no hay ninguno, arriba, «Grupo», con su nombre. La primera mission del grupo lo lleva al robot y va al site
+          <li><b>Misiones</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
+            <p>Los programas del MiR, hechos en su Blockly (ver «Añadir una misión nueva»). Viven en un grupo de misiones:
+              si no hay ninguno, arriba, «Grupo», con su nombre. La primera misión del grupo lo lleva al robot y va al site
               de la flota.</p></li>
-          <li><b>Actions</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>Lo que piden las orders: una action por mission, con sus parámetros, habilitada en los robots que la
-              tienen.</p></li>
+          <li><b>Tipos de tarea</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>Lo que piden las orders: un tipo de tarea por misión, con sus parámetros, habilitado en los robots que lo
+              harán.</p></li>
           <li><b>Probar</b><a class="where" href="#operacion">→ Operación</a>
-            <p>Manda una order de esa action y mira cómo la ejecuta un robot.</p></li>
+            <p>Manda una tarea de ese tipo y mira cómo la ejecuta un robot.</p></li>
           <li><b>Opcional: vuelta a la espera</b><a class="where" href="#configurador">→ Configuración</a>
             <p>Para que un robot no se quede estorbando donde acaba (ver «Que un robot parado no estorbe»).</p></li>
         </ol>
@@ -2112,15 +2187,20 @@
           <dt>Mapa</dt><dd>Imagen de la planta (negro = obstáculo, blanco = libre) con su escala y su origen. Pertenece a un
             site; cada robot trabaja en uno, su mapa activo.</dd>
           <dt>Zona</dt><dd>Área de un mapa que cambia cómo circula el robot: prohibida, preferida, de velocidad…</dd>
-          <dt>Mission</dt><dd>Programa del MiR (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.
-            Si lleva positions fijas, solo vale en el mapa de esas positions (Configuración lo dice: «mapa …»); si recibe la
-            position como parámetro, vale en cualquier mapa que tenga una con ese nombre.</dd>
-          <dt>Grupo</dt><dd>Carpeta de missions en la web del MiR (p. ej. <code>mirur-tknika</code>). Es de toda la flota, no de
-            un site; toda mission está en uno.</dd>
-          <dt>Position</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
-          <dt>Action</dt><dd>Lo que pide una order (<code>actionType</code>): una mission + qué parámetros lleva. Se define en
-            <code>config/fleet.yaml</code> y se habilita robot a robot.</dd>
-          <dt>Catálogo</dt><dd>La carpeta <code>catalog/</code>: copia de cada site, mapa, position, zona y mission de la flota, con el mismo GUID
+          <dt>Misión</dt><dd>Programa del MiR: un conjunto de acciones (bloques Blockly) que se edita en la web del robot. El FM no la programa: la lanza.
+            Si lleva posiciones fijas, solo vale en el mapa de esas posiciones (Configuración lo dice: «mapa …»); si recibe la
+            posición como parámetro, vale en cualquier mapa que tenga una con ese nombre.</dd>
+          <dt>Grupo</dt><dd>Carpeta de misiones en la web del MiR (p. ej. <code>mirur-tknika</code>). Es de toda la flota, no de
+            un site; toda misión está en uno.</dd>
+          <dt>Posición</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
+          <dt>Tipo de tarea</dt><dd>Lo que puede pedir una order (p. ej. <code>coger</code>): lanza una misión con sus
+            parámetros. En VDA 5050 es una <i>action</i>, y su nombre, el <code>actionType</code>; por eso en
+            <code>fleet.yaml</code> están en <code>actions:</code>. Se define una vez y se habilita robot a robot.</dd>
+          <dt>Tarea</dt><dd>Cada order que se envía: espera en la cola si no hay robot libre y la hace un robot. Tiene un tipo
+            de tarea y sus parámetros.</dd>
+          <dt>Acción</dt><dd>Cada bloque de una misión en el Blockly del MiR (ir a, cargar otra misión…), o lo que hace una
+            zona (velocidad, sonido y luz). La misión es el conjunto de sus acciones.</dd>
+          <dt>Catálogo</dt><dd>La carpeta <code>catalog/</code>: copia de cada site, mapa, posición, zona y misión de la flota, con el mismo GUID
             (<code>imperialfleet-…</code>) en todos los robots. Es de esta instalación: vive fuera del repo del FM, en la carpeta que
             dice <code>FM_CATALOG</code> en <code>.env</code>, con su propio git.</dd>
           <dt>Borrador</dt><dd>Algo creado desde «Crear o importar recurso» (en Catálogo) y aún no capturado: tiene su número reservado, pero no se despliega.</dd>
@@ -2129,37 +2209,37 @@
       </details>
 
       <details class="guide-sec">
-        <summary>Añadir una mission nueva
+        <summary>Añadir una misión nueva
           <span class="hint">Desde cero hasta que una order la puede pedir a la flota.</span></summary>
         <ol class="steps">
           <li><b>Crearla vacía</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>Arriba, «Mission». Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
-              «Crear mission». El nombre no puede repetirse en el grupo. Para un grupo nuevo, antes «Grupo»: se guarda en el
-              catálogo y se crea en el robot junto con su primera mission, que va al site de la flota (elígelo en la
+            <p>Arriba, «Misión». Elige el robot donde la vas a programar, escribe el nombre y el grupo (<code>mirur-tknika</code>) y pulsa
+              «Crear misión». El nombre no puede repetirse en el grupo. Para un grupo nuevo, antes «Grupo»: se guarda en el
+              catálogo y se crea en el robot junto con su primera misión, que va al site de la flota (elígelo en la
               cabecera).</p></li>
           <li><b>Programarla en la web del MiR</b><span class="where">web del MiR</span>
-            <p>«Abrir en la web del MiR ↗» lleva directo a su editor Blockly. Lo que la order vaya a mandar (una position,
-              un número de piezas…) se declara como <b>variable</b> de la mission: el nombre de esa variable es el
+            <p>«Abrir en la web del MiR ↗» lleva directo a su editor Blockly. Lo que la order vaya a mandar (una posición,
+              un número de piezas…) se declara como <b>variable</b> de la misión: el nombre de esa variable es el
               <code>input</code> que verás luego en Configuración.</p></li>
-          <li><b>Capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>En «Creado desde aquí», «Capturar» lee la mission del robot y la guarda en <code>catalog/</code>. Si usa algo
-              que no está en el catálogo (una position o una sub-mission sin capturar), te dice qué falta: captúralo antes.
-              Si la vuelves a editar en el MiR, «Volver a capturar».</p></li>
+          <li><b>Capturarla</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
+            <p>En el Catálogo sale con «borrador»: abre su ficha y «Capturar». Lee la misión del robot y la guarda en
+              <code>catalog/</code>. Si usa algo que aún no está en el catálogo, como una posición o una
+              sub-misión (una misión dentro de otra, con «Load mission»), te dice qué falta: captúralo antes. Si la vuelves a editar en el MiR, «Volver a capturar» en su ficha.</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Márcala en el catálogo (el buscador de arriba la encuentra por nombre o GUID aunque no sepas en qué sección
               está; sus dependencias se añaden solas), marca los robots, «Vista previa» y «Desplegar». O, desde su ficha en el
               Catálogo, «Sincronizar este recurso →»: llega marcada, con los robots donde falta y la vista previa pedida.
-              Sale una vista previa por robot y un solo «Desplegar» para todos; uno ocupado solo recibe lo que hay que crear,
-              y uno que no responde se queda fuera (la confirmación lo dice).</p></li>
-          <li><b>Darla de alta como action</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>«Editar» → «Nueva action»: nombre (el <code>actionType</code>, no se puede renombrar después), la mission y qué
-              es cada input (position, número con rango, texto). Marca la casilla de los robots que la harán y «Guardar»:
+              Sale una vista previa por robot, que dice qué se le hará o por qué se queda fuera (uno ocupado solo recibe lo que
+              hay que crear; uno que no responde, nada), y un solo botón, «Desplegar en …», que nombra los robots.</p></li>
+          <li><b>Darla de alta como tipo de tarea</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>«Editar» → «Nuevo tipo de tarea»: nombre (el <code>actionType</code>, no se puede renombrar después), la misión y qué
+              es cada input (posición, número con rango, texto). Marca la casilla de los robots que lo harán y «Guardar»:
               se aplica en caliente, sin reiniciar.</p>
-            <p>Opcional: el <b>tiempo normal en ejecución</b>. Si una order de esta action lo supera, su robot muestra un
-              aviso (sigue trabajando; no es un fallo). Al principio pon uno aproximado, y cuando la mission tenga
+            <p>Opcional: el <b>tiempo normal en ejecución</b>. Si una tarea de este tipo lo supera, su robot muestra un
+              aviso (sigue trabajando; no es un fallo). Al principio pon uno aproximado, y cuando la misión tenga
               historia en el robot, <code>scripts/mission_durations.py</code> te propone uno.</p></li>
           <li><b>Probarla</b><a class="where" href="#operacion">→ Operación</a>
-            <p>En «Nueva tarea» elige la action y sus parámetros. <b>El robot se va a mover:</b> mira antes que el
+            <p>En «Nueva tarea» elige el tipo de tarea y sus parámetros. <b>El robot se va a mover:</b> mira antes que el
               camino esté libre.</p></li>
           <li><b>Guardarla en git</b><span class="where">terminal</span>
             <p>Lo nuevo está en <code>catalog/</code> y en <code>config/fleet.yaml</code>: haz commit de los dos.</p></li>
@@ -2167,23 +2247,24 @@
       </details>
 
       <details class="guide-sec">
-        <summary>Cambiar una mission que ya está en la flota
+        <summary>Cambiar una misión que ya está en la flota
           <span class="hint">Editarla en un robot y llevar el cambio a los demás. Y qué hacer si se usó «Guardar como».</span></summary>
         <ol class="steps">
           <li><b>Editarla en la web del MiR, sin «Guardar como»</b><span class="where">web del MiR</span>
             <p>Ábrela y cámbiala <b>en el sitio</b>. No la borres para rehacerla ni la guardes con «Guardar como»: la copia
-              nace con otro GUID, el FM no la reconoce y la action que la usaba deja de encontrarla en ese robot.</p></li>
+              nace con otro GUID, el FM no la reconoce y el tipo de tarea que la usaba deja de encontrarla en ese robot.</p></li>
           <li><b>Llevar el cambio al catálogo</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
-            <p>En su ficha, «En los robots» dice <i>distinto del catálogo</i> en el robot donde la has editado (tras
-              «A fondo» en <a href="#sincronizacion">Sincronización</a>: la comprobación rápida no compara el contenido); pulsa
-              <b>«Traer al catálogo»</b> en esa fila. También en la vista previa de Sincronización, en su fila. Vale para
-              cualquier mission de la flota, se creara o no desde el FM.</p>
+            <p>En su ficha, «Comprobar a fondo» (la comprobación rápida solo mira si el robot la tiene) y «En los robots»
+              dice <i>distinto del catálogo</i> en el robot donde la has editado; pulsa <b>«Traer al catálogo»</b> en esa fila.
+              También en la vista previa de Sincronización, en su fila. Vale para cualquier misión de la flota, se creara o
+              no desde el FM. Después, los demás robots salen <i>distintos</i> (tienen la versión anterior) y su fila ofrece
+              «Llevarle la del catálogo →».</p>
             <p><b>Si ya se hizo un «Guardar como»:</b> la copia sale en «Hechas en la web del MiR». Elige «en lugar de
               «su nombre»» (viene propuesta la del catálogo con el mismo nombre) y «Adoptar»: su contenido pasa al
               catálogo con el GUID de siempre, y Configuración no cambia. En el robot no se toca nada todavía.</p></li>
           <li><b>Llevarla a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Márcala, marca los robots y «Vista previa». Donde tengan la versión antigua sale <i>distinta</i>: marca
-              <b>Sustituir</b> en la vista previa de ese robot (se borra y se vuelve a crear con el mismo GUID; si otra mission
+              <b>Sustituir</b> en la vista previa de ese robot (se borra y se vuelve a crear con el mismo GUID; si otra misión
               la carga, sigue funcionando) y «Desplegar». Donde no la tengan, se crea. Sustituir, con el robot libre.</p></li>
           <li><b>Borrar la copia</b><span class="where">web del MiR</span>
             <p>Si hubo «Guardar como», borra en la web del MiR la copia del robot donde se hizo: desde aquí no se toca nada
@@ -2194,12 +2275,12 @@
       </details>
 
       <details class="guide-sec">
-        <summary>Quitar una mission
+        <summary>Quitar una misión
           <span class="hint">De un robot, o de toda la flota.</span></summary>
         <ol class="steps">
-          <li><b>Que ninguna action la use</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>«Editar», desmarca la action en todos los robots y «Borrar» la action; «Guardar». Mientras
-              <code>fleet.yaml</code> la nombre (aunque esté sin marcar, o si es la mission de carga) no se puede quitar.
+          <li><b>Que ningún tipo de tarea la use</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>«Editar», desmarca el tipo de tarea en todos los robots y «Borrar»; «Guardar». Mientras
+              <code>fleet.yaml</code> la nombre (aunque esté sin marcar, o si es la misión de carga) no se puede quitar.
               Avisa a quien envíe las orders: ese <code>actionType</code> dejará de existir.</p></li>
           <li><b>Elige cómo quitarla</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
             <p>En su ficha, «Quitar…»: salen solo las formas que valen para ella. Elige una y «Ver qué se quita»: dice en
@@ -2211,50 +2292,52 @@
             <p><b>Retirar de la flota</b>: se borra de todos los robots y del catálogo, y su número queda reservado
               (<code>catalog/retirados.json</code>) para no confundirla con otra.</p></li>
           <li><b>Si no te deja</b>
-            <p>Se bloquea si otra mission la usa como sub-mission, si un robot que la tiene está ocupado o si algún robot no
-              responde (podría guardar una copia). El aviso dice cuál es el caso.</p></li>
+            <p>Se bloquea si otra misión la usa como sub-misión (una misión dentro de otra, con «Load mission»), si un robot que la tiene está ocupado o si algún robot no
+              responde (podría guardar una copia). El aviso dice cuál es el caso y qué hacer: lo que la usa se abre desde ahí,
+              y lo que pide <code>fleet.yaml</code> se quita en Configuración.</p></li>
         </ol>
       </details>
 
       <details class="guide-sec">
-        <summary>Añadir una position nueva
+        <summary>Añadir una posición nueva
           <span class="hint">Un punto nuevo del mapa, igual en todos los robots.</span></summary>
         <ol class="steps">
           <li><b>Llevar el robot al sitio</b><span class="where">web del MiR o joystick</span>
-            <p>La position se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
+            <p>La posición se crea <b>donde está el robot ahora</b>, en su mapa activo, que tiene que ser uno del catálogo
               (hoy <code>suberri_mirur</code>). Para un marcador, deja el robot delante de él.</p></li>
           <li><b>Crearla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>Arriba, «Position». Elige ese robot, escribe el nombre (no puede repetir el de ninguna position, de ningún mapa ni robot, aunque
+            <p>Arriba, «Posición». Elige ese robot, escribe el nombre (no puede repetir el de ninguna posición, de ningún mapa ni robot, aunque
               cambien mayúsculas: la web del MiR las lista todas juntas sin decir de qué mapa son), el <b>tipo</b> (Robot position, VL-marker
-              o MiR Charge 48V) y «Crear position aquí». <b>El tipo no se puede cambiar después</b>, ni aquí ni en la web
+              o MiR Charge 48V) y «Crear posición aquí». <b>El tipo no se puede cambiar después</b>, ni aquí ni en la web
               del MiR: si te equivocas, «Borrar» y vuelve a crearla.</p></li>
           <li><b>Terminarla en la web del MiR</b><span class="where">web del MiR</span>
             <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Una Robot position se corrige si hace falta. Un
               <b>VL-marker</b> o un cargador nace con un docking offset provisional y con su entrada (la pone el MiR):
               ábrelo, <b>vuelve a detectar el marcador</b> y ajusta el offset.</p></li>
-          <li><b>Capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>«Capturar» en «Creado desde aquí». En un marcador se capturan también su entrada y su offset.</p></li>
+          <li><b>Capturarla</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
+            <p>Abre su ficha en el Catálogo (sale con «borrador») y «Capturar». En un marcador se capturan también su entrada y
+              su offset.</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>Igual que una mission (o «Sincronizar este recurso →» en su ficha). Un marcador calibrado con un robot puede necesitar ajustar el offset en otro:
+            <p>Igual que una misión (o «Sincronizar este recurso →» en su ficha). Un marcador calibrado con un robot puede necesitar ajustar el offset en otro:
               compruébalo antes de usarlo en producción.</p></li>
           <li><b>Usarla</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>Si una action tiene lista de «Positions admitidas», márcala ahí; si no, cualquier order ya la puede pedir
+            <p>Si un tipo de tarea tiene lista de «Posiciones admitidas», márcala ahí; si no, cualquier order ya la puede pedir
               por su nombre.</p></li>
         </ol>
       </details>
 
       <details class="guide-sec">
-        <summary>Quitar una position
+        <summary>Quitar una posición
           <span class="hint">Siempre de toda la flota.</span></summary>
         <ol class="steps">
-          <li><b>Quitarla de las listas de positions admitidas</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>Edita las actions que la tengan marcada en «Positions admitidas», desmárcala y «Guardar».</p></li>
+          <li><b>Quitarla de las listas de posiciones admitidas</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>Edita los tipos de tarea que la tengan marcada en «Posiciones admitidas», desmárcala y «Guardar».</p></li>
           <li><b>Quitarla</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
             <p>En su ficha, «Quitar…». <b>Borrar</b> si era una prueba creada aquí (su número queda libre); si no,
               <b>Retirar de la flota</b> (su número queda reservado). Un marcador se lleva su entrada. «Ver qué se quita»
               dice antes qué la usa, si algo lo impide.</p></li>
           <li><b>Avisar aguas arriba</b>
-            <p>Una position no se quita de un solo robot: el FM no sabe qué orders la piden por nombre. Las que la sigan
+            <p>Una posición no se quita de un solo robot: el FM no sabe qué orders la piden por nombre. Las que la sigan
               pidiendo recibirán <code>noRouteError</code>; avisa a quien envíe las orders.</p></li>
         </ol>
       </details>
@@ -2272,23 +2355,23 @@
               antes con «Site»), la imagen, la resolución y el origen. Debajo sale cuántos metros mide. «Subir al catálogo» no toca
               ningún robot.</p></li>
           <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>En «Mapas de &lt;site&gt;», márcalo (arrastra su site y marca sus positions y zonas), marca los robots, «Vista previa» y «Desplegar». Crearlo en un robot no
+            <p>En «Mapas de &lt;site&gt;», márcalo (arrastra su site y marca sus posiciones y zonas), marca los robots, «Vista previa» y «Desplegar». Crearlo en un robot no
               lo activa: para trabajar en él, cámbialo en la web del MiR.</p></li>
           <li><b>Si te has equivocado</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
-            <p>En su ficha, «Quitar…» → «Borrar»: lo quita del catálogo y de los robots que lo tengan, con sus positions y
-              zonas, salvo que sea el mapa activo de algún robot o que una mission vaya a sus positions.</p></li>
+            <p>En su ficha, «Quitar…» → «Borrar»: lo quita del catálogo y de los robots que lo tengan, con sus posiciones y
+              zonas, salvo que sea el mapa activo de algún robot o que una misión vaya a sus posiciones.</p></li>
         </ol>
       </details>
 
       <details class="guide-sec">
         <summary>Quitar un mapa
-          <span class="hint">De toda la flota, con sus positions y zonas.</span></summary>
+          <span class="hint">De toda la flota, con sus posiciones y zonas.</span></summary>
         <ol class="steps">
           <li><b>Que nadie lo use</b><span class="where">web del MiR y Configuración</span>
-            <p>Ningún robot puede tenerlo como mapa activo (cámbialo en su web) y ninguna mission puede ir a sus positions;
-              tampoco una position que solo esté en ese mapa puede seguir en «Positions admitidas» de una action.</p></li>
+            <p>Ningún robot puede tenerlo como mapa activo (cámbialo en su web) y ninguna misión puede ir a sus posiciones;
+              tampoco una posición que solo esté en ese mapa puede seguir en «Posiciones admitidas» de un tipo de tarea.</p></li>
           <li><b>Retirarlo</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
-            <p>En su ficha, «Quitar…» → «Retirar de la flota» y «Ver qué se quita»: dice qué positions y zonas se van con él.
+            <p>En su ficha, «Quitar…» → «Retirar de la flota» y «Ver qué se quita»: dice qué posiciones y zonas se van con él.
               Se borran de los robots que lo tienen (el MiR las borra con el mapa) y del catálogo, y sus números quedan
               reservados. Si era una prueba subida, copiada o creada en «Crear o importar recurso», «Borrar» hace lo mismo y
               deja libres los números.</p></li>
@@ -2300,20 +2383,20 @@
 
       <details class="guide-sec">
         <summary>Capturar un mapa de un robot
-          <span class="hint">Un mapa hecho en la web de un MiR, con sus positions y zonas, a toda la flota.</span></summary>
+          <span class="hint">Un mapa hecho en la web de un MiR, con sus posiciones y zonas, a toda la flota.</span></summary>
         <ol class="steps">
           <li><b>Capturarlo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mapa» → «Capturar de un robot». Elige el robot y el mapa (salen los que no tienen GUID de la flota),
               el nombre que tendrá en el catálogo y su site (uno del catálogo o uno nuevo). «Capturar al catálogo» solo lee el
               robot. Una zona que use un sonido subido solo a ese robot no se captura: el aviso dice cuál.</p></li>
           <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>En «Mapas de &lt;site&gt;», márcalo: se marcan solas sus positions y zonas. Llévalo también al robot del que
+            <p>En «Mapas de &lt;site&gt;», márcalo: se marcan solas sus posiciones y zonas. Llévalo también al robot del que
               salió: el MiR no deja cambiar el GUID de un mapa, así que allí tendrá dos, el suyo y el del catálogo.</p></li>
           <li><b>Activar el del catálogo</b><span class="where">web del MiR</span>
-            <p>En cada robot, cambia al mapa del catálogo y localiza el robot. Las missions con positions fijas solo van a un
+            <p>En cada robot, cambia al mapa del catálogo y localiza el robot. Las misiones con posiciones fijas solo van a un
               robot que esté en su mapa. El original se puede borrar en la web cuando ya no haga falta.</p></li>
           <li><b>Si se sigue editando el original</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>Mientras se trabaje en el mapa original del robot (mover una position, añadir una zona), «Volver a capturar»
+            <p>Mientras se trabaje en el mapa original del robot (mover una posición, añadir una zona), «Volver a capturar»
               actualiza la copia del catálogo con los mismos GUIDs; lo que ya no está en el robot se avisa, pero no se
               borra.</p></li>
         </ol>
@@ -2321,22 +2404,22 @@
 
       <details class="guide-sec">
         <summary>Copiar un mapa del catálogo
-          <span class="hint">Otro mapa igual, con sus positions y zonas: p. ej. uno de pruebas que no toque el de trabajo.</span></summary>
+          <span class="hint">Otro mapa igual, con sus posiciones y zonas: p. ej. uno de pruebas que no toque el de trabajo.</span></summary>
         <ol class="steps">
           <li><b>Copiarlo</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Arriba, «Mapa» → «Copiar del catálogo» (no hace falta robot). Elige el mapa, el nombre del nuevo y su site (por
-              defecto, el del original). Las positions copiadas no pueden llamarse igual que las del original (la web del MiR
+              defecto, el del original). Las posiciones copiadas no pueden llamarse igual que las del original (la web del MiR
               las lista todas juntas): elige un <b>prefijo</b> o un <b>sufijo</b> con su separador («pruebas-», «-pruebas»);
               debajo sale cómo quedará una. Si algún nombre ya existe, el aviso dice cuál. Las zonas conservan su nombre.</p></li>
-          <li><b>Las missions no se copian</b><span class="where">—</span>
-            <p>Una mission que va a positions fijas sigue siendo del mapa original: en la copia el FM la rechaza. En el mapa
-              copiado valen las que reciben la position como parámetro, pidiendo la position con su nombre nuevo.</p></li>
+          <li><b>Las misiones no se copian</b><span class="where">—</span>
+            <p>Una misión que va a posiciones fijas sigue siendo del mapa original: en la copia el FM la rechaza. En el mapa
+              copiado valen las que reciben la posición como parámetro, pidiendo la posición con su nombre nuevo.</p></li>
           <li><b>Llevarlo a los robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>En «Mapas de &lt;site&gt;», márcalo: se marcan solas sus positions y zonas. Marca los robots, «Vista previa» y «Desplegar».</p></li>
+            <p>En «Mapas de &lt;site&gt;», márcalo: se marcan solas sus posiciones y zonas. Marca los robots, «Vista previa» y «Desplegar».</p></li>
           <li><b>Activarlo</b><span class="where">web del MiR</span>
             <p>En cada robot que vaya a trabajar en él, cámbialo en su web y localiza el robot.</p></li>
           <li><b>Si te has equivocado</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
-            <p>En su ficha, «Quitar…» → «Borrar»: lo quita con sus positions y zonas, del catálogo y de los robots que lo
+            <p>En su ficha, «Quitar…» → «Borrar»: lo quita con sus posiciones y zonas, del catálogo y de los robots que lo
               tengan (el original no se toca).</p></li>
         </ol>
       </details>
@@ -2357,8 +2440,9 @@
             <p>«Abrir en la web del MiR ↗» lleva al editor del mapa. Abre la zona, arrastra sus vértices (pinchando en un lado
               se añade otro) y, si es de velocidad, de sonido y luz o del planificador, añade sus acciones. Un sonido tiene que
               ser de fábrica o del catálogo: uno subido solo a ese robot no se puede capturar.</p></li>
-          <li><b>Capturarla</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
-            <p>«Capturar» en «Creado desde aquí»: guarda el polígono y las acciones en el catálogo.</p></li>
+          <li><b>Capturarla</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
+            <p>Abre su ficha en el Catálogo (sale con «borrador») y «Capturar»: guarda el polígono y las acciones en el
+              catálogo.</p></li>
           <li><b>Llevarla a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Está en «Zonas de &lt;mapa&gt;»: márcala, marca los robots, «Vista previa» y «Desplegar» (o «Sincronizar este
               recurso →» en su ficha).</p></li>
@@ -2372,8 +2456,8 @@
           <li><b>Cambiarla en la web del MiR</b><span class="where">web del MiR</span>
             <p>En un robot, edita la zona en el editor del mapa (forma, nombre, acciones). El tipo no.</p></li>
           <li><b>Traerla al catálogo</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
-            <p>En su ficha, ese robot sale <i>distinto del catálogo</i> (tras «A fondo»): «Traer al catálogo» en su fila. (Si
-              se creó desde aquí, también «Volver a capturar».)</p></li>
+            <p>En su ficha, «Comprobar a fondo»: ese robot sale <i>distinto del catálogo</i> y «Traer al catálogo» en su fila.
+              (Si se creó desde aquí, también «Volver a capturar».)</p></li>
           <li><b>Llevar el cambio</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>En la vista previa de los demás robots sale <b>distinta</b>: marca <b>Sustituir</b> y «Desplegar». Se corrige en
               su sitio, con el mismo GUID. Con el robot ocupado no se deja: espera a que quede libre.</p></li>
@@ -2385,29 +2469,30 @@
 
       <details class="guide-sec">
         <summary>Traer al catálogo lo cambiado en la web de un robot
-          <span class="hint">Un marcador recalibrado, una mission retocada, una position o zona nueva hecha en el editor del MiR.</span></summary>
+          <span class="hint">Un marcador recalibrado, una misión retocada, una posición o zona nueva hecha en el editor del MiR.</span></summary>
         <ol class="steps">
           <li><b>Algo de la flota, cambiado en un robot</b><a class="where" href="#catalogo">→ Catálogo › ficha</a>
-            <p>En la ficha del recurso (una mission, position, zona o mapa), tras «A fondo» en
-              <a href="#sincronizacion">Sincronización</a>, el robot donde se cambió sale <i>distinto del catálogo</i>:
-              <b>«Traer al catálogo»</b> en su fila guarda en el catálogo la versión de ese robot, con el mismo GUID, y vuelve a
-              comprobar a fondo los robots. Solo lee el robot. (También en la vista previa de Sincronización, en su fila.) La entrada de un marcador movida en el robot sale <i>corregir</i> (al desplegar,
+            <p>En la ficha del recurso (una misión, posición, zona o mapa), tras «Comprobar a fondo», el robot donde se
+              cambió sale <i>distinto del catálogo</i>: <b>«Traer al catálogo»</b> en su fila guarda en el catálogo la versión de
+              ese robot, con el mismo GUID, y vuelve a comprobar a fondo los robots; al acabar, el mensaje dice cómo está cada
+              uno. Los que tienen la versión anterior ofrecen «Llevarle la del catálogo →». Solo lee el robot. Lo que vio la
+              comprobación a fondo se conserva tras las rápidas mientras no cambie; cada fila dice de cuándo es. (También en la vista previa de Sincronización, en su fila.) La entrada de un marcador movida en el robot sale <i>corregir</i> (al desplegar,
               el FM la devolvería a la pose del catálogo): su «Traer al catálogo» trae el marcador con su entrada. De un mapa se traen la imagen,
-              la resolución y el origen; sus positions y zonas, una a una.</p></li>
+              la resolución y el origen; sus posiciones y zonas, una a una.</p></li>
           <li><b>Algo nuevo, hecho en la web de un robot</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>Abajo, «Hecho en la web de un robot»: elige el robot y «Buscar». Salen las positions y zonas creadas en su web sobre un mapa
-              del catálogo y las missions de un grupo del catálogo, que aún llevan el GUID del robot. <b>«Traer al
+            <p>Abajo, «Hecho en la web de un robot»: elige el robot y «Buscar». Salen las posiciones y zonas creadas en su web sobre un mapa
+              del catálogo y las misiones de un grupo del catálogo, que aún llevan el GUID del robot. <b>«Traer al
               catálogo»</b> les da el GUID del proyecto y, en ese robot, crea la copia y borra el original. Con el robot
-              ocupado no se deja; si una mission de ese robot usa el original, o es la mission de una action de Configuración,
-              no se toca nada y el aviso dice cuál. Una position no puede llamarse como otra de ningún mapa ni robot.
+              ocupado no se deja; si una misión de ese robot usa el original, o es la misión de un tipo de tarea de Configuración,
+              no se toca nada y el aviso dice cuál. Una posición no puede llamarse como otra de ningún mapa ni robot.
               Antes de borrar el original se comprueba que la copia es igual a lo traído: si un intento anterior dejó la copia
               y luego se editó el original, no se borra nada y el aviso pide llevarle la versión del catálogo
               («Sustituir») y volver a traerla.</p></li>
           <li><b>Llevarlo a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>«Sincronizar este recurso →» en su ficha: en la vista previa de los demás robots, lo cambiado sale
-              <i>distinta</i>: marca <b>Sustituir</b> en la de cada robot y lo nuevo sale <i>crear</i>. «Desplegar». Una mission se borra y se vuelve a crear con el mismo GUID; una position (nombre, pose y
+              <i>distinta</i>: marca <b>Sustituir</b> en la de cada robot y lo nuevo sale <i>crear</i>. «Desplegar». Una misión se borra y se vuelve a crear con el mismo GUID; una posición (nombre, pose y
               docking offset), una zona o un mapa (imagen, origen, resolución) se corrigen en su sitio, así que lo que va a
-              ellos sigue valiendo. El tipo de una position y el site de un mapa no se cambian: salen sin «Sustituir».
+              ellos sigue valiendo. El tipo de una posición y el site de un mapa no se cambian: salen sin «Sustituir».
               Si el mapa es el activo de ese robot, comprueba después en su web que sigue bien localizado.</p></li>
           <li><b>Guardarlo en git</b><span class="where">terminal</span>
             <p>El cambio está en <code>catalog/</code>: haz commit.</p></li>
@@ -2428,15 +2513,23 @@
           <li><b>Qué tiene cada cambiador</b><span class="where"><code>fleet.yaml</code></span>
             <p>En cada robot con cambiador, <code>tool_changer</code> con las que tiene a mano. Un robot sin cambiador solo
               recibe tareas de la herramienta que lleve puesta.</p></li>
-          <li><b>La mission cambia la herramienta</b><span class="where">web del MiR</span>
+          <li><b>La misión cambia la herramienta</b><span class="where">web del MiR</span>
             <p>Recibe la pedida como un número: si no coincide con el registro de la que lleva, <i>Load mission</i> de la de
               cambio y después sigue. El FM no la cambia: solo elige robot.</p></li>
-          <li><b>La action pide herramienta</b><span class="where"><code>fleet.yaml</code></span>
+          <li><b>El tipo de tarea pide herramienta</b><span class="where"><code>fleet.yaml</code></span>
             <p>En su definición, <code>tool_input</code> con el nombre del parámetro (p. ej. <code>garra</code>). La order trae el
               nombre de la herramienta; en «Nueva tarea» sale como desplegable.</p></li>
           <li><b>Al arrancar el FM, revisar los cambiadores</b><a class="where" href="#operacion">→ Operación</a>
-            <p>Sale el aviso con lo que dice la configuración de cada cambiador: compruébalo y «Revisado». Si falta una
-              herramienta y no se cambió en <code>fleet.yaml</code>, la mission fallará al intentar ponérsela.</p></li>
+            <p>Sale el aviso con lo que dice la configuración de cada cambiador: compruébalo y «Revisado». Lo guarda el FM: el
+              aviso se quita en todos los navegadores hasta el próximo arranque, y queda dicho a qué hora y desde qué equipo.
+              <b>Si no coincide</b>, pon en el cambiador la que falta o corrige <code>tool_changer</code> en
+              <code>fleet.yaml</code> y «Aplicar el fichero» en Configuración (sin reiniciar). Si no, la misión fallará al
+              intentar ponérsela.</p></li>
+          <li><b>Seguirlo en Operación</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Al enviar una tarea y en la cola, cada una dice la herramienta que pide («pide vgc10»). La tarjeta de cada
+              robot (y su pestaña en Robots) dice la que lleva, la que pide su tarea en curso y las de su cambiador. En
+              «Eventos» sale cuándo cambia la que lleva. Si nadie puede ponérsela, la order se rechaza
+              (<code>TOOL_NOT_AVAILABLE</code>) o espera en la cola, y el motivo dice por qué.</p></li>
         </ol>
       </details>
 
@@ -2444,19 +2537,19 @@
         <summary>Que un robot parado no estorbe
           <span class="hint">Mandarlo a la zona de espera tras un rato sin trabajo.</span></summary>
         <ol class="steps">
-          <li><b>Tener la action de ir a la espera</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>Una action del catálogo que lleve al robot a su sitio de espera, habilitada en los robots que volverán (p. ej.
-              <code>ir_a_espera</code>). Si los dos comparten zona, que la mission elija un punto libre (prueba uno y, si está
+          <li><b>Tener el tipo de tarea de ir a la espera</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>Un tipo de tarea que lleve al robot a su sitio de espera, habilitado en los robots que volverán (p. ej.
+              <code>ir_a_espera</code>). Si los dos comparten zona, que la misión elija un punto libre (prueba uno y, si está
               ocupado, va a otro) o da a cada robot el suyo con un parámetro.</p></li>
           <li><b>Tener la zona de espera en el mapa</b><a class="where" href="#crear">→ Catálogo › Crear recurso</a>
             <p>Una zona que cubra los puntos de espera, en el catálogo y en los robots (Catálogo › «Crear o importar recurso» › «Zona»). Así el
               FM no manda a la espera a un robot que ya está en ella.</p></li>
           <li><b>Activarla para la flota</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>«Editar» → «Vuelta a la espera»: marca la casilla, elige la action, los <b>segundos parado</b> (deja tiempo a que
+            <p>«Editar» → «Vuelta a la espera»: marca la casilla, elige el tipo de tarea, los <b>segundos parado</b> (deja tiempo a que
               llegue la order siguiente: 30 s suele bastar), la <b>zona de espera</b> y sus parámetros, y «Guardar». Se aplica
               en caliente.</p></li>
           <li><b>Ajustar por robot</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>En «Por robot»: «como la flota», «otra action» (con sus segundos y parámetros, p. ej. su propio punto de espera)
+            <p>En «Por robot»: «como la flota», «otro tipo de tarea» (con sus segundos y parámetros, p. ej. su propio punto de espera)
               o «desactivada».</p></li>
           <li><b>Verlo funcionar</b><a class="where" href="#operacion">→ Operación</a>
             <p>Al acabar una order, el robot espera esos segundos (la cuenta atrás se ve en su tarjeta, «A la espera: en 12 s»,
@@ -2480,8 +2573,11 @@
         <ol class="steps">
           <li><b>Cómo funciona</b><a class="where" href="#operacion">→ Operación</a>
             <p>Una fleet/order que llega con todos los robots ocupados espera en «Cola de tareas» y va al primer robot que quede
-              libre, por orden de llegada. Cada fila dice cuánto lleva esperando y por qué («mir-1: ocupado»…). «Quitar» la saca de
-              la cola sin que llegue a hacerse. La cola se guarda en disco: sobrevive a reiniciar el FM.</p></li>
+              libre, por orden de llegada. Cada fila dice cuánto lleva esperando y por qué («ahora no puede ningún robot: mir-1:
+              ocupado»…). Una que pide herramienta (la fila dice «pide vgc10») espera a un robot libre que la lleve o la tenga en
+              su cambiador: aunque otro quede libre antes, no va a él (la fila dice por qué). Las de detrás pueden adelantarla si
+              van a otro robot. «Quitar» la saca de la cola sin que llegue a hacerse. La cola se guarda en disco: sobrevive a
+              reiniciar el FM.</p></li>
           <li><b>Ajustar los límites</b><a class="where" href="#configurador">→ Configuración</a>
             <p>Bloque <code>queue:</code> (opcional): <code>max_size</code> (cuántas pueden esperar; 50), <code>max_wait_s</code>
               (segundos antes de darla por caducada; vacío = sin límite) y <code>keep_days</code> (días que se guarda el
@@ -2489,7 +2585,7 @@
               fichero» los pone en marcha sin reiniciar (<code>keep_days</code> se usa al arrancar el FM).</p></li>
           <li><b>Una order «en duda»</b><a class="where" href="#operacion">→ Operación</a>
             <p>Sale en rojo si el FM se reinició justo cuando la mandaba a un robot y no sabe si le llegó (normalmente lo averigua
-              solo al volver; si el robot no responde, lo intenta cada 30 s). Abre la web de ese MiR, «Missions» → cola: la
+              solo al volver; si el robot no responde, lo intenta cada 30 s). Abre la web de ese MiR, «Misiones» → cola: la
               entrada lleva el orderId en la descripción. <b>Si no está</b>, «Relanzar»: vuelve a la cola en su sitio.
               <b>Si está</b>, «Descartar»: el FM la olvida y el robot la hace igual. Relanzar una que el robot sí tenía la hace
               dos veces.</p></li>
@@ -2551,8 +2647,8 @@ const TABS = [
 // Sincronización: rótulos de las operaciones que devuelve el servidor (sync.py).
 const VERB_LABEL = { crear: 'crear', corregir: 'corregir', igual: 'ya está igual', distinta: 'distinta', sustituir: 'sustituir' };
 const VERB_MARK = { crear: '+', corregir: '~', igual: '=', distinta: '!', sustituir: '↻' };
-const KIND_LABEL = { session: 'site', map: 'mapa', position: 'position', sound: 'sonido', zone: 'zona',
-                     missiongrp: 'grupo', mission: 'mission' };
+const KIND_LABEL = { session: 'site', map: 'mapa', position: 'posición', sound: 'sonido', zone: 'zona',
+                     missiongrp: 'grupo', mission: 'misión' };
 // Lo que se va con un recurso al quitarlo (un mapa: sus positions y zonas), para la confirmación.
 function alsoText(plan) {
   const by = {};
@@ -2561,7 +2657,7 @@ function alsoText(plan) {
     + `(${[...new Set(names)].join(', ')})`);
   return parts.length ? `\nSe va también, con él: ${parts.join(' y ')}.` : '';
 }
-const CREATED_LABEL = { mission: 'Mission', position: 'Position', zone: 'Zona', map: 'Mapa', session: 'Site',
+const CREATED_LABEL = { mission: 'Misión', position: 'Posición', zone: 'Zona', map: 'Mapa', session: 'Site',
                         missiongrp: 'Grupo' };
 // Lo que se crea solo en el catálogo: no hay nada que capturar del robot.
 const CATALOG_ONLY = ['map', 'session', 'missiongrp'];
@@ -2597,6 +2693,7 @@ createApp({
     function onMessage(topic, payload) {
       if (topic.startsWith('fm/sync/')) { onSync(topic.slice(8), payload); return; }
       if (topic === 'fm/config') { onConfigApplied(payload); return; }
+      if (topic === 'fm/tools') { fleet.tool_check = payload.tool_check; return; }   // «Revisado» desde otro navegador
       const pt = parseTopic(topic);
       if (!pt) return;
       if (pt.serial === 'fleet') {
@@ -2624,6 +2721,11 @@ createApp({
           p.acts[a.actionId] = a.actionStatus;
         }
       }
+      // La herramienta montada (decisión 184): un evento cuando cambia, para ver cuándo se puso.
+      const toolNow = ((s.information || []).find(i => i.infoType === 'TOOL') || {}).infoDescriptor;
+      if (p.tool !== undefined && toolNow !== undefined && toolNow !== p.tool)
+        addEvent(serial, `herramienta: ${p.tool || 'sin leer'} → ${toolNow}`, s.timestamp);
+      if (toolNow !== undefined) p.tool = toolNow;
       const errs = new Set((s.errors || []).map(e => e.errorType + '|' + (e.errorDescription || '')));
       for (const k of errs) if (!p.errs.has(k)) addEvent(serial, 'error ' + k.replace('|', ': '), s.timestamp);
       p.errs = errs;
@@ -2705,7 +2807,9 @@ createApp({
         body: JSON.stringify({ actionType: form.actionType, params }) });
       ui.sending = false;
       if (!r.ok) { addEvent('ui', 'no se pudo enviar: ' + (await r.json()).detail); return; }
-      fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null });
+      const tool = currentParams.value.find(p => p.kind === 'tool');      // la que pide (decisión 184)
+      fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null,
+                            tool: tool ? params[tool.key] || '' : '' });
       if (fleetOrders.length > 5) fleetOrders.pop();
     }
 
@@ -2725,7 +2829,7 @@ createApp({
     // order_response, como el de cualquier otro cliente.
     async function queueAction(t, what) {
       const msg = what === 'requeue'
-        ? `¿Relanzar ${t.orderId}?\n\nSolo si has comprobado en la web de ${t.serial} que NO tiene esta mission en su cola ` +
+        ? `¿Relanzar ${t.orderId}?\n\nSolo si has comprobado en la web de ${t.serial} que NO tiene esta misión en su cola ` +
           `(su descripción empieza por «${t.orderId}@»). Si la tiene y la relanzas, se hará dos veces.`
         : t.status === 'ASSIGNING'
           ? `¿Descartar ${t.orderId}?\n\nEl FM la olvida. Si ${t.serial} la llegó a recibir, la hará igual.`
@@ -2803,6 +2907,7 @@ createApp({
       const prompt = s && (s.information || []).find(i => i.infoType === 'USER_PROMPT');
       const maint = s && (s.information || []).find(i => i.infoType === 'MAINTENANCE' || i.infoType === 'MAINTENANCE_PENDING');
       const tool = s && (s.information || []).find(i => i.infoType === 'TOOL');
+      const wanted = s && (s.information || []).find(i => i.infoType === 'TOOL_REQUESTED');
       return {
         serial: cfg.serial, manufacturer: cfg.manufacturer, battery_min: cfg.battery_min,
         name: name ? name.infoDescriptor : '',   // el de la web del robot ("Dejavu"), si el driver lo da
@@ -2826,6 +2931,7 @@ createApp({
         web: cfg.web || null,
         // Herramientas (decisión 184): la que lleva ahora (la lee su driver) y su cambiador (fleet.yaml).
         tool: tool ? tool.infoDescriptor : null, toolChanger: cfg.tool_changer || [],
+        toolWanted: wanted ? wanted.infoDescriptor : '',          // la que pide su tarea en curso
         errors: s ? (s.errors || []).slice(-3) : [],
         canPause: reachable && !s.paused, canResume: reachable && s.paused, canCancel: reachable && alive,
       };
@@ -2835,7 +2941,8 @@ createApp({
     // `targets`: robots marcados (serial → bool); `plans`: la vista previa de
     // cada uno ({ops, key, msg}); `replace`: sus «Sustituir» (serial → guid → bool).
     const syncState = reactive({ catalog: [], robots: [], reports: {}, sel: {}, targets: {}, plans: {},
-                                 replace: {}, msg: '', loading: false, rm: { text: '', cls: '' }, q: '', autoPreview: false, targetsSet: false });
+                                 replace: {}, msg: '', loading: false, rm: { text: '', cls: '' }, q: '', autoPreview: false, targetsSet: false,
+                                 brought: {} });
     // "hace 3 min": un reloj que avanza solo para que el texto no se quede viejo.
     const clock = reactive({ now: Date.now() });
     setInterval(() => { clock.now = Date.now(); }, 15000);
@@ -2846,6 +2953,7 @@ createApp({
         syncState.catalog = info.catalog;
         syncState.robots = info.robots;
         syncState.reports = info.reports;
+        syncState.brought = info.brought || {};
         // Por defecto, todos los robots que ofrecen sincronización (lo normal es llevarlo a la flota).
         if (!syncState.targetsSet && info.robots.length) setTargets(info.robots.filter(r => r.supported).map(r => r.serial));
       } catch (e) { syncState.msg = 'no se pudo leer el catálogo'; }
@@ -2886,13 +2994,13 @@ createApp({
       for (const x of items.filter(i => i.kind === 'session'))
         add('map-' + x.guid, 'Mapas de ' + x.name, items.filter(i => i.kind === 'map' && i.parent === x.guid));
       for (const m of items.filter(i => i.kind === 'map'))
-        add('pos-' + m.guid, 'Positions de ' + m.name, items.filter(i => i.kind === 'position' && i.parent === m.guid && !i.auto));
+        add('pos-' + m.guid, 'Posiciones de ' + m.name, items.filter(i => i.kind === 'position' && i.parent === m.guid && !i.auto));
       for (const m of items.filter(i => i.kind === 'map'))
         add('zon-' + m.guid, 'Zonas de ' + m.name, items.filter(i => i.kind === 'zone' && i.parent === m.guid));
       add('sound', 'Sonidos', items.filter(i => i.kind === 'sound'));
       add('group', 'Grupos', items.filter(i => i.kind === 'missiongrp'));
       for (const g of items.filter(i => i.kind === 'missiongrp'))
-        add('mis-' + g.guid, 'Missions de ' + g.name, items.filter(i => i.kind === 'mission' && i.parent === g.guid), true);
+        add('mis-' + g.guid, 'Misiones de ' + g.name, items.filter(i => i.kind === 'mission' && i.parent === g.guid), true);
       return secs;
     });
     const selected = computed(() => Object.keys(syncState.sel).filter(g => syncState.sel[g]).sort());
@@ -2934,16 +3042,32 @@ createApp({
       if (!t.online) [why, short] = [`${serial} no responde: no se puede desplegar.`, 'no responde'];
       else if (t.deploying) [why, short] = [`${serial} está desplegando: espera a que termine.`, 'desplegando'];
       else if (t.busy && (counts.corregir || counts.sustituir))
-        [why, short] = [`${serial} está ocupado (una order, la carga o una mission lanzada desde su web) y habría que corregir ` +
+        [why, short] = [`${serial} está ocupado (una order, la carga o una misión lanzada desde su web) y habría que corregir ` +
                         'o sustituir recursos que ya tiene: no se despliega hasta que quede libre.', 'ocupado'];
       const fresh = planFresh(serial);
       const done = p.ops.some(o => o.status !== 'pendiente');
-      if (!short) short = !fresh ? 'sin vista previa al día' : done ? 'ya desplegado' : !n ? 'nada que cambiar' : '';
-      return { serial, info: t, ops: p.ops, msg: p.msg, counts, n, fresh, why, short, ready: fresh && !short };
+      if (!short && !fresh) short = 'sin vista previa al día';
+      // Sin nada que hacer no es «se queda fuera»: se dice en neutro, y qué hacer si hay algo distinto sin marcar.
+      const note = short ? '' : done ? 'ya desplegado' : n ? ''
+        : counts.distinta ? 'marca «Sustituir» en lo distinto para llevárselo' : 'ya lo tiene todo igual';
+      // Lo que se hará (decisión 187): los «Sustituir» que borran y vuelven a crear, y los que se corrigen en su sitio.
+      const subs = p.ops.filter(o => o.verb === 'sustituir');
+      const gone = subs.filter(o => (o.detail || '').startsWith('borrar')).map(o => `«${o.name}»`);
+      const fixed = subs.filter(o => !(o.detail || '').startsWith('borrar')).map(o => `«${o.name}»`);
+      const goText = ['crear', 'corregir', 'sustituir'].filter(v => counts[v]).map(v => `${counts[v]} ${VERB_LABEL[v]}`).join(', ');
+      return { serial, info: t, ops: p.ops, msg: p.msg, counts, n, fresh, why, short, note, ready: fresh && !short && !note,
+               gone, fixed, goText };
     }));
     const canPreview = computed(() => chosen.value.length > 0 && nSelected.value > 0 && !syncState.loading
                                       && chosen.value.every(s => !robotInfo(s).deploying));
     const canDeploy = computed(() => previewFresh.value && !syncState.loading && syncPlans.value.some(p => p.ready));
+    // Lo que no pide nada ni avisa: «ya está igual» antes de desplegar, «sin cambios» después. Va plegado.
+    const quietOp = o => !o.warning && ((o.verb === 'igual' && o.status === 'pendiente') || o.status === 'sin cambios');
+    // El botón dice lo que hará: en qué robots se despliega.
+    const deployLabel = computed(() => {
+      const go = syncPlans.value.filter(p => p.ready).map(p => p.serial);
+      return previewFresh.value && go.length ? `Desplegar en ${go.join(', ').replace(/, ([^,]*)$/, ' y $1')}` : 'Desplegar';
+    });
     function syncRobotState(r) {
       if (!r.supported) return { key: '', label: 'no aplica' };
       if (r.deploying) return { key: 'ejecutando', label: 'desplegando' };
@@ -2970,20 +3094,14 @@ createApp({
       try { await Promise.all(chosen.value.map(previewOne)); syncState.msg = ''; }
       finally { syncState.loading = false; }
     }
-    // Un solo «Desplegar» para los robots que se puede; la confirmación dice
-    // qué pasa en cada uno y cuáles se quedan fuera, y por qué.
+    // Un solo «Desplegar» para los robots que se puede. Se revisa en la página
+    // (decisión 187): cada vista previa dice qué se le hará o por qué se queda fuera.
     async function syncDeploy() {
-      const go = syncPlans.value.filter(p => p.ready), out = syncPlans.value.filter(p => !p.ready);
-      const lines = go.map(p => {
-        const subs = p.ops.filter(o => o.verb === 'sustituir');
-        const gone = subs.filter(o => o.detail.startsWith('borrar')).map(o => `«${o.name}»`);
-        const fixed = subs.filter(o => !o.detail.startsWith('borrar')).map(o => `«${o.name}»`);
-        return `· ${p.serial}: ${p.n} ${p.n === 1 ? 'cambio' : 'cambios'}` + (gone.length ? `; se BORRAN y se vuelven a crear ${gone.join(', ')}` : '')
-               + (fixed.length ? `; se corrigen en su sitio, con el mismo GUID, ${fixed.join(', ')}` : '');
-      });
-      const rest = out.length ? `\n\nNo se despliega en: ${out.map(p => `${p.serial} (${p.short})`).join(', ')}.` : '';
-      if (!confirm(`Desplegar:\n${lines.join('\n')}\n\nLo que ya está igual, o es distinto y no se ha marcado, no se toca.${rest}\n\n¿Seguir?`)) return;
+      const go = syncPlans.value.filter(p => p.ready);
       let failed = false;
+      // El botón se deshabilita: el foco, a la línea que dice qué pasa.
+      syncState.msg = `desplegando en ${go.map(p => p.serial).join(', ')}…`;
+      nextTick(() => document.getElementById('sync-msg')?.focus());
       for (const p of go) {
         const r = await fetch(`/api/sync/${p.serial}/deploy`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ guids: selected.value, replace: replaceOf(p.serial) }) });
@@ -2995,17 +3113,30 @@ createApp({
     }
     // #19: traer al catálogo la versión del robot de un recurso que sale distinto (mismo GUID).
     const RECAPTURABLE = ['mission', 'position', 'zone', 'map'];
+    // Lo que cambia al traer (campos del documento del catálogo), con palabras.
+    const CHANGED_LABEL = { pos_x: 'posición x', pos_y: 'posición y', orientation: 'orientación', name: 'nombre',
+      type_id: 'tipo', docking_offsets: 'docking offset', actions: 'acciones', polygon: 'forma', description: 'descripción',
+      hidden: 'oculta', group_id: 'grupo', map_id: 'mapa', session_id: 'site', resolution: 'resolución',
+      origin_x: 'origen x', origin_y: 'origen y', origin_theta: 'giro del origen', imagen: 'imagen', entrada: 'entrada',
+      sound: 'sonido', volume: 'volumen', note: 'nota' };
     async function recapture(robot, guid, name, entry) {
       if (!confirm(`Guardar en el catálogo la versión de ${robot} de «${name}»${entry ? ' (la entrada, con su marcador o cargador)' : ''}.\n\n` +
                    'La del catálogo se sustituye; el robot no se toca. Después, los demás robots tendrán la versión antigua y ' +
                    'saldrá «distinta»: se les lleva desde Sincronización.\n\n¿Seguir?')) return null;
       try {
-        const r = await fetch(`/api/sync/${robot}/recapture`, { method: 'POST',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guid }) });
-        const out = await r.json();
-        if (!r.ok) return { ok: false, text: 'no se trae: ' + out.detail };
+        const post = force => fetch(`/api/sync/${robot}/recapture`, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guid, force }) });
+        let r = await post(false), out = await r.json();
+        // El FM sabe si este robot tiene la versión de antes de traerla de otro (vale con la página vieja).
+        if (r.status === 409 && out.detail && out.detail.code === 'older') {
+          if (!confirm(`OJO: ${out.detail.message} (traída ${ago(out.detail.at)}).\n\n` +
+                       `Para llevarle a ${robot} la del catálogo: «Llevarle la del catálogo →».\n\n¿Traer igual la de ${robot}?`))
+            return { ok: false, text: `no se trae: ${robot} tiene la versión anterior a la traída de ${out.detail.from}` };
+          r = await post(true); out = await r.json();
+        }
+        if (!r.ok) return { ok: false, text: 'no se trae: ' + (out.detail.message || out.detail) };
         const text = `«${out.name}» traída de ${robot} al catálogo` +
-          (out.changed.length ? ` (cambia: ${out.changed.join(', ')})` : ' (ya era igual)');
+          (out.changed.length ? ` (cambia: ${out.changed.map(k => CHANGED_LABEL[k] || k).join(', ')})` : ' (ya era igual)');
         addEvent(robot, text);
         return { ok: true, text };
       } catch (e) { return { ok: false, text: 'no se pudo contactar con el FM' }; }
@@ -3015,6 +3146,7 @@ createApp({
       const got = await recapture(robot, o.guid, o.name, o.verb === 'corregir');
       syncState.loading = false;
       syncState.msg = got ? got.text : '';
+      if (got && !got.ok) await loadSync();          // lo traído, al día: la fila deja de ofrecer traer
       if (!got || !got.ok) return;
       await loadSync();
       await syncPreview();          // el catálogo ha cambiado: en los demás robots sale «distinta»
@@ -3041,7 +3173,7 @@ createApp({
       const serial = foreignState.serial;
       if (!confirm(`Traer al catálogo ${KIND_LABEL[x.kind]} «${x.name}» de ${serial}, con GUID del proyecto.\n\n` +
                    `En ${serial} se crea la copia con el GUID nuevo y se BORRA el original (${x.guid}). ` +
-                   `Si alguna mission de ${serial} lo usa, no se toca nada.\n\n¿Seguir?`)) return;
+                   `Si alguna misión de ${serial} lo usa, no se toca nada.\n\n¿Seguir?`)) return;
       foreignState.busy = x.guid; foreignState.msg = `trayendo «${x.name}»…`;
       try {
         const r = await fetch(`/api/sync/${serial}/bring`, { method: 'POST',
@@ -3089,7 +3221,10 @@ createApp({
       const missing = rep.required.filter(g => st(g) === 'falta');
       const fix = rep.required.filter(g => st(g) === 'corregir');
       const diff = rep.required.filter(g => st(g) === 'distinta');
-      row.when = `${rep.level} · ${ago(rep.checked_at)}`;
+      // Decisión 186: tras una rápida, lo que sabía la completa sigue; se dice de cuándo es.
+      const deepTimes = rep.required.map(g => (rep.deep || {})[g]).filter(Boolean).sort();
+      row.when = `${rep.level} · ${ago(rep.checked_at)}`
+        + (rep.level !== 'completa' && deepTimes.length ? ` · contenido comparado ${ago(deepTimes[0])}` : '');
       if (missing.length) row.details.push({ cls: 'd-falta', text: 'Faltan: ' + names(missing) });
       if (fix.length) row.details.push({ cls: 'd-falta', text: 'A corregir: ' + names(fix) });
       if (diff.length) row.details.push({ cls: 'd-distinta', text: 'Distintas (editadas en el robot; no se tocan): ' + names(diff) });
@@ -3125,26 +3260,31 @@ createApp({
     async function removeFromRobot(serial, m) {
       const out = await removal(`/api/sync/${serial}/remove/preview`, `/api/sync/${serial}/remove`, m.guid,
         `si se puede quitar «${m.name}» de ${serial}`,
-        () => `¿Quitar la mission «${m.name}» de ${serial}?\n\nSigue en el catálogo: se puede volver a desplegar.`);
+        () => `¿Quitar la misión «${m.name}» de ${serial}?\n\nSigue en el catálogo: se puede volver a desplegar.`);
       if (out) { syncState.rm.text = `«${out.name}» quitada de ${serial}; sigue en el catálogo.`; syncState.rm.cls = 'ASSIGNED';
-                 addEvent(serial, `quitada la mission «${out.name}» (sigue en el catálogo)`); }
+                 addEvent(serial, `quitada la misión «${out.name}» (sigue en el catálogo)`); }
       loadSync();
     }
     // En qué robots está cada recurso del catálogo (con muchos robots, un contador).
-    const W_TEXT = { ok: '✓', falta: '✗', distinta: '!', corregir: '~' };
+    const W_TEXT = { ok: '✓', falta: '✗', distinta: '!', corregir: '~', sin: '?' };
+    const W_TITLE = { ok: 'lo tiene', falta: 'no lo tiene', distinta: 'distinto del catálogo', corregir: 'a corregir',
+                      sin: 'sin comprobar' };
     function whereIs(it) {
       const reps = syncState.robots.filter(r => r.supported && syncState.reports[r.serial] && syncState.reports[r.serial].state)
-                                   .map(r => [r.serial, syncState.reports[r.serial].state[it.guid] || 'falta']);
-      if (reps.length <= 6) return reps.map(([s, v]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`, title: `${s}: ${v}` }));
+                                   .map(r => [r.serial, syncState.reports[r.serial].state[it.guid] || 'sin']);
+      if (reps.length <= 6) return reps.map(([s, v]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`, title: `${s}: ${W_TITLE[v]}` }));
       const ok = reps.filter(([, v]) => v === 'ok');
       return [{ serial: '*', state: ok.length === reps.length ? 'ok' : 'mixto', text: `✓ ${ok.length}/${reps.length}`,
                 title: 'falta en: ' + reps.filter(([, v]) => v !== 'ok').map(([s]) => s).join(', ') }];
     }
     async function syncCheck(serial, deep) {
-      const r = await fetch(`/api/sync/${serial}/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deep }) });
-      if (!r.ok) { syncState.msg = (await r.json()).detail; return; }
+      try {
+        const r = await fetch(`/api/sync/${serial}/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deep }) });
+        if (!r.ok) { syncState.msg = (await r.json()).detail; return false; }
+      } catch (e) { syncState.msg = 'no se pudo contactar con el FM'; return false; }
       const robot = syncState.robots.find(x => x.serial === serial); if (robot) robot.checking = true;
+      return true;
     }
     // Preparar: marca lo que falta (o hay que corregir) y pide la vista previa.
     function prepare(serial) {
@@ -3159,8 +3299,18 @@ createApp({
       syncPreview();
     }
 
+    // «2 hechos · 8 sin cambios»: el estado de cada operación, con su número.
+    const STATUS_PLURAL = { hecho: 'hechos', error: 'errores', saltada: 'saltadas' };
+    const statusWord = (k, n) => n === 1 ? k : STATUS_PLURAL[k] || k;
     // Avance del despliegue por el WebSocket (topic fm/sync/<serial>).
     function onSync(serial, p) {
+      if (p.brought) {                                   // lo traído: que una página abierta no lo deshaga
+        const g = (catItem.value || {}).guid, was = JSON.stringify(syncState.brought[g] || null);
+        syncState.brought = p.brought;
+        // Lo han traído desde otra página: el mensaje de esta ficha ya no vale (diría lo contrario).
+        if (g && !detailMsg.wait && was !== JSON.stringify(p.brought[g] || null))
+          Object.assign(detailMsg, { text: '', cls: '' });
+      }
       if (p.report) {
         syncState.reports[serial] = p.report;
         const robot = syncState.robots.find(x => x.serial === serial); if (robot) robot.checking = false;
@@ -3174,8 +3324,9 @@ createApp({
       }
       if (p.done) {
         plan.msg = p.error ? 'despliegue fallido: ' + p.error
-          : 'terminado: ' + Object.entries(p.summary).map(([k, v]) => `${v} ${k}`).join(' · ');
+          : 'terminado: ' + Object.entries(p.summary).map(([k, v]) => `${v} ${statusWord(k, v)}`).join(' · ');
         addEvent(serial, 'sincronización ' + plan.msg);
+        syncState.msg = `${serial}: ${plan.msg}`;        // la línea que tenía el foco al desplegar
         loadSync();
       }
     }
@@ -3200,8 +3351,8 @@ createApp({
     }
     async function adoptRes(m) {
       const target = adoptState.target[m.guid] || '', robot = createState.robot;
-      const what = target ? `la mission del catálogo «${missionName(target)}» (${target}) pasará a ser esta`
-                          : 'entrará en el catálogo como mission nueva de su grupo';
+      const what = target ? `la misión del catálogo «${missionName(target)}» (${target}) pasará a ser esta`
+                          : 'entrará en el catálogo como misión nueva de su grupo';
       if (!confirm(`¿Adoptar «${m.name}» de ${robot}?\n${m.guid}\n\nNo se toca el robot: ${what}.`)) return;
       const out = await postCreate(`/api/create/${robot}/adopt`, { source: m.guid, target },
                                    `adoptando «${m.name}» de ${robot}…`);
@@ -3250,8 +3401,8 @@ createApp({
         hint: 'Un mapa nuevo de un site, desde un PNG, capturado de un robot o copiado de otro del catálogo. Va al catálogo, no a un robot.',
         flow: ['<b>Subir</b> aquí el PNG, <b>capturarlo</b> de un robot o <b>copiar</b> uno del catálogo', `Llevarlo a los robots en ${SYNC_LINK}`,
                'Activarlo en la <b>web del MiR</b> de cada robot'] },
-      { kind: 'position', label: 'Position', robot: true,
-        hint: 'Un punto del mapa, creado donde está el robot. Su nombre no puede repetir el de ninguna position, de ningún ' +
+      { kind: 'position', label: 'Posición', robot: true,
+        hint: 'Un punto del mapa, creado donde está el robot. Su nombre no puede repetir el de ninguna posición, de ningún ' +
               'mapa ni robot: la web del MiR las lista todas juntas sin decir de qué mapa son.',
         flow: ['<b>Crear</b> aquí', 'Ajustarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
                `Llevarla a otros robots en ${SYNC_LINK}`] },
@@ -3260,10 +3411,10 @@ createApp({
         flow: ['<b>Crear</b> aquí', 'Darle forma en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
                `Llevarla a otros robots en ${SYNC_LINK}`] },
       { kind: 'missiongrp', label: 'Grupo', robot: false,
-        hint: 'Un grupo de missions (como una carpeta en la web del MiR). Va al catálogo, no a un robot.',
-        flow: ['<b>Crear</b> aquí el grupo', '<b>Crear</b> su primera mission (botón «Mission»): el grupo llega con ella al robot'] },
-      { kind: 'mission', label: 'Mission', robot: true,
-        hint: 'Una mission vacía que se programa en el Blockly del MiR.',
+        hint: 'Un grupo de misiones (como una carpeta en la web del MiR). Va al catálogo, no a un robot.',
+        flow: ['<b>Crear</b> aquí el grupo', '<b>Crear</b> su primera misión (botón «Misión»): el grupo llega con ella al robot'] },
+      { kind: 'mission', label: 'Misión', robot: true,
+        hint: 'Una misión vacía que se programa en el Blockly del MiR.',
         flow: ['<b>Crear</b> aquí', 'Programarla en la <b>web del MiR</b>', '<b>Capturar</b> aquí',
                `Llevarla a otros robots en ${SYNC_LINK}`, 'Habilitarla en <a href="#configurador">Configuración</a>'] },
     ];
@@ -3367,7 +3518,7 @@ createApp({
         addEvent('catálogo', `creado el grupo «${out.name}» (${out.guid})`);
       }
       await loadCreate();
-      if (out) createState.mission.parent = out.guid;    // la mission que se cree a continuación, en este grupo
+      if (out) createState.mission.parent = out.guid;    // la misión que se cree a continuación, en este grupo
     }
     // Copiar un mapa del catálogo (#33). El texto se propone a partir del
     // nombre del mapa nuevo hasta que se escribe a mano.
@@ -3421,7 +3572,7 @@ createApp({
     }
     const zoneHelp = computed(() => (createState.zone_types.find(z => z.type_id === createState.zone.type_id) || {}).help || '');
     // «Creado desde aquí»: un filtro por tipo, con los que haya y cuántos.
-    const CREATED_PLURAL = { session: 'Sites', map: 'Mapas', missiongrp: 'Grupos', mission: 'Missions', position: 'Positions',
+    const CREATED_PLURAL = { session: 'Sites', map: 'Mapas', missiongrp: 'Grupos', mission: 'Misiones', position: 'Posiciones',
                              zone: 'Zonas' };
     const createdInSite = computed(() => createState.created.filter(d => inSite(d.site)));
     const createdKinds = computed(() => Object.keys(CREATED_PLURAL)
@@ -3491,7 +3642,7 @@ createApp({
     ];
     const say = (msg, cls = '') => { cfgEdit.msg = msg; cfgEdit.msgCls = cls; };
     // ---- vuelta a la espera (decisión 136)
-    const IDLE_MODES = { fleet: 'como la flota', own: 'otra action', off: 'desactivada' };
+    const IDLE_MODES = { fleet: 'como la flota', own: 'otro tipo de tarea', off: 'desactivada' };
     const idleCopy = c => ({ action: c.action || '', after_s: c.after_s ?? null, params: { ...(c.params || {}) },
                              zone: c.zone || '' });
     // Lo que se guarda: sin params vacíos ni after_s sin poner (= el de la flota).
@@ -3679,8 +3830,8 @@ createApp({
       const mission = f.mission === '__otra__' ? f.missionOther : f.mission;
       const taken = viewActions.value.some(a => a.name === name && a.status !== 'borrada');
       f.error = !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(name) ? 'Nombre: letras, números, «_», «-» o «.», empezando por letra.'
-        : f.isNew && taken ? `Ya hay una action «${name}».`
-        : !mission ? 'Elige la mission.' : '';
+        : f.isNew && taken ? `Ya hay un tipo de tarea «${name}».`
+        : !mission ? 'Elige la misión.' : '';
       const num = f.inputs.filter(i => i.kind === 'number');
       const bad = num.find(i => i.min !== '' && i.max !== '' && i.min > i.max);
       if (!f.error && bad) f.error = `${bad.name}: el mínimo es mayor que el máximo.`;
@@ -3750,9 +3901,9 @@ createApp({
     function cell(a, r) {
       const enabled = cfgEdit.on ? cfgEdit.draft.robots[r.serial].actions.includes(a.name) : r.actions.includes(a.name);
       const out = (state, mark, detail) => ({ enabled, state, mark, detail, title: `${a.name} en ${r.serial}: ${detail}` });
-      if (!r.sync) return out('na', '', enabled ? 'habilitada (el driver no ofrece sincronización)' : 'no habilitada');
+      if (!r.sync) return out('na', '', enabled ? 'habilitado (el driver no ofrece sincronización)' : 'no habilitado');
       const n = a.needs;
-      if (!n || !n.mission_guid) return out('nd', '?', 'la mission no está en el catálogo: no se puede comprobar');
+      if (!n || !n.mission_guid) return out('nd', '?', 'la misión no está en el catálogo: no se puede comprobar');
       const rep = syncState.reports[r.serial];
       if (!rep || !rep.state) return out('nd', '?', 'sin comprobar todavía');
       const st = n.required.map(g => rep.state[g] || 'falta');
@@ -3778,7 +3929,7 @@ createApp({
       for (const r of cfgState.robots)
         for (const a of viewActions.value) {
           const c = cell(a, r);
-          if (c.enabled && c.state === 'falta') w.push(`${r.serial} tiene habilitada «${a.name}», pero ${c.detail}.`);
+          if (c.enabled && c.state === 'falta') w.push(`${r.serial} tiene habilitado «${a.name}», pero ${c.detail}.`);
         }
       return w;
     });
@@ -3845,15 +3996,25 @@ createApp({
     // Herramienta (decisión 184): «vgc10 · cambiador: vgc10, 2fg7». `null` = su driver no la lee.
     function toolLabel(r, changer = true) {
       const now = r.tool == null ? 'sin leer' : r.tool === 'ninguna' ? 'no lleva ninguna' : 'lleva ' + r.tool;
-      return now + (changer && r.toolChanger.length ? ' · cambiador: ' + r.toolChanger.join(', ') : '');
+      return now + (changer && r.toolWanted ? ' · su tarea pide ' + r.toolWanted : '')
+                 + (changer && r.toolChanger.length ? ' · cambiador: ' + r.toolChanger.join(', ') : '');
     }
-    // Aviso de revisar los cambiadores: una vez por arranque del FM (`started_at`), hasta «Revisado».
-    const toolSeen = ref(localStorage.getItem('fm-tool-check') || '');
+    // «vgc10 — Ventosa VGC10»: la descripción de `tools:` (fleet.yaml), si la tiene.
+    const toolText = name => { const d = ((fleet.tools || {})[name] || {}).description; return d ? `${name} — ${d}` : name; };
+    const PARAM_KIND = { position: 'posición', number: 'número', tool: 'herramienta' };
+    // Aviso de revisar los cambiadores: una vez por arranque del FM, hasta «Revisado».
+    // Lo guarda el FM (decisión 188): vale para todos los navegadores, con quién y cuándo.
+    const toolCheckMsg = ref('');
     const toolCheckDue = computed(() => !!fleet.started_at && fleet.robots.some(r => (r.tool_changer || []).length)
-                                        && toolSeen.value !== String(fleet.started_at));
-    function toolChecked() {
-      toolSeen.value = String(fleet.started_at);
-      localStorage.setItem('fm-tool-check', toolSeen.value);
+                                        && !fleet.tool_check);
+    async function toolChecked() {
+      toolCheckMsg.value = 'guardando…';
+      const [ok, out] = await postJson('/api/tools/checked', {});
+      if (!ok) { toolCheckMsg.value = 'no se pudo guardar: ' + (out.detail || ''); return; }
+      toolCheckMsg.value = '';
+      fleet.tool_check = out;
+      // El aviso desaparece: el foco, a la línea que dice que está revisado (no se pierde en el documento).
+      nextTick(() => document.getElementById('tool-check-done')?.focus());
     }
     // Mantenimiento: desde cuándo (MAINTENANCE trae la hora ISO) o qué espera (MAINTENANCE_PENDING).
     const maintLabel = r => r.maint === 'service'
@@ -3863,7 +4024,7 @@ createApp({
     function resetRobot(r) {
       const who = r.name ? `${r.name} (${r.serial})` : r.serial;
       if (confirm(`¿Reset de ${who}?\n\nBorra sus errores y lo pone en marcha otra vez, como el reset de su web. ` +
-                  'Si tiene missions en su cola, las hará. Comprueba antes que puede seguir (que no queda nada bloqueando).'))
+                  'Si tiene misiones en su cola, las hará. Comprueba antes que puede seguir (que no queda nada bloqueando).'))
         instant(r.serial, 'clearErrors');
     }
     // La espera estaba bloqueada y ya no (decisión 171): el FM lo manda ya, sin volver a contar.
@@ -4000,37 +4161,105 @@ createApp({
       const p = catByGuid.value[it.parent];
       return p ? `${KIND_LABEL[p.kind]} ${p.name}` : '';
     }
-    const detailMsg = reactive({ text: '', cls: '' });
+    // `wait`: comprobación a fondo pedida desde la ficha ({ guid, serials, before, base }); el mensaje
+    // dice el resultado cuando han llegado los informes de esos robots.
+    const detailMsg = reactive({ text: '', cls: '', wait: null });
     function openItem(guid) {
       ui.catalogSel = guid;
-      Object.assign(detailMsg, { text: '', cls: '' });
-      rmClose();
+      Object.assign(detailMsg, { text: '', cls: '', wait: null });
+      rmClose(false);
       rmState.text = '';
       // Sin `hashchange` (no se vuelve arriba ni se relee nada): solo para poder enlazar la ficha.
       history.replaceState(null, '', guid ? '#catalogo/' + encodeURIComponent(guid) : '#catalogo');
       if (guid) nextTick(() => document.getElementById('cat-detail-title')?.focus({ preventScroll: true }));
     }
+    // «← Volver a la lista» (móvil): el foco, en el recurso que estaba abierto.
+    function backToList() {
+      const g = ui.catalogSel;
+      openItem('');
+      nextTick(() => {
+        const b = [...document.querySelectorAll('.catalog-resource')].find(x => x.dataset.guid === g);
+        if (b) { b.scrollIntoView({ block: 'center' }); b.focus({ preventScroll: true }); }
+      });
+    }
     // Un marcador o cargador se ve con su entrada: si la entrada se ha movido, sale en el marcador.
     const withEntries = it => [it.guid, ...syncState.catalog.filter(c => c.auto && c.parent_id === it.guid).map(c => c.guid)];
-    const DETAIL_RANK = ['distinta', 'corregir', 'falta', 'ok'];
-    const DETAIL_TEXT = { falta: 'no lo tiene', distinta: 'distinto del catálogo',
+    // `sin`: el último informe no lo nombra (p. ej. se capturó después): no se sabe si lo tiene.
+    const DETAIL_RANK = ['distinta', 'corregir', 'falta', 'sin', 'ok'];
+    const DETAIL_TEXT = { falta: 'no lo tiene', distinta: 'distinto del catálogo', sin: 'sin comprobar',
                           corregir: 'a corregir: su entrada está en otro sitio' };
+    // ¿`serial` tiene aún la versión de antes de traer `guid` de otro robot? Lo sabe el FM
+    // (`brought` de /api/sync), así vale tras recargar y en otro navegador.
+    const hasOld = (guid, serial) => { const b = syncState.brought[guid];
+                                       return !!b && b.from !== serial && b.pending.includes(serial); };
     const detailRobots = computed(() => {
       const it = catItem.value;
       if (!it || it.draft) return [];
       return syncState.robots.filter(r => r.supported).map(r => {
         const rep = syncState.reports[r.serial];
-        if (!rep || !rep.state) return { serial: r.serial, state: 'mixto', text: r.online ? 'sin comprobar' : 'sin conexión' };
+        if (!rep || !rep.state) return { serial: r.serial, state: 'sin', text: r.online ? 'sin comprobar' : 'sin conexión',
+                                         online: r.online };
         // El peor estado entre el recurso y su entrada (DETAIL_RANK), y de cuál es (para traerlo).
-        const [state, guid] = withEntries(it).map(g => [rep.state[g] || 'falta', g])
+        const [state, guid] = withEntries(it).map(g => [rep.state[g] || 'sin', g])
           .sort((a, b) => DETAIL_RANK.indexOf(a[0]) - DETAIL_RANK.indexOf(b[0]))[0];
-        const text = state === 'ok' ? (rep.level === 'completa' ? 'igual que el catálogo' : 'lo tiene') : DETAIL_TEXT[state];
-        const bring = r.online && RECAPTURABLE.includes(it.kind) && (state === 'distinta' || (state === 'corregir' && it.kind === 'position'));
-        return { serial: r.serial, state, text, guid, quick: rep.level !== 'completa', bring,
-                 when: `${rep.level} · ${ago(rep.checked_at)}` + (r.online ? '' : ' · ahora sin conexión') };
+        // Decisión 186: lo que sabe la completa se conserva tras una rápida; cada dato, con su hora.
+        const deepAt = (rep.deep || {})[guid];
+        const text = state === 'ok' ? (deepAt ? 'igual que el catálogo' : 'lo tiene') : DETAIL_TEXT[state];
+        const fixable = RECAPTURABLE.includes(it.kind) && (state === 'distinta' || (state === 'corregir' && it.kind === 'position'));
+        const after = hasOld(it.guid, r.serial);
+        return { serial: r.serial, state, text, guid, online: r.online, quick: state === 'ok' && !deepAt,
+                 bring: r.online && fixable && !after, push: fixable && after,
+                 when: state === 'sin' ? '' : (deepAt ? `a fondo · ${ago(deepAt)}` : `rápida · ${ago(rep.checked_at)}`)
+                       + (r.online ? '' : ' · ahora sin conexión') };
       });
     });
-    const detailQuick = computed(() => detailRobots.value.some(r => r.quick && r.state === 'ok'));
+    const detailQuick = computed(() => detailRobots.value.some(r => r.quick));
+    // Comprobar a fondo desde la ficha (punto 5): en todos los que responden, y el mensaje
+    // dice el resultado cuando llegan sus informes (el de cada robot trae su hora).
+    const detailChecking = computed(() => !!detailMsg.wait);
+    async function deepCheckAll(base = '') {
+      const it = catItem.value;
+      const serials = syncState.robots.filter(r => r.supported && r.online).map(r => r.serial);
+      if (!it || !serials.length) return;
+      // Cada informe, como estaba antes de pedirla: vale el siguiente que sea completo (o que traiga un error).
+      const before = Object.fromEntries(serials.map(s => [s, repKey(s)]));
+      Object.assign(detailMsg, { text: (base ? base + '. ' : '') + `Comprobando a fondo ${serials.join(', ')}…`, cls: 'pending',
+                                 wait: { guid: it.guid, serials, before, base } });
+      focusDetailMsg();
+      const ok = await Promise.all(serials.map(s => syncCheck(s, true)));
+      const w = detailMsg.wait;
+      if (!w) return;
+      if (!ok.some(Boolean)) {
+        Object.assign(detailMsg, { wait: null, cls: 'REJECTED',
+                                   text: (base ? base + '. ' : '') + 'No se pudo pedir la comprobación a fondo: ' + syncState.msg });
+        return;
+      }
+      w.serials = serials.filter((s, i) => ok[i]);      // los que no se pudieron pedir no se esperan
+    }
+    function repKey(serial) {
+      const rep = syncState.reports[serial];
+      return rep ? [rep.seq, rep.checked_at, rep.level, rep.error || ''].join('|') : '';   // seq: dos en el mismo segundo
+    }
+    watch(() => detailMsg.wait && detailMsg.wait.serials.map(repKey).join(), () => {
+      const w = detailMsg.wait;
+      if (!w || w.guid !== (catItem.value || {}).guid) return;
+      const done = w.serials.every(s => { const rep = syncState.reports[s];
+        return repKey(s) !== w.before[s] && (rep.level === 'completa' || rep.error); });
+      if (!done) return;
+      const failed = w.serials.filter(s => syncState.reports[s].error);
+      const rows = detailRobots.value.filter(r => w.serials.includes(r.serial));
+      const by = st => rows.filter(r => r.state === st).map(r => r.serial);
+      const parts = [];
+      if (by('ok').length) parts.push(`igual en ${by('ok').join(', ')}`);
+      if (by('distinta').length) parts.push(`distinto en ${by('distinta').join(', ')}`
+        + (syncState.brought[w.guid] ? (by('distinta').length === 1 ? ' (tiene' : ' (tienen')
+           + ' la versión anterior: «Llevarle la del catálogo →»)' : ''));
+      if (by('corregir').length) parts.push(`a corregir en ${by('corregir').join(', ')}`);
+      if (by('falta').length) parts.push(`no lo tiene ${by('falta').join(', ')}`);
+      if (failed.length) parts.push(`no se pudo comprobar ${failed.join(', ')}`);
+      Object.assign(detailMsg, { wait: null, cls: by('distinta').length || by('corregir').length ? 'pending' : 'ASSIGNED',
+        text: (w.base ? w.base + '. ' : '') + 'Comprobado a fondo: ' + (parts.join('; ') || 'sin datos') + '.' });
+    });
     // «Usa» y «Lo usan»: las dependencias del catálogo (`deps` de sync.py). La
     // entrada de un marcador se nombra por su marcador; él mismo no cuenta.
     function refsOf(guids, self) {
@@ -4051,26 +4280,36 @@ createApp({
       } catch (e) { return [false, { detail: 'no se pudo contactar con el FM' }]; }
     }
     // Traer al catálogo desde la ficha. Después se comprueban a fondo los robots:
-    // el que se ha traído sale igual y los demás, con la versión antigua, distintos.
+    // el que se ha traído sale igual y los demás, con la versión antigua, distintos
+    // (y su fila ofrece llevarles la del catálogo, no volver a traer la suya).
     async function recaptureFrom(it, serial) {
       const row = detailRobots.value.find(r => r.serial === serial);
       syncState.loading = true;
       const got = await recapture(serial, row.guid, it.name, row.state === 'corregir');
       syncState.loading = false;
       if (!got) return;
-      Object.assign(detailMsg, { text: got.text + (got.ok ? '. Comprobando a fondo los robots…' : ''), cls: got.ok ? 'ASSIGNED' : 'REJECTED' });
-      if (!got.ok) return;
+      if (!got.ok) {
+        // P. ej. el FM dice que este robot tiene la versión anterior: con lo que sabe el FM, la fila
+        // pasa a «Llevarle la del catálogo →» (lo que el aviso acaba de proponer); el foco, al mensaje.
+        Object.assign(detailMsg, { text: got.text, cls: 'REJECTED', wait: null });
+        await loadSync();
+        focusDetailMsg();
+        return;
+      }
       await loadSync();
-      for (const r of syncState.robots.filter(x => x.supported && x.online)) syncCheck(r.serial, true);
+      await deepCheckAll(got.text);
     }
+    // El botón pulsado se deshabilita o desaparece (Capturar): el foco, al resultado.
+    const focusDetailMsg = () => nextTick(() => document.getElementById('detail-msg')?.focus({ preventScroll: false }));
     async function captureFromDetail(d) {
-      Object.assign(detailMsg, { text: `capturando «${d.name}» de ${d.robot}…`, cls: 'pending' });
+      Object.assign(detailMsg, { text: `capturando «${d.name}» de ${d.robot}…`, cls: 'pending', wait: null });
       const [ok, out] = await postJson(`/api/create/${d.robot}/capture`, { guid: d.guid });
       Object.assign(detailMsg, ok ? { text: `«${out.name}» capturada de ${d.robot} al catálogo (${out.detail}). ` +
                                             'Ya se puede llevar a los demás robots: «Sincronizar este recurso →».', cls: 'ASSIGNED' }
                                   : { text: 'no se captura: ' + out.detail, cls: 'REJECTED' });
       if (ok) addEvent(d.robot, `capturada ${KIND_LABEL[out.kind]} «${out.name}» (${out.detail}) al catálogo`);
       await Promise.all([loadSync(), loadCreated()]);
+      focusDetailMsg();
     }
     // Lo creado desde aquí (borradores incluidos), sin leer los robots.
     async function loadCreated() {
@@ -4091,7 +4330,7 @@ createApp({
       const it = catItem.value, out = [];
       if (!it) return out;
       if (!it.draft && it.kind === 'mission') {
-        const robots = detailRobots.value.filter(r => r.state !== 'falta' && r.state !== 'mixto').map(r => r.serial);
+        const robots = detailRobots.value.filter(r => r.state !== 'falta' && r.state !== 'sin').map(r => r.serial);
         if (robots.length) out.push({ id: 'robot', label: 'Quitar de un robot', robots, verb: 'Quitar de ' + (rmState.serial || robots[0]),
           hint: 'Se borra solo de ese robot, si su fleet.yaml no la pide. Sigue en el catálogo: se puede volver a desplegar.' });
       }
@@ -4110,47 +4349,68 @@ createApp({
       // Si solo hay una forma de quitarlo, ya elegida; si hay varias, se elige a propósito.
       Object.assign(rmState, { open: true, scope: scopes.length === 1 ? scopes[0].id : '', serial: robot ? robot.robots[0] : '',
                                plan: null, text: '', cls: '' });
+      nextTick(() => document.getElementById('rm-title')?.focus());
     }
-    function rmClose() { Object.assign(rmState, { open: false, scope: '', plan: null }); }
+    // Al cerrar a mano, el foco vuelve a «Quitar…» (no se pierde al desaparecer el bloque).
+    function rmClose(refocus = true) {
+      const was = rmState.open;
+      Object.assign(rmState, { open: false, scope: '', plan: null });
+      if (refocus && was) nextTick(() => document.getElementById('rm-open')?.focus());
+    }
     async function rmReview() {
       const it = catItem.value, scope = rmState.scope, serial = rmScopeSerial.value;
+      // El texto del botón se guarda con el plan: si el alcance desaparece mientras se aplica, no se rompe.
+      const verb = (rmScopes.value.find(s => s.id === scope) || {}).verb || 'Quitar';
       rmState.busy = true;
       const [ok, out] = await postJson(RM_URL[scope](serial)[0], { guid: it.guid });
       rmState.busy = false;
       if (!ok) { Object.assign(rmState, { text: out.detail, cls: 'REJECTED' }); return; }
-      rmState.plan = { ...out, with: out.with || [], scope, serial };
+      rmState.plan = { ...out, with: out.with || [], scope, serial, verb };
+      // «Ver qué se quita» se deshabilita mientras pregunta: el foco, al plan (no se pierde en la página).
+      nextTick(() => document.getElementById('rm-plan')?.focus());
     }
+    // Si no se puede quitar: qué hacer (lo que lo usa, se abre desde aquí; fleet.yaml, en Configuración).
+    const rmTodo = computed(() => {
+      const b = (rmState.plan && rmState.plan.blockers) || [];
+      const has = re => b.some(x => re.test(x));
+      return { users: has(/\b(la|lo) usan?\b|sub-?misi/i) ? detailUsedBy.value : [],
+               config: has(/fleet\.yaml|allowlist/), wait: has(/ocupad|desplegando|no responde/) };
+    });
     async function rmApply() {
       const it = catItem.value, { scope, serial } = rmState.plan;
       rmState.busy = true;
       const [ok, out] = await postJson(RM_URL[scope](serial)[1], { guid: it.guid });
       rmState.busy = false;
       if (!ok) { Object.assign(rmState, { text: 'no se quita: ' + out.detail, cls: 'REJECTED', plan: null }); return; }
-      const also = out.with && out.with.length ? `, con ${out.with.length} más,` : '';
+      const also = out.with && out.with.length ? ` (y ${out.with.length} ${out.with.length === 1 ? 'recurso' : 'recursos'} con él)` : '';
       const from = out.robots.length ? `de ${out.robots.join(' y ')} y del catálogo` : 'del catálogo';
       const text = scope === 'robot' ? `«${out.name}» quitada de ${serial}; sigue en el catálogo.`
-        : scope === 'fleet' ? `«${out.name}» retirada de la flota${also} borrada ${from}. Su número queda reservado.`
-        : `«${out.name}» borrada${also} ${from}.`;
+        : scope === 'fleet' ? `«${out.name}» retirada de la flota: borrada ${from}${also}. Su número queda reservado.`
+        : `«${out.name}» borrada ${from}${also}.`;
       addEvent(scope === 'robot' ? serial : out.robots.join(', ') || 'catálogo',
-               scope === 'robot' ? `quitada la mission «${out.name}» (sigue en el catálogo)`
+               scope === 'robot' ? `quitada la misión «${out.name}» (sigue en el catálogo)`
                                  : `${scope === 'fleet' ? 'retirada' : 'borrada'} ${out.kind} «${out.name}» (${out.guid})`);
-      rmClose();
+      rmClose(scope === 'robot');
       Object.assign(rmState, { text, cls: 'ASSIGNED' });
-      if (scope !== 'robot') {          // ya no está en el catálogo: se cierra su ficha
+      if (scope !== 'robot') {          // ya no está en el catálogo: se cierra su ficha y el foco va a la lista
         ui.catalogSel = '';
         history.replaceState(null, '', '#catalogo');
+        nextTick(() => document.getElementById('catalog-kind')?.focus());
       }
       await Promise.all([loadSync(), loadCreated()]);
     }
     // «Sincronizar este recurso →» (ficha del Catálogo, resultado de Crear): a
     // Sincronización con él marcado, en los robots donde falta o es distinto
     // (si está en todos, en todos: para comprobarlo), y con la vista previa pedida.
-    function syncResource(it) {
+    // `serials`: solo a esos (desde una fila de «En los robots»).
+    // `replace`: con «Sustituir» ya marcado en él (es lo que se ha pedido: llevarle la del catálogo).
+    function syncResource(it, serials = null, replace = false) {
       for (const k of Object.keys(syncState.sel)) syncState.sel[k] = false;
       syncState.sel[it.guid] = true;
+      if (replace) for (const s of serials || []) syncState.replace[s] = { ...(syncState.replace[s] || {}), [it.guid]: true };
       const all = syncState.robots.filter(r => r.supported).map(r => r.serial);
       const need = all.filter(s => ((syncState.reports[s] || {}).state || {})[it.guid] !== 'ok');
-      setTargets(need.length ? need : all);
+      setTargets(serials || (need.length ? need : all));
       syncState.autoPreview = true;
       location.hash = '#sincronizacion/flota/' + encodeURIComponent(it.guid);
     }
@@ -4167,7 +4427,13 @@ createApp({
       if (syncCatalog.value.some(i => i.guid === guid)) {
         for (const k of Object.keys(syncState.sel)) syncState.sel[k] = false;
         syncState.sel[guid] = true;
-        if (syncState.autoPreview) { syncState.autoPreview = false; syncPreview(); }
+        if (syncState.autoPreview) {
+          syncState.autoPreview = false;
+          syncPreview();
+          // Punto 9: la vista previa queda abajo (en móvil, dos pantallas): se va a «Robots».
+          nextTick(() => { const h = document.getElementById('sync-robots-title');
+                           if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
+        }
       }
     }
     // «Ver en el mapa» (#flota/<robot>): abre el mapa donde está ese robot, si es del site de la flota.
@@ -4208,8 +4474,14 @@ createApp({
       if (ui.tab === 'sincronizacion' || ui.tab === 'configurador') loadSync().then(applySyncContext);
       if (ui.tab === 'configurador') loadConfig();
       if (ui.tab === 'flota') loadFleetMaps().then(showRobotMap);
+      // `#guia/<apartado>`: la Guía con ese apartado abierto (p. ej. desde el aviso de cambiadores).
+      if (ui.tab === 'guia') {
+        const sec = document.getElementById('guia-' + (location.hash.slice(1).split('/')[1] || ''));
+        if (sec) nextTick(() => { sec.open = true; sec.scrollIntoView({ block: 'start' });
+                                  sec.querySelector('summary')?.focus({ preventScroll: true }); });
+      }
     }
-    window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); onTab(); window.scrollTo(0, 0); });
+    window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); window.scrollTo(0, 0); onTab(); });
     onTab();
 
     loadFleet();
@@ -4219,11 +4491,11 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh,
-             canPreview, canDeploy, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
-             fleetRows, whereIs, syncCheck, prepare, removeFromRobot,
-             toolLabel, toolCheckDue, toolChecked,
-             catalogItems, catItem, catCreated, placeOf, openItem, detailRobots, detailQuick, detailUses, detailUsedBy, detailMsg,
-             recaptureFrom, captureFromDetail, rmState, rmScopes, rmScopeSerial, rmOpen, rmClose, rmReview, rmApply,
+             canPreview, canDeploy, deployLabel, quietOp, hasOld, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
+             fleetRows, whereIs, ago, syncCheck, prepare, removeFromRobot,
+             toolLabel, toolText, PARAM_KIND, toolCheckDue, toolChecked, toolCheckMsg,
+             catalogItems, catItem, catCreated, placeOf, openItem, backToList, detailRobots, detailQuick, detailUses, detailUsedBy, detailMsg,
+             detailChecking, deepCheckAll, recaptureFrom, captureFromDetail, rmState, rmScopes, rmScopeSerial, rmOpen, rmClose, rmReview, rmApply, rmTodo,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
              cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, maintLabel, toggleMaintenance, retryIdle, resetRobot, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,

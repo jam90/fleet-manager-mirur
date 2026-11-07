@@ -49,7 +49,7 @@ def test_retirar_marcador_se_lleva_su_entrada(sync, tmp_path):
 
 def test_quitar_de_un_robot(sync, tmp_path):
     sync._wanted = []                                                      # fleet.yaml no pide nada
-    assert sync.remove_blockers(M_SUB) == ["la usan en este robot: principal"]
+    assert sync.remove_blockers(M_SUB) == ["la usan en este robot: principal (la cargan como sub-misión: una misión dentro de otra, con «Load mission»)"]
     assert sync.remove_blockers(M_MAIN) == []
     sync.delete(M_MAIN)
     assert M_MAIN in Catalog.load(tmp_path).items                          # el catálogo no cambia
@@ -57,7 +57,7 @@ def test_quitar_de_un_robot(sync, tmp_path):
     assert sync.remove_blockers(M_SUB) == []                               # ya nadie la usa aquí
     sync._wanted = ["principal"]
     assert "la necesita este robot" in sync.remove_blockers(M_SUB)[0]      # la pide (vía principal)
-    assert "una position se retira" in sync.remove_blockers(P_NORMAL)[0]
+    assert "una posición se retira" in sync.remove_blockers(P_NORMAL)[0]
 
 
 def test_sobrantes_en_la_comprobacion(sync):

@@ -141,7 +141,7 @@ Example, queued (both robots busy):
 ```json
 {
   "orderId": "mes-000125", "status": "QUEUED", "serial": null, "queuePosition": 1,
-  "description": "ningún robot puede atender la order: mir-1: ocupado; mir-2: batería 17.0% < 25%",
+  "description": "ahora no puede ningún robot: mir-1: ocupado; mir-2: batería 17.0% < 25%",
   "...": "…"
 }
 ```
@@ -210,7 +210,8 @@ time starts again. If the robot did have it, it will run twice.
 
 Fleet orders waiting for a robot, in order (the next one first):
 `[{orderId, orderUpdateId, actionType, status, receivedAt, waiting}]`, where
-`waiting` is why no robot has taken it yet. `status` is `QUEUED`, or
+`waiting` is why no robot has taken it yet. If its action asks for a tool,
+it also has `tool` (the one it asks for). `status` is `QUEUED`, or
 `ASSIGNING` (with `serial`) for an order in doubt after an FM restart: the FM
 does not know yet whether that robot received it, and retries every 30 s;
 cancelling it discards it, `…/requeue` retries it. `503` until the FM has published

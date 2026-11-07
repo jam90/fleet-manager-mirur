@@ -3661,6 +3661,138 @@ menores, en `../revision-interfaz/informes/2026-11-06-cambios-del-dia.md`.
 
 (186–188, decididas por el implementador con permiso del usuario.)
 
+## 2026-11-07 — Corregido lo de la revisión de la interfaz (185–188 aplicadas)
+
+Lo del informe `../revision-interfaz/informes/2026-11-06-cambios-del-dia.md`,
+punto por punto:
+
+- **Catálogo, ficha.** El botón de Quitar lleva el texto que guardó su plan
+  (el error de consola al quitar de sim-2). Tras retirar o borrar, el
+  resultado sale encima de la lista (en móvil la ficha vacía no se ve). Sin
+  dato del robot, «sin comprobar» (no «no lo tiene»); tras capturar, el FM
+  comprueba enseguida (rápida) todos los robots. «Comprobar a fondo» en la
+  propia ficha, y el mensaje dice el resultado cuando llegan los informes.
+  Tras «Traer al catálogo», las filas de los demás robots ofrecen «Llevarle
+  la del catálogo →» (a Sincronización, solo a ese robot) en vez de volver a
+  traer su versión antigua. Si no se puede quitar, debajo dice qué hacer (lo
+  que lo usa se abre desde ahí; lo de `fleet.yaml`, en Configuración). Foco:
+  al abrir y cerrar «Quitar…», al volver a la lista y tras «Revisado».
+  «Ver todo el catálogo», solo con site. Lo que cambia al traer, con palabras
+  («posición x», no `pos_x`).
+- **Sincronización.** Decisión 187 hecha: sin `confirm()`; cada vista previa
+  dice «se despliega: …» o «se queda fuera: …», lo que se borra y se vuelve a
+  crear, y el botón «Desplegar en sim-1 y sim-2». El aviso de ocupado, solo si
+  hay algo que hacer. Las filas «ya está igual», plegadas; sin vista previa no
+  salen apartados vacíos. `aria-live` en los resultados. Desde la ficha
+  («Sincronizar este recurso →») se va a «Robots» (en móvil la vista previa
+  quedaba dos pantallas más abajo).
+- **Decisión 186 hecha** (`fm/web/sync_monitor.py`): la rápida conserva lo
+  que vio la completa en lo que sigue ahí; el informe trae `deep`
+  (guid → hora de la completa) y la web dice de cuándo es cada dato
+  («a fondo · hace 20 min»). Desplegar da por igual lo hecho y olvida lo que
+  falló; traer o capturar da por igual el robot de origen y olvida lo de los
+  demás. Una completa pedida con otra en curso se hace al acabar esta (antes,
+  409 y la web se quedaba esperando).
+- **Decisión 188 hecha**: `POST /api/tools/checked` guarda «Revisado» en el FM
+  (por arranque) con la hora y la dirección desde la que se pulsó (no hay
+  usuarios en el FM); va en `GET /api/fleet` (`tool_check`) y por el
+  WebSocket (`fm/tools`), y se quita en todos los navegadores. El aviso dice
+  qué hacer si no coincide y enlaza a la Guía (`#guia/herramientas`, enlace
+  nuevo a un apartado abierto de la Guía).
+- **Herramientas en Operación.** La garra que pide cada tarea, al enviarla y
+  en la cola (`tool` en `fleet/queue`); en la tarjeta y en Robots, la que
+  pide la tarea en curso (`information[]` `TOOL_REQUESTED`, del core, como
+  `AUTO_CHARGE`); un evento cuando cambia la que lleva. El desplegable de la
+  herramienta, con la descripción de `tools:`, y la etiqueta en una línea.
+- **Cola.** Mientras una order espera, el motivo empieza por «ahora no puede
+  ningún robot» (`assigner.NOBODY` se cambia en `Dispatcher._wait`): el de
+  antes sonaba a rechazo.
+- **Decisión 185 hecha**: misiones y posiciones en toda la interfaz, la Guía y
+  los mensajes del servidor que llegan a ella (`create.py`, `remove.py`,
+  `server.py`). No en el log ni en los `errorDescription` VDA. Se quedan los
+  nombres de la web del MiR: «Robot position», «Load mission».
+- **Guía.** Los «Capturar» de añadir misión, posición y zona van a la ficha
+  del Catálogo (no a «Creado desde aquí»); la cola cuenta la espera por
+  herramienta; herramientas cuenta qué se ve en Operación y el «Revisado»
+  común; los cambios de hoy (comprobar a fondo en la ficha, despliegue
+  revisado en la página).
+
+Decisión nueva:
+
+189. **«Sub-misión»** (decisión del usuario): una misión que otra carga con
+     «Load mission» del Blockly del MiR. No es un tipo de recurso, solo esa
+     relación. Se escribe con guion y, donde sale, se explica: «(una misión
+     dentro de otra, con «Load mission»)». Sale al sincronizar (va sola con
+     la que la carga), al capturar (hay que capturarla antes) y al quitar
+     (no se quita mientras otra la cargue).
+
+190. **Tipo de tarea, tarea y acción** (decisión del usuario). Lo que el FM
+     llama *action* (`actions:` de `fleet.yaml`, el `actionType` de VDA 5050)
+     es en la interfaz un **tipo de tarea** («Nuevo tipo de tarea», «Qué
+     robot hace cada tipo de tarea»); cada order enviada es una **tarea**.
+     **Acción** es cada bloque de una misión del MiR («4 acciones») o lo que
+     hace una zona: la misión es el conjunto de sus acciones. No se llama
+     «misión» al tipo de tarea: apunta a una misión, pero no es ella (dos
+     pueden lanzar la misma con límites distintos, y fuera del MiR no hay
+     misiones). La Guía (glosario) dice que en VDA 5050 es una *action*. En
+     el código, `fleet.yaml` y la API sigue siendo `action`.
+
+Tests: `tests/test_sync_monitor.py` (186), `test_cambiadores_revisados_una_vez_para_todos`
+(188) y `test_la_cola_dice_que_herramienta_pide_y_que_espera`.
+
+191. **Más términos** (decisiones del usuario, mismo día): los mensajes de
+     rechazo de una order (los `errorDescription` que se ven en Operación:
+     «la misión 'coger' no existe», «posición 'X' no admitida»…) también
+     dicen misión y posición, aunque los lea el MES (`translate.py`,
+     `driver.py`, descripciones del factsheet); el log sigue igual. En
+     Configuración, las claves de `fleet.yaml` se enseñan como en el fichero
+     («mission: coger»): que coincidan con lo que se edita. La pose del
+     robot (x, y, θ) en Robots se rotula «Pose robot», para no confundirla con
+     una posición del catálogo. «Revisado … desde <IP>» se queda así.
+
+Segunda pasada del revisor (mismo día), corregido:
+
+- Lo traído de un robot lo recuerda el FM (`SyncMonitor.brought`: de qué
+  robot, cuándo y qué robots tienen aún la versión anterior, hasta que se
+  les despliegue; en `GET /api/sync`). Así, tras recargar o en otro
+  navegador, ni la ficha ni la vista previa ofrecen «Traer al catálogo» a
+  un robot con la versión anterior (desharía lo traído), y si se trae igual
+  la confirmación avisa. «Llevarle la del catálogo →» llega con «Sustituir»
+  ya marcado.
+- Vista previa: «nada que cambiar» ya no sale en rojo como «se queda fuera»:
+  «ya lo tiene todo igual», o «marca «Sustituir» en lo distinto para
+  llevárselo». Lo plegado («ya está igual», y «sin cambios» tras desplegar)
+  no esconde avisos (`warning`). «2 hechos», no «2 hecho».
+- Foco al resultado tras «Traer», «Capturar», «Comprobar a fondo» y
+  «Desplegar»; el mensaje de la ficha, junto a sus botones. `aria-live` en
+  la revisión de «Quitar».
+- Colores de texto con contraste ≥ 4,5:1 (`--ok-ink`, `--warn-ink`,
+  `--bad-ink`, en claro y oscuro): los de antes son para rellenos y bordes.
+- Al quitar una misión que otra carga, el bloqueo dice «la cargan como
+  sub-misión (…)» (decisión 189). Botones de Crear: «Posición», «Misión».
+
+Tercera pasada del revisor, corregido:
+
+- Traer la versión de un robot que tiene la anterior a otra traída lo para
+  el FM: `POST /api/sync/<robot>/recapture` responde 409
+  (`detail.code: "older"`) salvo `force: true`; la web pide confirmarlo. Así
+  no depende de lo que sepa una pestaña abierta antes. Además, cada informe
+  del WebSocket lleva `brought`, y la fila de «Llevarle la del catálogo →»
+  dice «versión anterior a la traída de sim-1 · hace …».
+- Los informes llevan `seq` (número de informe): la ficha ya no se queda en
+  «Comprobando a fondo…» si dos completas caen en el mismo segundo.
+- Todos los textos de color usan los tonos `--*-ink` (también `--run-ink`):
+  pastillas, chips, estados, marcas y mensajes de Configuración.
+- «Ver qué se quita»: región viva fija y el foco al plan. «2 ya están igual».
+  Restos de la decisión 190 en la Guía y en Configuración.
+
+Cuarta pasada del revisor: los arreglos funcionan. Corregido además: tras
+cancelar el «OJO…» de traer, la ficha relee lo traído (la fila pasa a
+«Llevarle la del catálogo →») y el foco va al mensaje; el mensaje de una ficha
+se borra si otra página trae ese recurso; contraste de `--ink-3` sobre los
+paneles, de los botones de peligro (`--bad-btn`) y de los enlaces en oscuro
+(`--link`); los dos mensajes del driver que quedaban en inglés o en jerga.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3691,10 +3823,8 @@ decisión 179).
 
 **En curso / siguiente** (al cerrar el 2026-11-06, por la tarde; robots apagados)
 
-0. **Corregir lo de la revisión de interfaz** y aplicar 185–188: el informe
-   está en `../revision-interfaz/informes/2026-11-06-cambios-del-dia.md`.
-   Al acabar, volver a pasar el revisor (reiniciar Claude Code para que
-   cargue `revisor-interfaz` como agente propio).
+0. ~~Corregir lo de la revisión de interfaz y aplicar 185–188~~ (hecho el
+   2026-11-07, arriba). Falta volver a pasar el revisor de interfaz.
 1. **Herramientas con los MiR** (decisión 184). El usuario dirá qué
    registro PLC usaba para la herramienta montada (hoy, el 1 por defecto).
    Probar con missions falsas: `cambio_herramienta` que solo escribe el

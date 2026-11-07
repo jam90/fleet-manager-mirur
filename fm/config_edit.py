@@ -108,7 +108,7 @@ def plan(text: str, edits: dict) -> list[Op]:
     catalog = current.get("actions") or {}
     for name, change in (edits.get("actions") or {}).items():
         if not isinstance(name, str) or not ACTION_NAME.match(name):
-            raise EditError(f"'{name}' no vale como nombre de action: letras, números, '_', '-' o '.', "
+            raise EditError(f"'{name}' no vale como nombre de tipo de tarea: letras, números, '_', '-' o '.', "
                             "empezando por letra")
         if change is None:
             if name in catalog:
@@ -192,7 +192,7 @@ def _idle(where: str, value) -> dict:
         raise EditError(f"{where}: se espera {{action, after_s, params, zone}}")
     action = value.get("action")
     if not isinstance(action, str) or not ACTION_NAME.match(action):
-        raise EditError(f"{where}.action: elige una action del catálogo")
+        raise EditError(f"{where}.action: elige un tipo de tarea del catálogo")
     out: dict = {"action": action}
     if value.get("after_s") is not None:
         out["after_s"] = _number(f"{where}.after_s", value["after_s"], float)

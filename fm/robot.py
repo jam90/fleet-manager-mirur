@@ -19,7 +19,7 @@ from fm.vda5050.order import Order, OrderRejected
 from fm.tools import needed_tool, tool_problem
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
                               E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, E_TOOL_NOT_AVAILABLE, I_MAINTENANCE,
-                              I_MAINTENANCE_PENDING, Error, Info, State)
+                              I_MAINTENANCE_PENDING, I_TOOL_REQUESTED, Error, Info, State)
 from fm.tasks import iso
 from fm.vda5050.state_builder import to_vda_state
 
@@ -150,7 +150,19 @@ class Robot:
             ov.information.append(Info(I_MAINTENANCE, "INFO", iso(self.maintenance_since)))
         elif self.in_maintenance:
             ov.information.append(Info(I_MAINTENANCE_PENDING, "INFO", self.maintenance_reason))
+        tool = self.requested_tool()
+        if tool:
+            ov.information.append(Info(I_TOOL_REQUESTED, infoDescriptor=tool))
         return ov
+
+    def requested_tool(self) -> str | None:
+        """La herramienta que pide la order en curso (decisión 184), o None."""
+        a = self.orders.active
+        key = a and a.alive and self.cfg.tool_inputs.get(a.job.action.actionType)
+        if not key:
+            return None
+        value = a.job.action.params().get(key)
+        return str(value) if value is not None else None
 
     def state(self, header: dict) -> State:
         """`state` VDA de este robot: telemetría + overlay del FM + el gancho

@@ -77,7 +77,7 @@ from typing import Iterable, Mapping
 from fm.adapters.mir.client import MirApiError
 from fm.adapters.mir.remove import retired, usage_blockers
 from fm.adapters.mir.sync import (AUTO_CHILD_TYPES, FACTORY, FOLDERS, GUIDISH, Catalog, is_std,
-                                  mission_group_body, normalized_actions, normalized_zone, parse_std,
+                                  mission_group_body, n_actions, normalized_actions, normalized_zone, parse_std,
                                   std_guid)
 
 POSITION_NORMAL = 0
@@ -110,7 +110,7 @@ ZONE_TYPES = {
                   "esquivar un obstáculo."},
     203: {"label": "Zona direccional",
           "help": "Dentro de ella el trayecto siempre va en el sentido de la flecha (se fija en el editor "
-                  "del mapa). Las positions cercanas deben mirar en ese sentido."},
+                  "del mapa). Las posiciones cercanas deben mirar en ese sentido."},
     208: {"label": "Zona de acceso",
           "help": "El robot ignora los obstáculos detectados dentro al planificar, para pasar por rampas "
                   "o puertas. Si encuentra uno, se acerca y espera a que desaparezca."},
@@ -192,8 +192,8 @@ def group_session(cat: Catalog, group_guid: str, site: str | None) -> str:
         return max(set(sessions), key=sessions.count)
     if site and cat.kind(site) == "session" and site in cat.items:
         return site
-    raise CreateError(f"el grupo {cat.items[group_guid]['name']!r} aún no tiene missions y no hay site de la "
-                      "flota: elígelo en la cabecera («Site») para saber en qué site va la mission")
+    raise CreateError(f"el grupo {cat.items[group_guid]['name']!r} aún no tiene misiones y no hay site de la "
+                      "flota: elígelo en la cabecera («Site») para saber en qué site va la misión")
 
 
 def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = (),
@@ -224,7 +224,7 @@ def create_mission(sync, name: str, group_guid: str, others: Iterable[str] = (),
         names = {m["name"] for m in c._req("GET", f"mission_groups/{group_guid}/missions")}
         names |= {d["name"] for d in same_group}
         if name in names:
-            raise CreateError(f"ya hay una mission {name!r} en el grupo {group['name']!r}")
+            raise CreateError(f"ya hay una misión {name!r} en el grupo {group['name']!r}")
         taken = set(every) | _retired(sync) | robot_std_guids(c, "mission") | set(others)
         guid = next_guid("mission", inst, group_num, taken, per_parent=False)
         doc = {"guid": guid, "name": name, "description": "", "group_id": group_guid,
@@ -271,7 +271,7 @@ def create_position(sync, name: str, map_guid: str, others: Iterable[str] = (),
         raise CreateError("falta el nombre")
     kind = POSITION_TYPES.get(type_id)
     if kind is None:
-        raise CreateError(f"tipo de position {type_id} no admitido aquí: créala en la web del MiR")
+        raise CreateError(f"tipo de posición {type_id} no admitido aquí: créala en la web del MiR")
     cat = sync.catalog()
     mp = cat.items.get(map_guid)
     if mp is None or cat.kind(map_guid) != "map":
@@ -325,7 +325,7 @@ def _check_name_free(name: str, every: Mapping[str, dict], cat, robot: Mapping[s
     if where:
         existing, place = where
         same = "" if existing == name else f" ({existing!r})"
-        raise CreateError(f"ya hay una position con ese nombre{same} en {place}. El editor de missions de la web "
+        raise CreateError(f"ya hay una posición con ese nombre{same} en {place}. El editor de misiones de la web "
                           "del MiR lista las de todos los mapas sin decir de cuál es: elige otro nombre")
 
 
@@ -642,7 +642,7 @@ def copy_map(sync, source: str, name: str, affix: str, at: str = "suffix", sessi
     if at not in AFFIX_AT:
         raise CreateError(f"¿prefijo o sufijo? ({at!r} no es ninguno de los dos)")
     if not (affix or "").strip():
-        raise CreateError("falta el texto que se añade al nombre de las positions copiadas: sin él, se "
+        raise CreateError("falta el texto que se añade al nombre de las posiciones copiadas: sin él, se "
                           "repetirían los nombres del original (decisión 174)")
     cat = sync.catalog()
     src = cat.items.get(source)
@@ -684,7 +684,7 @@ def copy_map(sync, source: str, name: str, affix: str, at: str = "suffix", sessi
         seen.setdefault(fold_name(new), p["name"])
     if clashes:
         shown = "; ".join(clashes[:5]) + (f"; y {len(clashes) - 5} más" if len(clashes) > 5 else "")
-        raise CreateError(f"con ese {'prefijo' if at == 'prefix' else 'sufijo'} se repetirían nombres de position: "
+        raise CreateError(f"con ese {'prefijo' if at == 'prefix' else 'sufijo'} se repetirían nombres de posición: "
                           f"{shown}. Prueba con otro texto")
 
     taken = set(every) | _retired(sync) | set(others)
@@ -764,14 +764,15 @@ def capture(sync, guid: str) -> dict:
         write_doc(sync.catalog_dir, k, d)
     main = docs[0][1]
     if kind == "mission":
-        detail = f"{len(main['actions'])} actions"
+        detail = n_actions(len(main['actions']))
     elif kind == "zone":
         detail = (f"{ZONE_TYPES[main['type_id']]['label'] if main['type_id'] in ZONE_TYPES else main['type_id']}, "
                   f"{len(main['polygon'])} vértices"
-                  + (f", {len(main['actions'])} acciones" if main["actions"] else ""))
+                  + (f", {n_actions(len(main['actions']))}" if main["actions"] else ""))
     else:
         detail = f"tipo {main['type_id']}" + (" + entrada" if len(docs) > 1 else "")
-    return {"kind": kind, "guid": guid, "name": main["name"], "detail": detail}
+    return {"kind": kind, "guid": guid, "name": main["name"], "detail": detail,
+            "guids": [d["guid"] for _, d in docs]}
 
 
 def _capture_mission(sync, cat: Catalog, old: dict, source: str | None = None,
@@ -803,7 +804,7 @@ def _capture_mission(sync, cat: Catalog, old: dict, source: str | None = None,
             elif v in known:
                 p["value"] = known[v]
             elif GUIDISH.match(v):            # GUID propio del robot
-                errors.append(f"action {a['priority']} ({a['action_type']}) usa {v}, que no está en el "
+                errors.append(f"la acción {a['priority']} ({a['action_type']}) usa {v}, que no está en el "
                               "catálogo (créalo desde aquí o captúralo con scripts/catalog_capture.py)")
     if errors:
         raise CreateError(f"no se captura {old['name']!r}: " + "; ".join(errors))
@@ -895,7 +896,7 @@ def recapture(sync, guid: str) -> dict:
                                                              "recurso»)" if guid in cat.drafts else ""))
     kind = cat.kind(guid)
     if kind not in RECAPTURABLE:
-        raise CreateError(f"un recurso de tipo {kind} no se trae del robot: solo missions, positions, zonas y mapas")
+        raise CreateError(f"un recurso de tipo {kind} no se trae del robot: solo misiones, posiciones, zonas y mapas")
     if old.get("creada_por_mir"):
         # La entrada de un marcador o cargador va con su madre: se trae la
         # madre, que se lleva también la entrada (en la vista previa, la
@@ -923,7 +924,7 @@ def recapture(sync, guid: str) -> dict:
         every = {g: d for g, d in {**cat.items, **cat.drafts}.items() if g not in mine}
         where = _name_in_use(main["name"], every, cat, {}, {})
         if where:
-            raise CreateError(f"en {sync.serial} se llama {main['name']!r}, y ya hay una position con ese nombre en "
+            raise CreateError(f"en {sync.serial} se llama {main['name']!r}, y ya hay una posición con ese nombre en "
                               f"{where[1]}: cámbiaselo en su web y vuelve a traerla")
     stamp = {"robot": sync.serial, "fecha": date.today().isoformat()}
     for _, d in docs:
@@ -942,7 +943,8 @@ def recapture(sync, guid: str) -> dict:
         changed.append("entrada")
     for k, d in docs:
         write_doc(sync.catalog_dir, k, d)
-    return {"kind": kind, "guid": guid, "name": main["name"], "robot": sync.serial, "changed": changed}
+    return {"kind": kind, "guid": guid, "name": main["name"], "robot": sync.serial, "changed": changed,
+            "guids": [d["guid"] for _, d in docs]}
 
 
 def _recapture_map(sync, cat: Catalog, old: dict) -> tuple[dict, bytes]:
@@ -1060,7 +1062,7 @@ def bring(sync, kind: str, source: str, others=lambda kind, parent: set(),
         else:
             docs, name = _bring_mission(sync, cat, every, source, prev, others)
         if source in set(config_refs):
-            raise CreateError(f"{name!r} es la mission de una action de fleet.yaml por su GUID propio: cámbiala en "
+            raise CreateError(f"{name!r} es la misión de un tipo de tarea de fleet.yaml por su GUID propio: cámbiala en "
                               "Configuración a la del catálogo cuando esté, y vuelve a traerla")
         olds = {source} | ({h["guid"] for h in c._req("GET", f"positions/{source}/helper_positions")}
                            if kind == "position" and docs[1:] else set())
@@ -1103,7 +1105,7 @@ def bring(sync, kind: str, source: str, others=lambda kind, parent: set(),
 
 def _bring_position(sync, cat, every, source, prev, others, other_names):
     c = sync.client
-    p = _get_or(c, f"positions/{source}", f"la position {source} ya no está en {sync.serial}")
+    p = _get_or(c, f"positions/{source}", f"la posición {source} ya no está en {sync.serial}")
     map_guid = p.get("map_id") or str(p.get("map") or "").rstrip("/").split("/")[-1]
     if map_guid not in cat.items or cat.kind(map_guid) != "map":
         raise CreateError(f"{p['name']!r} está en un mapa que no es del catálogo: captura el mapa entero")
@@ -1125,7 +1127,7 @@ def _bring_position(sync, cat, every, source, prev, others, other_names):
         robot.setdefault(fold_name(q["name"]), (q["name"], f"{sync.serial} (mapa {maps.get(mg, mg)!r})"))
     where = _name_in_use(p["name"], {g: d for g, d in every.items() if g not in mine_cat}, cat, robot, other_names)
     if where:
-        raise CreateError(f"ya hay una position {where[0]!r} en {where[1]}: cámbiale el nombre a {p['name']!r} en la "
+        raise CreateError(f"ya hay una posición {where[0]!r} en {where[1]}: cámbiale el nombre a {p['name']!r} en la "
                           "web del MiR y vuelve a traerla (la web lista las de todos los mapas juntas)")
     _, inst, _, map_num = parse_std(map_guid)
     taken = set(every) | _retired(sync) | robot_std_guids(c, "position", map_guid) | set(others("position", map_guid))
@@ -1170,14 +1172,14 @@ def _bring_zone(sync, cat, every, source, prev, others):
 
 def _bring_mission(sync, cat, every, source, prev, others):
     c = sync.client
-    m = _get_or(c, f"missions/{source}", f"la mission {source} ya no está en {sync.serial}")
+    m = _get_or(c, f"missions/{source}", f"la misión {source} ya no está en {sync.serial}")
     group = cat.items.get(m["group_id"])
     if group is None or cat.kind(m["group_id"]) != "missiongrp":
         raise CreateError(f"{m['name']!r} está en un grupo que no es del catálogo: muévela en su web a uno que sí")
     same = [d["name"] for g, d in every.items() if cat.kind(g) == "mission" and g != prev
             and d.get("group_id") == m["group_id"] and fold_name(d["name"]) == fold_name(m["name"])]
     if same:
-        raise CreateError(f"ya hay una mission {same[0]!r} en el grupo {group['name']!r} del catálogo. Si esta es "
+        raise CreateError(f"ya hay una misión {same[0]!r} en el grupo {group['name']!r} del catálogo. Si esta es "
                           "una versión nueva de aquella, usa «Adoptar» en «Crear o importar recurso»; si no, "
                           "cámbiale el nombre en su web")
     if prev:
@@ -1237,11 +1239,11 @@ def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = 
     cat = sync.catalog()
     with sync.lock:
         c = sync.client
-        m = _get_or(c, f"missions/{source}", f"la mission {source} no está en {sync.serial}")
+        m = _get_or(c, f"missions/{source}", f"la misión {source} no está en {sync.serial}")
         if target:
             old = cat.items.get(target)
             if old is None or cat.kind(target) != "mission":
-                raise CreateError(f"{target} no es una mission del catálogo")
+                raise CreateError(f"{target} no es una misión del catálogo")
         else:
             group = cat.items.get(m["group_id"])
             if group is None or cat.kind(m["group_id"]) != "missiongrp":
@@ -1257,7 +1259,7 @@ def adopt(sync, source: str, target: str | None = None, others: Iterable[str] = 
         kind, doc = _capture_mission(sync, cat, old, source=source)
     write_doc(sync.catalog_dir, kind, doc)
     return {"kind": kind, "guid": doc["guid"], "name": doc["name"], "source": source,
-            "replaced": bool(target), "detail": f"{len(doc['actions'])} actions"}
+            "replaced": bool(target), "detail": n_actions(len(doc['actions']))}
 
 
 # ------------------------------------------------------------------- borrar

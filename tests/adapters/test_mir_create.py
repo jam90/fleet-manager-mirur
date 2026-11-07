@@ -48,7 +48,7 @@ def test_crear_mission_vacia_con_guid_y_borrador(sync, tmp_path):
 def test_crear_mission_errores(sync):
     with pytest.raises(CreateError, match="falta el nombre"):
         sync.create_mission("  ", GRP)
-    with pytest.raises(CreateError, match="ya hay una mission 'principal'"):
+    with pytest.raises(CreateError, match="ya hay una misión 'principal'"):
         sync.create_mission("principal", GRP)                 # está en el catálogo
     # Un grupo del catálogo que el robot aún no tiene se crea en él con la mission.
     del sync.client.db["mission_groups"][GRP]
@@ -63,7 +63,7 @@ def test_crear_position_donde_esta_el_robot(sync, tmp_path):
     p = sync.client.db["positions"][r["guid"]]
     assert (p["type_id"], p["pos_x"], p["pos_y"], p["orientation"]) == (0, 1.235, 4.5, 89.99)
     assert r["guid"] in Catalog.load(tmp_path).drafts
-    with pytest.raises(CreateError, match=r"ya hay una position con ese nombre en el catálogo \(mapa 'm'\)"):
+    with pytest.raises(CreateError, match=r"ya hay una posición con ese nombre en el catálogo \(mapa 'm'\)"):
         sync.create_position("Mesa nueva", MAP)
     sync.client.status["map_id"] = "otro-mapa"
     with pytest.raises(CreateError, match="no está trabajando en el mapa"):
@@ -78,7 +78,7 @@ def test_capturar_mission_creada_y_editada_en_el_mir(sync, tmp_path):
         "action_type": "move", "priority": 1, "parameters": [{"id": "position", "value": P_NORMAL,
                                                              "input_name": "destino"}]})
     out = sync.capture(g)
-    assert out["detail"] == "1 actions"
+    assert out["detail"] == "1 acción"
     doc = Catalog.load(tmp_path).items[g]
     assert "borrador" not in doc and doc["actions"][0]["parameters"][0]["value"] == P_NORMAL
     assert doc["session_id"] == SES and doc["group_id"] == GRP
@@ -176,7 +176,7 @@ def test_adoptar_en_lugar_de_una_del_catalogo(sync, tmp_path):
     rows = sync.adoptable()
     assert [(r["guid"], r["suggest"], r["adopted_as"]) for r in rows] == [(src, M_SUB, None)]
     out = sync.adopt(src, M_SUB)
-    assert out["guid"] == M_SUB and out["replaced"] and out["detail"] == "2 actions"
+    assert out["guid"] == M_SUB and out["replaced"] and out["detail"] == "2 acciones"
     doc = Catalog.load(tmp_path).items[M_SUB]
     assert len(doc["actions"]) == 2 and doc["session_id"] == SES          # la session, la del catálogo
     assert doc["_origen"]["robot"] == "mir-2" and doc["_origen"]["guid"] == src
@@ -192,7 +192,7 @@ def test_adoptar_como_nueva_y_errores(sync, tmp_path):
     assert Catalog.load(tmp_path).items[out["guid"]]["name"] == "otra"
     with pytest.raises(CreateError, match="Capturar"):
         sync.adopt(M_SUB)                                                 # ya tiene GUID de la flota
-    with pytest.raises(CreateError, match="no es una mission"):
+    with pytest.raises(CreateError, match="no es una misión"):
         sync.adopt(src, GRP)
     bad = _web_mission(sync, "rota", {"priority": 1, "action_type": "move", "scope": None, "parameters": [
         {"id": "position", "value": "c7a22ec6-371d-11f1-99c4-000e8eb69199", "input_name": None}]})
@@ -392,7 +392,7 @@ def test_crear_grupo_y_su_primera_mission(sync, tmp_path):
     assert sync.client.db["missions"][sync.create_mission("segunda", g)["guid"]]["session_id"] == SES
     assert {d["kind"] for d in sync.create_choices()["created"]} >= {"missiongrp", "mission"}
     # No se borra con missions dentro: borradores, capturadas o hechas en la web del robot.
-    assert "tiene missions en borrador: primera, segunda" in sync.delete_blockers(g, {}, [])[0]
+    assert "tiene misiones en borrador: primera, segunda" in sync.delete_blockers(g, {}, [])[0]
     sync.capture(m)
     assert "la usan otros recursos del catálogo: primera" in " ".join(sync.delete_blockers(g, {}, []))
     assert "primera, segunda" in sync.in_use_here(g)[0]
@@ -650,7 +650,7 @@ def test_reintentar_traer_no_borra_el_original_si_la_copia_es_distinta(sync, tmp
 
 def test_traer_position_con_nombre_repetido(sync):
     _web_position(sync, name="A", type_id=0)              # «A» ya está en el catálogo
-    with pytest.raises(CreateError, match=r"ya hay una position 'A' en el catálogo"):
+    with pytest.raises(CreateError, match=r"ya hay una posición 'A' en el catálogo"):
         sync.bring("position", "rw")
     _web_position(sync, guid="rx", name="Montaje", type_id=0)
     otros = {"montaje": ("Montaje", "mir-1 (mapa 'suberri')")}
@@ -723,5 +723,5 @@ def test_recapturar_mission_y_mapa(sync, tmp_path):
     assert out["changed"] == ["origin_x", "imagen"]
     cat = Catalog.load(tmp_path)
     assert cat.items[MAP]["origin_x"] == -1.5 and cat.map_png(MAP) == _png(6, 6)
-    with pytest.raises(CreateError, match="solo missions, positions, zonas y mapas"):
+    with pytest.raises(CreateError, match="solo misiones, posiciones, zonas y mapas"):
         sync.recapture(GRP)

@@ -129,7 +129,7 @@ def test_sync_no_aplica_si_el_driver_no_la_ofrece():
     srv, _ = _server()
     c = TestClient(srv.app)
     info = c.get("/api/sync").json()
-    assert info == {"catalog": [], "robots": [{"serial": "sim-1", "supported": False}], "reports": {}}
+    assert info == {"catalog": [], "robots": [{"serial": "sim-1", "supported": False}], "reports": {}, "brought": {}}
     assert c.post("/api/sync/sim-1/preview", json={"guids": []}).status_code == 400
     assert c.post("/api/sync/nadie/preview", json={"guids": []}).status_code == 404
 
@@ -161,6 +161,33 @@ def test_sync_preview_y_deploy_con_avance_por_websocket():
     assert msgs[0]["payload"]["op"]["status"] == "hecho"
     assert msgs[-1]["payload"] == {"done": True, "summary": {"hecho": 1}}
     assert sync.deployed == [["g1"]]
+
+
+def test_traer_la_version_anterior_pide_confirmarlo():
+    # Tercera revisión: tras traer de un robot, traer la de otro que tiene la anterior
+    # desharía aquello. Lo decide el FM (409 «older»), no lo que sepa una página vieja.
+    srv, sync = _server_with_sync()
+    sync.recapture = lambda g: {"kind": "position", "guid": g, "name": "A", "robot": "sim-1", "changed": [], "guids": [g]}
+    srv.robots["sim-1"].poll()
+    srv.monitor.brought["g1"] = {"from": "sim-9", "at": "2026-11-07T10:00:00Z", "pending": ["sim-1"]}
+    c = TestClient(srv.app)
+    r = c.post("/api/sync/sim-1/recapture", json={"guid": "g1"})
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "older" and r.json()["detail"]["from"] == "sim-9"
+    assert c.post("/api/sync/sim-1/recapture", json={"guid": "g1", "force": True}).status_code == 200
+    assert srv.monitor.brought["g1"]["from"] == "sim-1"            # ahora la del catálogo es la de sim-1
+
+
+def test_cambiadores_revisados_una_vez_para_todos():
+    # Decisión 188: «Revisado» lo guarda el FM (por arranque), con quién y cuándo.
+    srv, _ = _server()
+    c = TestClient(srv.app)
+    assert c.get("/api/fleet").json()["tool_check"] is None
+    msgs = []
+    srv.mirror = lambda t, payload: msgs.append((t, payload))
+    out = c.post("/api/tools/checked").json()
+    assert out["by"] == "testclient" and out["at"] > 0
+    assert c.get("/api/fleet").json()["tool_check"] == out
+    assert msgs == [("fm/tools", {"tool_check": out})]          # los demás navegadores lo quitan
 
 
 def test_sync_check_bajo_demanda():

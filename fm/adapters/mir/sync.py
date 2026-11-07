@@ -75,6 +75,11 @@ FOLDERS = {
     "mission": "missions",
 }
 KIND_ORDER = {k: i for i, k in enumerate(FOLDERS)}
+def n_actions(n: int) -> str:
+    """«1 acción», «4 acciones»: los bloques de una misión, para la web."""
+    return f"{n} acción" if n == 1 else f"{n} acciones"
+
+
 KIND_LABEL = {"session": "session", "map": "mapa", "position": "position",
               "sound": "sonido", "zone": "zona", "missiongrp": "grupo", "mission": "mission"}
 
@@ -252,7 +257,7 @@ class Catalog:
                 extra = zone_label(d["type_id"])
             elif k == "mission":
                 maps = self.map_names(self.maps_of(g))
-                extra = f"{len(d['actions'])} actions" + (f" · mapa {', '.join(maps)}" if maps else "")
+                extra = n_actions(len(d['actions'])) + (f" · mapa {', '.join(maps)}" if maps else "")
             o = d.get("_origen", {})
             # `deps`: lo que usa (para «Usa» y «Lo usan» de la ficha del Catálogo).
             out.append({"guid": g, "kind": k, "name": d["name"], "parent": parent, "extra": extra,
@@ -487,7 +492,7 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
         elif k == "mission":
             have = view.missions.get(g)
             if have is None:
-                op.detail = f"{len(d['actions'])} actions"
+                op.detail = n_actions(len(d['actions']))
             else:
                 diff = [f for f in ("name", "group_id") if have.get(f) != d[f]]
                 if have["actions"] != d["actions"]:
@@ -497,7 +502,7 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
                 op.replaceable = bool(diff)
                 if diff and g in replace:
                     op.verb = "sustituir"
-                    op.detail = f"borrar y volver a crear con {len(d['actions'])} actions ({op.detail})"
+                    op.detail = f"borrar y volver a crear con {n_actions(len(d['actions']))} ({op.detail})"
                     # El MiR deja borrarla aunque otra la cargue (`load_mission`
                     # guarda el GUID y vuelve a valer al recrearla, probado en
                     # mir-2 el 2026-10-23): se avisa, no se bloquea.

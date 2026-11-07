@@ -57,7 +57,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -182,6 +182,11 @@ class CaptureIn(BaseModel):
     guid: str
 
 
+class RecaptureIn(CaptureIn):
+    # Traer aunque este robot tenga la versión de antes de otro traer (lo desharía).
+    force: bool = False
+
+
 class BringIn(BaseModel):
     kind: str                    # position | zone | mission
     guid: str                    # GUID propio del robot (hecho en su web)
@@ -221,6 +226,10 @@ class WebServer:
         # Cuándo arrancó este FM: la web avisa una vez por arranque de revisar
         # los cambiadores de herramienta (decisión 184).
         self.started_at = time.time()
+        # Y quién dijo «Revisado» y cuándo (decisión 188): vale para todos los
+        # navegadores, hasta el próximo arranque. Sin usuarios en el FM, «quién»
+        # es la dirección desde la que se pulsó.
+        self.tool_check: dict | None = None
         # Pestaña Robot: fuente de misiones por robot, creada al pedirla la
         # primera vez (`make_missions`, capacidad opcional) y guardada por su caché.
         self.missions: dict[str, Any] = {}
@@ -425,7 +434,7 @@ class WebServer:
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "instant_actions": list(INSTANT_ALLOWED),
-                "tools": self.cfg.tools, "started_at": self.started_at}
+                "tools": self.cfg.tools, "started_at": self.started_at, "tool_check": self.tool_check}
 
     def robot_summary(self, serial: str) -> dict:
         """Resumen plano de un robot a partir de su último `state`/`connection`."""
@@ -786,6 +795,12 @@ class WebServer:
         except Exception as e:
             raise HTTPException(502, f"{serial}: {e}")
         log.info("[web] capturada de %s: %s %r", serial, out["kind"], out["name"])
+        # Lo capturado es nuevo o ha cambiado en el catálogo: se mira enseguida
+        # qué robots lo tienen, para que su ficha no diga «no lo tiene» sin saberlo.
+        self.monitor.catalog_changed(serial, out.get("guids") or [out["guid"]])
+        for s in self.syncs:
+            if self.monitor.online(s):
+                self.monitor.check_async(s)
         return out
 
     def adoptable(self, serial: str) -> list[dict]:
@@ -884,7 +899,7 @@ class WebServer:
         if not st["online"]:
             raise HTTPException(409, f"'{serial}' no responde")
         if st["busy"]:
-            raise HTTPException(409, f"'{serial}' está ocupado (una order, la carga o una mission de su web): se "
+            raise HTTPException(409, f"'{serial}' está ocupado (una order, la carga o una misión de su web): se "
                                      "sustituye en el robot, así que espera a que quede libre")
         # Missions de fleet.yaml apuntadas por GUID propio del robot: no se borran.
         refs = {str(d.get("mission")) for d in (self.cfg.actions or {}).values() if isinstance(d, dict)}
@@ -908,13 +923,20 @@ class WebServer:
         self.monitor.check_async(serial)
         return out
 
-    def recapture(self, serial: str, guid: str) -> dict:
-        """Traer al catálogo la versión de un robot de un recurso del catálogo (#19). Solo lee el robot."""
+    def recapture(self, serial: str, guid: str, force: bool = False) -> dict:
+        """Traer al catálogo la versión de un robot de un recurso del catálogo (#19). Solo lee el robot.
+        Si ese robot tiene aún la versión de antes de traerla de otro, traer la suya
+        desharía aquello: 409 salvo `force` (lo decide el FM, no lo que sepa la página)."""
         sync = self._sync_for(serial)
         if not hasattr(sync, "recapture"):
             raise HTTPException(400, f"el driver de '{serial}' no permite traer recursos")
         if self.robots[serial].last_telemetry is None:
             raise HTTPException(409, f"'{serial}' no responde")
+        b = self.monitor.brought.get(guid)
+        if b and not force and serial in b["pending"]:
+            raise HTTPException(409, {"code": "older", "from": b["from"], "at": b["at"],
+                                      "message": f"{serial} tiene la versión anterior a la que se trajo de {b['from']}: "
+                                                 "traer la suya desharía aquello"})
         with self._create_lock:
             try:
                 out = sync.recapture(guid)
@@ -924,6 +946,8 @@ class WebServer:
                 raise HTTPException(502, f"{serial}: {e}")
         log.info("[web] %s %r traída de %s al catálogo (%s)", out["kind"], out["name"], serial,
                  ", ".join(out["changed"]) or "sin cambios")
+        # La web comprueba a fondo después: hasta entonces, los demás no se dan por iguales.
+        self.monitor.catalog_changed(serial, out.get("guids") or [out["guid"]])
         return out
 
     def _run_deploy(self, serial: str, sync, guids: list[str], only_create: bool = False,
@@ -935,6 +959,9 @@ class WebServer:
                    else sync.deploy(guids, progress=progress, replace=replace))
             summary = dict(Counter(o.status for o in ops))
             log.info("[web] despliegue en %s terminado: %s", serial, summary)
+            # Lo desplegado ya es igual que el catálogo; lo que falló, no se sabe (decisión 186).
+            self.monitor.same(serial, [o.guid for o in ops if o.status == "hecho"])
+            self.monitor.forget([o.guid for o in ops if o.status == "error"], [serial])
             self.mirror(topic, {"done": True, "summary": summary})
         except Exception as e:      # red caída al leer el robot, catálogo roto…
             log.exception("[web] despliegue en %s fallido", serial)
@@ -1052,6 +1079,13 @@ class WebServer:
         @app.get("/api/fleet")
         async def fleet():
             return self.fleet_info()
+
+        @app.post("/api/tools/checked", summary="Cambiadores de herramienta revisados (una vez por arranque)")
+        async def tools_checked(request: Request):
+            self.tool_check = {"at": time.time(), "by": request.client.host if request.client else ""}
+            log.info("[web] cambiadores de herramienta revisados desde %s", self.tool_check["by"] or "?")
+            self.mirror("fm/tools", {"tool_check": self.tool_check})   # que se quite en todos los navegadores
+            return self.tool_check
 
         @app.get("/api/fleet/maps")
         def fleet_maps():
@@ -1291,7 +1325,9 @@ class WebServer:
             first = next(iter(self.syncs.values()), None)
             return {"catalog": first.catalog().summary() if first else [],
                     "robots": [self.sync_status(s) for s in self.robots],
-                    "reports": self.monitor.reports}
+                    "reports": self.monitor.reports,
+                    # De qué robot se trajo cada recurso, y quién tiene aún la versión anterior.
+                    "brought": self.monitor.brought}
 
         @app.get("/api/sync/{serial}/foreign")
         def sync_foreign(serial: str):      # `def`: REST bloqueante
@@ -1302,8 +1338,8 @@ class WebServer:
             return self.bring(serial, body)
 
         @app.post("/api/sync/{serial}/recapture")
-        def sync_recapture(serial: str, body: CaptureIn):
-            return self.recapture(serial, body.guid)
+        def sync_recapture(serial: str, body: RecaptureIn):
+            return self.recapture(serial, body.guid, body.force)
 
         @app.post("/api/sync/{serial}/check")
         def sync_check(serial: str, body: CheckIn):

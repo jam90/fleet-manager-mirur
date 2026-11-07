@@ -191,7 +191,7 @@ el broker), `--force` arranca igual.
 Log (una línea por robot y tick, filtrable por `[serial]`):
 
 ```
-13:25:52,791 [mir-1] order fleet-3928d0aa/0 aceptada → mission 'coger' job=1311
+13:25:52,791 [mir-1] order fleet-3928d0aa/0 aceptada → misión 'coger' job=1311
 13:25:52,792 [fleet] fleet/order fleet-3928d0aa → mir-1
 13:26:24,666 [mir-1] state hdr=37 pos=(29.82,4.52) bat=74.9% mode=AUTOMATIC drv=1 order=fleet-3928d0aa/0 acts=coger:RUNNING errs=0
 ```
@@ -276,7 +276,7 @@ conservan como mucho los 10 últimos distintos.
 { "headerId": 4, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-43912315", "orderUpdateId": 0,
   "status": "REJECTED", "errorType": "NO_ROUTE_TO_TARGET",
-  "errorDescription": "ningún robot puede atender la order: mir-1: la mission 'coger' no existe en el robot; mir-2: no soporta 'coger'" }
+  "errorDescription": "ningún robot puede atender la order: mir-1: la misión 'coger' no existe en el robot; mir-2: no soporta 'coger'" }
 ```
 
 `order_response` es el ACK del asignador. Con la cola, una misma order puede
@@ -296,7 +296,7 @@ recibir varios: `QUEUED` al llegar y `ASSIGNED` cuando un robot queda libre.
 ```json
 { "headerId": 5, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "orderId": "fleet-77a1c2e0", "orderUpdateId": 0, "status": "QUEUED", "queuePosition": 1,
-  "description": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" }
+  "description": "ahora no puede ningún robot: mir-1: ocupado; mir-2: ocupado" }
 ```
 
 Los fallos posteriores de ejecución (mission `Aborted`) van a
@@ -343,8 +343,10 @@ FM aunque esté vacía:
 { "headerId": 3, "timestamp": "…", "version": "3.0.0", "manufacturer": "imperial_fleet", "serialNumber": "fleet",
   "tasks": [ { "orderId": "fleet-77a1c2e0", "orderUpdateId": 0, "actionType": "coger",
                "status": "QUEUED", "receivedAt": "2026-10-30T11:01:21.918Z",
-               "waiting": "ningún robot puede atender la order: mir-1: ocupado; mir-2: ocupado" } ] }
+               "waiting": "ahora no puede ningún robot: mir-1: ocupado; mir-2: ocupado" } ] }
 ```
+
+Si su action pide herramienta, la tarea lleva también `"tool"` (la que pide).
 
 Para cancelar una order de la cola (o en curso), `fleet/instantActions` con
 `cancelOrder` y el parámetro `orderId` (por HTTP, `POST
@@ -393,6 +395,7 @@ tiene: vuelve a la cola en su sitio y cuenta desde ese momento. Respuesta:
 | `mission_queue/<id>.state` de la order | `actionStates[].actionStatus`: Pending→WAITING, Executing→RUNNING, Done→FINISHED, Aborted/Cancelled→FAILED |
 | `mission_queue/<id>.message` al terminar | `actionStates[].actionResult` y final de `errorDescription` (p.ej. `Aborted - User Request` = parada a mano). El MiR usa `Aborted` para todo; el motivo solo está aquí |
 | `registers/<tool_register>` (registro PLC con el código de la herramienta) | `information[] {infoType: TOOL}` con su nombre del catálogo, o `ninguna` |
+| (del FM) la herramienta que pide la order en curso | `information[] {infoType: TOOL_REQUESTED}` |
 
 `powerSupply.charging` solo es `true` cuando la mission de carga del FM está
 en ejecución (pendiente de validar en el dock).
@@ -753,7 +756,9 @@ robots:
   cualquiera. Sin cambiador, solo vale la que lleve montada.
 - La **montada ahora** no se configura: la lee el driver (MiR:
   `tool_register`) y sale en `state.information[]` como `TOOL`, en Operación
-  y en Robots.
+  y en Robots. La que pide la order en curso sale como `TOOL_REQUESTED`
+  (la pone el FM, no el driver), y la que pide cada tarea de la cola, en
+  `fleet/queue` (`tool`).
 
 Una `fleet/order` que ningún robot puede hacer (nadie la lleva ni la tiene
 en su cambiador) se rechaza al llegar con `TOOL_NOT_AVAILABLE` y el motivo de
@@ -761,7 +766,9 @@ cada robot; si alguno puede pero está ocupado, espera en la cola. Una order
 dirigida a un robot que no la lleva ni la tiene se rechaza igual. Al arrancar,
 el FM avisa (log y Operación) de revisar que los cambiadores tienen lo que
 dice `fleet.yaml`: si alguien quitó una y no lo cambió, la mission fallará al
-intentar ponérsela. `tools:` y los `tool_changer` se aplican en caliente.
+intentar ponérsela. «Revisado» lo guarda el FM hasta el próximo arranque, para
+todos los navegadores, con la hora y el equipo desde el que se pulsó
+(`POST /api/tools/checked`; `tool_check` en `GET /api/fleet`). `tools:` y los `tool_changer` se aplican en caliente.
 
 ## Vuelta a la espera
 

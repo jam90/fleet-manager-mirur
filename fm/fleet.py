@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Callable
 
-from fm.assigner import assign
+from fm.assigner import NOBODY, assign
 from fm.config import FleetConfig
 from fm.mqtt_bus import FLEET, MqttBus
 from fm.instant import apply_instant_actions
@@ -299,7 +299,9 @@ class Dispatcher:
 
     def _wait(self, task: Task, reason: str) -> None:
         """Sigue en la cola. El motivo solo va al log cuando cambia: se
-        evalúa en cada tick."""
+        evalúa en cada tick. «Ningún robot puede atender la order» es el texto
+        de un rechazo; aquí la order no se rechaza, espera: se dice así."""
+        reason = reason.replace(NOBODY, "ahora no puede ningún robot: ", 1)
         if reason != task.waiting:
             log.info("[fleet] fleet/order %s espera: %s", task.order_id, reason)
             task.waiting = reason
@@ -575,11 +577,18 @@ class Dispatcher:
         body = [{"orderId": t.order_id, "orderUpdateId": t.update_id, "actionType": t.action_type,
                  "status": t.status, "receivedAt": iso(t.received_at), "waiting": t.waiting}
                 | ({"serial": t.serial} if t.status == ASSIGNING else {})
+                | ({"tool": tool} if (tool := self._tool_of(t)) else {})     # la que pide (decisión 184)
                 for t in self.tasks.alive() if t.status in (QUEUED, ASSIGNING)]
         if body == self._last_queue:
             return
         self._last_queue = body
         self.bus.publish(FLEET, "queue", {"tasks": body}, retain=True)
+
+    def _tool_of(self, task: Task) -> str | None:
+        try:
+            return needed_tool(pick_action(task.order), self.cfg.actions, self.cfg.tools)
+        except OrderRejected:
+            return None
 
     @staticmethod
     def _all_failed(rejections: dict[str, str], failures: dict[str, OrderRejected]) -> OrderRejected:
@@ -591,4 +600,4 @@ class Dispatcher:
         error_type = types.pop() if len(types) == 1 else E_NO_MOBILE_ROBOT_AVAILABLE
         reasons = {**rejections, **{s: e.description for s, e in failures.items()}}
         detail = "; ".join(f"{s}: {reasons[s]}" for s in sorted(reasons))
-        return OrderRejected(error_type, f"ningún robot puede atender la order: {detail}")
+        return OrderRejected(error_type, f"{NOBODY}{detail}")

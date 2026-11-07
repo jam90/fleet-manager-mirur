@@ -29,7 +29,7 @@ PROTOCOL_LIMITS = {
 # aquí se ignora (p.ej. edges, nodePosition: el robot navega con sus missions).
 OPTIONAL_PARAMETERS = [
     {"parameter": "order.nodes.actions.actionParameters", "support": "SUPPORTED",
-     "description": "se traducen a los inputs de la mission (position_inputs/required_inputs)"},
+     "description": "se traducen a los inputs de la misión (position_inputs/required_inputs)"},
     {"parameter": "order.nodes.actions.blockingType", "support": "SUPPORTED",
      "description": "se acepta cualquier valor; una sola action por order"},
 ]
@@ -41,8 +41,8 @@ def _generic_spec(name: str) -> RobotSpec:
 
 def _param_description(p) -> str:
     if p.kind == "position" and p.choices:
-        return f"nombre de position: {', '.join(p.choices)}" if len(p.choices) <= 10 \
-            else f"nombre de position ({len(p.choices)} conocidas)"
+        return f"nombre de posición: {', '.join(p.choices)}" if len(p.choices) <= 10 \
+            else f"nombre de posición ({len(p.choices)} conocidas)"
     if p.kind == "tool" and p.choices:          # decisión 184: el nombre, del catálogo `tools:`
         return f"herramienta: {', '.join(p.choices)}"
     if p.kind == "number" and (p.min is not None or p.max is not None):

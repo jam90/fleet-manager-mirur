@@ -37,7 +37,7 @@ MIR250_SPEC = RobotSpec("MiR250", kinematics="DIFF", robot_class="CARRIER", max_
                         localization_types=["NATURAL"], navigation_types=["AUTONOMOUS"],
                         min_speed=0.0, max_speed=2.0, max_acceleration=1.0, max_deceleration=1.0,
                         width=0.58, length=0.80, height=0.30,
-                        description="MiR250 vía REST API v2.0.0; cada actionType es una mission de la web")
+                        description="MiR250 vía REST API v2.0.0; cada actionType es una misión de la web")
 
 # Cada cuánto se vuelve a leer el polígono de una zona (`in_zone`): si se
 # redibuja en la web del MiR, el FM lo ve en como mucho este tiempo.
@@ -238,11 +238,11 @@ class MirDriver:
     def translate(self, action: Action) -> Job:
         """`Action` VDA → `Job` con la `MissionRequest` a postear. Sin red."""
         if not self.indexed:
-            raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, "índices de missions/positions no cargados")
+            raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, "aún no se han leído las misiones y posiciones del robot")
         req = from_vda_order(action, self.cfg, self.missions, self.positions,
                              self.mission_inputs, self.cfg.positions_allowlist)
         self._check_map(req)
-        return Job(action, f"mission '{req.mission_name}'", req)
+        return Job(action, f"misión '{req.mission_name}'", req)
 
     def _check_map(self, req: MissionRequest) -> None:
         """Una mission con positions fijas solo se puede hacer en su mapa
@@ -254,8 +254,8 @@ class MirDriver:
             return
         names = ", ".join(sorted(f"«{self.map_names.get(m, m)}»" for m in maps))
         raise OrderRejected(E_NO_ROUTE_TO_TARGET,
-                            f"la mission '{self.mission_names.get(req.mission_guid) or req.mission_name}' va a "
-                            f"positions fijas del mapa {names} y el robot "
+                            f"la misión '{self.mission_names.get(req.mission_guid) or req.mission_name}' va a "
+                            f"posiciones fijas del mapa {names} y el robot "
                             f"está en «{self.map_names.get(active, active)}»")
 
     def execute(self, job: Job, priority: int = 0) -> str:
@@ -331,7 +331,7 @@ class MirDriver:
         if guid is None:
             return None
         action = Action("charge", "auto-charge", actionDescription="auto-carga del FM")
-        return Job(action, f"mission '{name}'", MissionRequest(action, name, guid, []))
+        return Job(action, f"misión '{name}'", MissionRequest(action, name, guid, []))
 
     def extra_state(self, s: State) -> None:
         """Nada que añadir: el MiR no expone más de lo que ya va en Telemetry."""
@@ -364,7 +364,7 @@ class MirDriver:
             if a.tool_input:
                 params.append(ParamInfo(a.tool_input, "tool", True, sorted(self.cfg.tool_codes)))
             name = self.mission_names.get(a.mission, a.mission)
-            out.append(ActionInfo(a.action_type, params, f"mission '{name}'"))
+            out.append(ActionInfo(a.action_type, params, f"misión '{name}'"))
         return out
 
     # -------------------------------------------------------- sincronización

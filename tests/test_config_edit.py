@@ -289,7 +289,7 @@ def test_idle_return_zona():
 
 
 def test_idle_return_errores():
-    with pytest.raises(EditError, match="elige una action"):
+    with pytest.raises(EditError, match="elige un tipo de tarea"):
         apply_edits(YAML, {"idle_return": {"after_s": 30}})
     with pytest.raises(EditError, match="params"):
         apply_edits(YAML, {"idle_return": {"action": "coger", "params": {"x": [1]}}})

@@ -18,6 +18,10 @@ from fm.config import FleetConfig
 from fm.tools import tool_problem
 from fm.vda5050.state import E_NO_MOBILE_ROBOT_AVAILABLE
 
+# Comienzo del motivo sin candidatos. La cola lo cambia por «ahora no puede…»
+# mientras la order espera (fm/fleet.py): no es un rechazo.
+NOBODY = "ningún robot puede atender la order: "
+
 
 @dataclass(frozen=True)
 class RobotSnapshot:
@@ -82,7 +86,7 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
 
     if not candidates:
         detail = "; ".join(f"{k}: {v}" for k, v in rejections.items()) or "sin robots"
-        return AssignResult(None, f"ningún robot puede atender la order: {detail}",
+        return AssignResult(None, f"{NOBODY}{detail}",
                             E_NO_MOBILE_ROBOT_AVAILABLE, rejections)
 
     best = candidates[0]

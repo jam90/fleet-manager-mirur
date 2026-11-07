@@ -225,25 +225,25 @@ def from_vda_order(action: Action, robot: MirRobotConfig, missions: dict[str, st
     guid = missions.get(acfg.mission)
     if guid is None:
         raise OrderRejected(E_NO_ROUTE_TO_TARGET,
-                            f"[{robot.serial}] la mission '{acfg.mission}' no existe en el robot")
+                            f"[{robot.serial}] la misión '{acfg.mission}' no existe en el robot")
     given = action.params()
     exposed = mission_inputs.get(guid, set())
     params: list[dict] = []
 
     for key in acfg.position_inputs:
         if key not in given:
-            raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (position)")
+            raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (posición)")
         name = str(given[key])
         if allowlist is not None and name not in allowlist:
-            raise OrderRejected(E_NO_ROUTE_TO_TARGET, f"position '{name}' fuera de la allowlist")
+            raise OrderRejected(E_NO_ROUTE_TO_TARGET, f"posición '{name}' no admitida en este robot (positions_allowlist)")
         # Allowlist de la action: se suma a la del robot (hay que pasar las dos).
         if acfg.positions_allowlist is not None and name not in acfg.positions_allowlist:
             raise OrderRejected(E_NO_ROUTE_TO_TARGET,
-                                f"position '{name}' no admitida en '{action.actionType}'; "
+                                f"posición '{name}' no admitida en '{action.actionType}'; "
                                 f"admite {sorted(acfg.positions_allowlist)}")
         pguid = positions.get(name)
         if pguid is None:
-            raise OrderRejected(E_NO_ROUTE_TO_TARGET, f"[{robot.serial}] position '{name}' no existe")
+            raise OrderRejected(E_NO_ROUTE_TO_TARGET, f"[{robot.serial}] posición '{name}' no existe")
         params.append({"id": key, "value": pguid})
 
     for key in acfg.required_inputs:

@@ -143,6 +143,24 @@ def test_fleet_order_espera_al_unico_que_puede(tmp_path):
     assert r["status"] == "QUEUED" and "sim-2: lleva 2fg7, no vgc10 (sin cambiador)" in r["description"]
 
 
+def test_la_cola_dice_que_herramienta_pide_y_que_espera(tmp_path):
+    # Revisión de la interfaz (2026-11-07): en Operación se ve la garra de cada tarea,
+    # y el motivo de la espera no suena a rechazo.
+    disp, robots, bus = _fleet(tmp_path)
+    _send(disp, "o1", "vgc10")
+    _send(disp, "o2", "vgc10")
+    disp.tick()
+    queue = next(p for t, p in reversed(bus.published) if t.endswith("/fleet/queue"))["tasks"]
+    assert [(t["orderId"], t["tool"]) for t in queue] == [("o2", "vgc10")]
+    assert queue[0]["waiting"].startswith("ahora no puede ningún robot: ")
+    assert "ningún robot puede atender" not in _resp(bus, "o2")["description"]
+    # La tarea en curso dice en el `state` qué herramienta pide (TOOL_REQUESTED).
+    state = robots["sim-1"].state(make_header(HeaderCounter(), "SIM", "sim-1", "state"))
+    assert [i.infoDescriptor for i in state.information if i.infoType == "TOOL_REQUESTED"] == ["vgc10"]
+    idle = robots["sim-2"].state(make_header(HeaderCounter(), "SIM", "sim-2", "state"))
+    assert not [i for i in idle.information if i.infoType == "TOOL_REQUESTED"]
+
+
 def test_fleet_order_rechazada_si_falta_o_nadie_puede(tmp_path):
     disp, robots, bus = _fleet(tmp_path, YAML.replace("  2fg7: {code: 2}", "  2fg7: {code: 2}\n  3fg15: {code: 3}"))
     _send(disp, "o1")                                                # sin garra

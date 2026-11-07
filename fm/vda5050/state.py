@@ -52,6 +52,7 @@ I_MANUAL_DRIVE = "MANUAL_DRIVE"           # alguien lo conduce a mano (joystick)
 I_SAFETY_MUTED = "SAFETY_MUTED"           # sistema de seguridad silenciado
 I_MAP_UNSAVED = "MAP_UNSAVED"             # cambios de mapa sin guardar en el robot
 I_TOOL = "TOOL"                           # herramienta montada (decisión 184; "ninguna" si no lleva)
+I_TOOL_REQUESTED = "TOOL_REQUESTED"       # del core: la que pide la order en curso (para verla en la web)
 # Del core, no de un driver (como AUTO_CHARGE): el FM lo manda a la espera (decisión 136).
 I_IDLE_RETURN = "IDLE_RETURN"
 I_IDLE_RETURN_IN = "IDLE_RETURN_IN"       # s que faltan para mandarlo a la espera, como texto
