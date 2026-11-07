@@ -2509,13 +2509,18 @@
               (0 es «ninguna»). De momento se escribe a mano en <code>fleet.yaml</code>; se aplica sin reiniciar.</p></li>
           <li><b>Que el robot diga cuál lleva</b><span class="where">programa del brazo</span>
             <p>El brazo escribe el <code>code</code> de la que lleva en un registro PLC del MiR (<code>tool_register</code> en
-              <code>drivers.mir</code>; por defecto, el 1). El FM lo lee y lo enseña en <a href="#operacion">Operación</a> y en Robots.</p></li>
+              <code>drivers.mir</code>; por defecto, el 5). El FM lo lee y lo enseña en <a href="#operacion">Operación</a> y en Robots.
+              Si el brazo no lo escribe, mira el paso siguiente (<code>tool:</code>).</p></li>
           <li><b>Qué tiene cada cambiador</b><span class="where"><code>fleet.yaml</code></span>
             <p>En cada robot con cambiador, <code>tool_changer</code> con las que tiene a mano. Un robot sin cambiador solo
-              recibe tareas de la herramienta que lleve puesta.</p></li>
+              recibe tareas de la herramienta que lleve puesta. Si la lleva siempre y su brazo no escribe el registro,
+              <code>tool:</code> con su nombre en el bloque del robot (p. ej. <code>tool: dh</code>): el FM no lee nada y
+              la da por puesta (solo en robots sin <code>tool_changer</code>). Cambiar <code>tool:</code> pide reiniciar el
+              FM.</p></li>
           <li><b>La misión cambia la herramienta</b><span class="where">web del MiR</span>
-            <p>Recibe la pedida como un número: si no coincide con el registro de la que lleva, <i>Load mission</i> de la de
-              cambio y después sigue. El FM no la cambia: solo elige robot.</p></li>
+            <p>Recibe la pedida como un número y la escribe en el registro 2 para el brazo. Si no coincide con la que lleva
+              (el registro de <code>tool_register</code>, por defecto el 5), <i>Load mission</i> de la de cambio y después
+              sigue. El FM no la cambia: solo elige robot.</p></li>
           <li><b>El tipo de tarea pide herramienta</b><span class="where"><code>fleet.yaml</code></span>
             <p>En su definición, <code>tool_input</code> con el nombre del parámetro (p. ej. <code>garra</code>). La order trae el
               nombre de la herramienta; en «Nueva tarea» sale como desplegable.</p></li>
@@ -4475,11 +4480,14 @@ createApp({
       if (ui.tab === 'configurador') loadConfig();
       if (ui.tab === 'flota') loadFleetMaps().then(showRobotMap);
       // `#guia/<apartado>`: la Guía con ese apartado abierto (p. ej. desde el aviso de cambiadores).
-      if (ui.tab === 'guia') {
+      // Se busca tras pintar: al cargar la página con ese hash, la Guía aún no está en el documento.
+      if (ui.tab === 'guia') nextTick(() => {
         const sec = document.getElementById('guia-' + (location.hash.slice(1).split('/')[1] || ''));
-        if (sec) nextTick(() => { sec.open = true; sec.scrollIntoView({ block: 'start' });
-                                  sec.querySelector('summary')?.focus({ preventScroll: true }); });
-      }
+        if (!sec) return;
+        sec.open = true;
+        sec.scrollIntoView({ block: 'start' });
+        sec.querySelector('summary')?.focus({ preventScroll: true });
+      });
     }
     window.addEventListener('hashchange', () => { ui.tab = tabFromHash(); window.scrollTo(0, 0); onTab(); });
     onTab();

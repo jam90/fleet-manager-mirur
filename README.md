@@ -741,7 +741,7 @@ tools:                                   # las de la planta
 actions:
   coger: { mission: coger, tool_input: garra }   # la order trae {"key": "garra", "value": "vgc10"}
 drivers:
-  mir: { tool_register: 1 }              # registro PLC donde el brazo escribe el `code` que lleva (0 = ninguna); por defecto, el 1
+  mir: { tool_register: 5 }              # registro PLC donde el brazo escribe el `code` que lleva (0 = ninguna); por defecto, el 5
 robots:
   mir-1: { tool_changer: [vgc10, 2fg7], actions: [coger], ... }   # con cambiador
   mir-2: { actions: [coger], ... }                                # sin cambiador: solo la que lleve
@@ -754,9 +754,16 @@ robots:
   llega su **código** (en el MiR, como un número para *Set/If PLC register*).
 - `robots.<serial>.tool_changer` — las de su cambiador; puede ponerse
   cualquiera. Sin cambiador, solo vale la que lleve montada.
+- `robots.<serial>.tool` — (MiR) la que lleva **siempre**, para un brazo sin
+  cambiador cuyo programa no escribe el registro (p. ej. `tool: dh`). Con
+  ella no se lee el registro; no se puede junto con `tool_changer`. Cambiarla
+  pide reiniciar el FM.
 - La **montada ahora** no se configura: la lee el driver (MiR:
   `tool_register`) y sale en `state.information[]` como `TOOL`, en Operación
-  y en Robots. La que pide la order en curso sale como `TOOL_REQUESTED`
+  y en Robots. Por defecto, el registro 5, como en el protocolo MiR ↔ brazo
+  del otro proyecto: `1` comando, `2` herramienta que quiere el MiR (la
+  escribe la mission), `5` la que tiene montada el brazo (la escribe él).
+  La que pide la order en curso sale como `TOOL_REQUESTED`
   (la pone el FM, no el driver), y la que pide cada tarea de la cola, en
   `fleet/queue` (`tool`).
 

@@ -59,9 +59,11 @@ drivers:
 # tools:
 #   vgc10: { code: 1, description: "Ventosa VGC10" }
 #   2fg7:  { code: 2, description: "Pinza 2FG7" }
-# (en drivers.mir:)   tool_register: 1     (por defecto, el 1)
+# (en drivers.mir:)   tool_register: 5     (por defecto, el 5: el brazo escribe ahí la que lleva;
+#                                         la mission escribe en el 2 la que quiere)
 # (en una action:)    coger: { mission: "coger", tool_input: garra }
 # (en un robot:)      tool_changer: [vgc10, 2fg7]
+# (o, sin cambiador:) tool: vgc10           (la lleva siempre: no se lee el registro)
 
 # Vuelta a la espera (opcional): si un robot lleva `after_s` segundos parado,
 # el FM le manda esta action del catálogo, una vez, para que no estorbe donde

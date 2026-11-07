@@ -389,12 +389,27 @@ def test_herramienta_pedida_va_a_la_mission_como_su_codigo():
     assert [(p.key, p.kind, p.choices) for p in d.describe_actions()[0].params] == [("garra", "tool", ["2fg7", "vgc10"])]
 
 
+def test_herramienta_fija_no_lee_el_registro():
+    # Decisión 193: mir-1 (UR5 sin cambiador, con la DH140) declara `tool: dh`.
+    from fm.adapters.mir.config import parse_config
+    from fm.config import ConfigError
+    codes = {"cgi": 1, "dh": 2, "vgc10": 3}
+    cfg = parse_config("mir-1", {"host": "h", "tool_codes": codes, "tool": "dh"}, {}, {})
+    assert cfg.fixed_tool == "dh" and cfg.tool_register is None
+    c = _ToolClient(0.0)                          # el registro dice «ninguna»: no se mira
+    assert MirDriver(cfg, c).poll().tool == "dh"
+    with pytest.raises(ConfigError, match="no está en el catálogo"):
+        parse_config("mir-1", {"host": "h", "tool_codes": codes, "tool": "pinza"}, {}, {})
+    with pytest.raises(ConfigError, match="tool_changer"):
+        parse_config("mir-1", {"host": "h", "tool_codes": codes, "tool": "dh", "tool_changer": ["dh"]}, {}, {})
+
+
 def test_tool_register_tiene_que_ser_un_registro_plc():
     from fm.adapters.mir.config import parse_config
     from fm.config import ConfigError
     assert parse_config("mir-1", {"host": "h", "tool_register": 1}, {}, {}).tool_register == 1
-    # Con catálogo de herramientas, el 1 por defecto; sin él, no se lee ninguno.
-    assert parse_config("mir-1", {"host": "h", "tool_codes": {"vgc10": 1}}, {}, {}).tool_register == 1
+    # Con catálogo de herramientas, el 5 por defecto (decisión 192); sin él, no se lee ninguno.
+    assert parse_config("mir-1", {"host": "h", "tool_codes": {"vgc10": 1}}, {}, {}).tool_register == 5
     assert parse_config("mir-1", {"host": "h"}, {}, {}).tool_register is None
     for bad in (0, 201, "1", True):
         with pytest.raises(ConfigError, match="tool_register"):

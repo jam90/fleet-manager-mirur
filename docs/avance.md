@@ -3793,6 +3793,41 @@ se borra si otra página trae ese recurso; contraste de `--ink-3` sobre los
 paneles, de los botones de peligro (`--bad-btn`) y de los enlaces en oscuro
 (`--link`); los dos mensajes del driver que quedaban en inglés o en jerga.
 
+## 2026-11-07 — Registro PLC de la herramienta montada
+
+192. **El FM lee la herramienta montada del registro 5** por defecto
+     (`drivers.mir.tool_register`), no del 1. Es el protocolo MiR ↔ brazo
+     del otro proyecto del usuario (M2D = lo escribe el MiR, D2M = el
+     brazo):
+
+     | Reg | Nombre | Escribe | Para qué |
+     |---|---|---|---|
+     | 1 | `M2D_Comando` | MiR | qué tarea hacer (`0` = nada) |
+     | 2 | `M2D_Tool_quiero` | MiR | herramienta que quiere |
+     | 3 | `M2D_Pieza` | MiR | pieza (entero) |
+     | 4 | `M2D_Param2` | MiR | parámetro extra |
+     | 5 | `D2M_Tool_tengo` | brazo | herramienta montada |
+     | 6 | `D2M_Estado` | brazo | `0` libre, `1` ocupado, `2` error |
+     | 7 | `D2M_Hecho` | brazo | `1` al acabar; `0` cuando el MiR acusa |
+     | 8 | `D2M_Safe` | brazo | `1` en pose segura para moverse (por defecto `0`) |
+
+     El FM solo lee el 5; el resto es cosa de las misiones y del brazo. La
+     misión que pide herramienta escribe el código en el 2 y, si no coincide
+     con el 5, carga la de cambio. Con el 1 por defecto el FM habría leído
+     el comando como si fuera la herramienta.
+
+193. **Herramienta fija por robot** (`robots.<serial>.tool`, en el driver
+     MiR). mir-1 lleva un UR5 sin cambiador con la pinza DH140 siempre
+     puesta, y su programa no escribe el registro 5: con `tool: dh` el FM la
+     da por puesta y no lee el registro (si no, leería 0 = ninguna y no le
+     daría tareas de `dh`). No vale junto con `tool_changer` (con cambiador,
+     la herramienta cambia y se lee del registro). Es la misma clave que ya
+     usaba el driver `sim` para la que lleva. Cambiarla pide reiniciar. mir-2
+     (Dobot CR5AF con intercambiador) tiene en su cambiador las tres.
+     La Guía lo cuenta en «Robots con cambio de herramienta»; de paso,
+     `#guia/<apartado>` abre el apartado también al cargar la página con ese
+     enlace (antes solo desde otra pestaña de la web).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3821,16 +3856,22 @@ Cerrado el 2026-11-06: #33 (copiar un mapa del catálogo con sus positions
 y zonas, decisión 176), y #31 (contestar a un `fleet/order` repetido con su estado,
 decisión 179).
 
-**En curso / siguiente** (al cerrar el 2026-11-06, por la tarde; robots apagados)
+**En curso / siguiente** (al cerrar el 2026-11-07, viernes; se sigue el lunes 2026-11-10; robots apagados)
 
-0. ~~Corregir lo de la revisión de interfaz y aplicar 185–188~~ (hecho el
-   2026-11-07, arriba). Falta volver a pasar el revisor de interfaz.
-1. **Herramientas con los MiR** (decisión 184). El usuario dirá qué
-   registro PLC usaba para la herramienta montada (hoy, el 1 por defecto).
-   Probar con missions falsas: `cambio_herramienta` que solo escribe el
-   código pedido en el registro, y una `coger` con el *If* (si no coincide,
-   *Load mission* de la de cambio). Hace falta un catálogo `tools:` y un
-   `tool_changer` en el `fleet.yaml` de `mirur-instalacion` (aún no tiene).
+0. ~~Corregir lo de la revisión de interfaz y aplicar 185–191~~ (hecho el
+   2026-11-07, con cuatro pasadas del revisor; commit `7b89f86`).
+1. **Herramientas con los MiR** (decisiones 184, 192, 193). Ya en el
+   `fleet.yaml` de `mirur-instalacion`: `tools:` (`cgi` 1, `dh` 2, `vgc10`
+   3), mir-1 con `tool: dh` y mir-2 con `tool_changer: [cgi, dh, vgc10]`.
+   Falta una action con `tool_input` y probar con misiones falsas en mir-2:
+   `cambio_herramienta`, que solo escribe en el registro 5 el código pedido
+   (haciendo de brazo), y una `coger` que lo escribe en el 2 y, si no
+   coincide con el 5, *Load mission* de la de cambio.
+1b. **Misiones que valen con más de una herramienta** (el usuario,
+   2026-11-07): p. ej. coger una pieza con la `dh` o con la `vgc10`. Hoy una
+   order pide una herramienta concreta; habría que poder pedir una lista
+   («cualquiera de estas») y que el asignador prefiera la que ya lleva.
+   Sin decidir el formato.
 2. **Herramientas en Configuración**: editar el catálogo `tools:` y la
    matriz robot × herramienta (hoy, a mano en `fleet.yaml`).
 3. **Probar con los MiR la interfaz nueva de administración** (decisiones
@@ -3850,6 +3891,14 @@ decisión 179).
 Los avisos por tiempo anómalo (#5) esperan a las missions reales (#1): hoy
 las del FM son placeholders y no hay tiempos que medir.
 
+- **Estado al cerrar (2026-11-07):** todo commiteado y subido, en los dos
+    repos; ningún FM en marcha. Hecho hoy: lo de la revisión de la interfaz
+    (decisiones 185–191, con cuatro pasadas del revisor), registro 5 para la
+    herramienta montada (192), herramienta fija por robot (193) y, en
+    `mirur-instalacion`, `tools:` y las herramientas de mir-1 (`dh` fija) y
+    mir-2 (cambiador con las tres). Al arrancar el FM nuevo sale el aviso de
+    revisar el cambiador de mir-2; ninguna action pide herramienta todavía.
+    `prueba-pregunta` sigue como borrador sin commitear en `mirur-instalacion`.
 - **Estado al cerrar (2026-11-06):** todo commiteado y subido. Hecho hoy:
     copiar un mapa del catálogo (#33, decisión 176; `mapa-pruebas` rehecho
     como copia de `suberri_mirur` y desplegado en los dos), traer al

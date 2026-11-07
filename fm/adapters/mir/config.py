@@ -6,8 +6,8 @@ drivers:
   mir:
     mission_group: "mirur-tknika"          # opcional: solo se indexan estas missions
     charge_mission: "Carga en estación"    # opcional: auto-carga (H4)
-    tool_register: 1                       # registro PLC con la herramienta montada (decisión 184);
-                                           # con catálogo `tools:`, por defecto el 1
+    tool_register: 5                       # registro PLC con la herramienta montada (decisión 184);
+                                           # con catálogo `tools:`, por defecto el 5 (decisión 192)
     # positions_allowlist: [H2D1-VL]       # opcional: positions admitidas como parámetro
 robots:
   mir-1:
@@ -72,6 +72,9 @@ class MirRobotConfig:
     # catálogo `tools:` nombre → código, que pone el core.
     tool_register: int | None = None
     tool_codes: dict[str, int] = field(default_factory=dict)
+    # Herramienta fija (decisión 193): un brazo sin cambiador cuyo programa no
+    # escribe el registro (mir-1: UR5 con la DH140). Con ella no se lee nada.
+    fixed_tool: str | None = None
 
 
 def _parse_numbers(serial: str, atype: str, raw) -> dict:
@@ -123,12 +126,25 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
         )
 
     allow = merged.get("positions_allowlist")
-    # Con catálogo `tools:` se lee el registro 1 salvo que se diga otro (el que
-    # usa el usuario en otro proyecto, 2026-11-06); sin catálogo, ninguno.
-    reg = merged.get("tool_register", 1 if merged.get("tool_codes") else None)
+    # Con catálogo `tools:` se lee el registro 5 salvo que se diga otro: el
+    # `D2M_Tool_tengo` del protocolo MiR ↔ brazo del otro proyecto (decisión
+    # 192; ahí el 1 es el comando y el 2 la herramienta que quiere el MiR).
+    # Sin catálogo, ninguno.
+    reg = merged.get("tool_register", 5 if merged.get("tool_codes") else None)
     # Registros PLC del MiR: 1–200 (1–100 enteros, 101–200 decimales).
     if reg is not None and (isinstance(reg, bool) or not isinstance(reg, int) or not 1 <= reg <= 200):
         raise ConfigError(f"[{serial}] tool_register debe ser un registro PLC del MiR (1–200); hay {reg!r}")
+    # `tool:` en el robot = la lleva siempre (decisión 193): no se lee el registro.
+    fixed = merged.get("tool")
+    if fixed is not None:
+        fixed = str(fixed)
+        if fixed not in (merged.get("tool_codes") or {}):
+            raise ConfigError(f"[{serial}] tool: {fixed!r} no está en el catálogo 'tools:' "
+                              f"(hay {sorted(merged.get('tool_codes') or {})})")
+        if merged.get("tool_changer"):
+            raise ConfigError(f"[{serial}] tool (herramienta fija) y tool_changer a la vez: con cambiador la "
+                              "herramienta cambia y se lee del registro; quita 'tool'")
+        reg = None
     return MirRobotConfig(
         serial=serial,
         host=str(host),
@@ -139,4 +155,5 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
         positions_allowlist=set(allow) if allow else None,
         tool_register=reg,
         tool_codes=dict(merged.get("tool_codes") or {}),
+        fixed_tool=fixed,
     )

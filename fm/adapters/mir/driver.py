@@ -176,7 +176,10 @@ class MirDriver:
     def _tool(self) -> str | None:
         """Herramienta montada (decisión 184): el programa del brazo escribe su
         código en `tool_register`. None si no se lee o falla la lectura: sin
-        saberlo, el asignador solo le da lo que tenga en su cambiador."""
+        saberlo, el asignador solo le da lo que tenga en su cambiador. Con
+        herramienta fija (`tool:`, decisión 193), esa, sin leer nada."""
+        if self.cfg.fixed_tool:
+            return self.cfg.fixed_tool
         if self.cfg.tool_register is None:
             return None
         try:
