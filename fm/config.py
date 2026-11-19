@@ -203,6 +203,7 @@ def load_config(yaml_path: str | Path = "config/fleet.yaml",
         r = r or {}
         enabled = _enabled_actions(serial, r.get("actions"), catalog)
         idle = _robot_idle_return(serial, r, enabled, fleet_idle)
+        _check_fixed_tool(serial, r.get("tool"), tools)
         robots[serial] = RobotConfig(
             serial=serial,
             driver=str(r.get("driver", DEFAULT_DRIVER)),
@@ -332,7 +333,7 @@ def _robot_idle_return(serial: str, r: dict, enabled: list[str], fleet: IdleRetu
 
 
 def _tools(raw) -> dict[str, dict]:
-    """`tools:` de la raíz → `{nombre: {code, description}}`. El `code` es el
+    """`tools:` de la raíz → `{nombre: {code, description[, count]}}`. El `code` es el
     número que escribe el programa del robot (en el MiR, en un registro PLC),
     así que es entero, mayor que 0 (0 = no lleva ninguna) y no se repite."""
     if raw is None:
@@ -350,11 +351,18 @@ def _tools(raw) -> dict[str, dict]:
             raise ConfigError(f"{where}.code debe ser un entero mayor que 0 (0 = sin herramienta); hay {code!r}")
         if code in seen:
             raise ConfigError(f"{where}.code {code} ya es el de '{seen[code]}'")
-        unknown = set(spec) - {"code", "description"}
+        unknown = set(spec) - {"code", "description", "count"}
         if unknown:
-            raise ConfigError(f"{where}: claves desconocidas {sorted(unknown)} (valen code, description)")
+            raise ConfigError(f"{where}: claves desconocidas {sorted(unknown)} (valen code, description, count)")
+        # `count` (decisión 196): unidades que circulan por el soporte de cambio,
+        # contadas las montadas. Sin él no se cuentan.
+        count = spec.get("count")
+        if count is not None and (isinstance(count, bool) or not isinstance(count, int) or count < 1):
+            raise ConfigError(f"{where}.count debe ser un entero mayor que 0 (unidades en el soporte, montadas "
+                              f"incluidas); hay {count!r}")
         seen[code] = str(name)
-        tools[str(name)] = {"code": code, "description": str(spec.get("description") or "")}
+        tools[str(name)] = {"code": code, "description": str(spec.get("description") or "")} | (
+            {"count": count} if count is not None else {})
     return tools
 
 
@@ -369,6 +377,16 @@ def _tool_changer(serial: str, raw, tools: dict[str, dict]) -> frozenset[str]:
         raise ConfigError(f"robots.{serial}.tool_changer: {unknown} no están en el catálogo 'tools:' "
                           f"(hay {sorted(tools)})")
     return frozenset(str(t) for t in raw)
+
+
+def _check_fixed_tool(serial: str, tool, tools: dict[str, dict]) -> None:
+    """`robots.<serial>.tool`: la herramienta que lleva siempre (MiR) o al
+    arrancar (sim). Qué significa es cosa del driver; que esté en el catálogo
+    se comprueba aquí, para que no se pueda borrar del catálogo una que lleva
+    un robot (desde el Configurador, decisión 195) con ningún driver. Vacía =
+    ninguna."""
+    if tool not in (None, "") and str(tool) not in tools:
+        raise ConfigError(f"robots.{serial}.tool: '{tool}' no está en el catálogo 'tools:' (hay {sorted(tools)})")
 
 
 def _parse_catalog(raw, tools: dict[str, dict] | None = None) -> dict[str, dict]:

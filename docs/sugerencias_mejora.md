@@ -144,3 +144,55 @@ diagnóstico exportable quedarían para una siguiente iteración.
   `catalog/missions/imperialfleet-mission000-01-0001-012.json` y
   `catalog/positions/imperialfleet-position00-01-0001-026.json`.
   Parte del estado local todavía no estaba versionado.
+
+## Sugerencia añadida el 2026-11-13: herramientas compartidas y contadas
+
+> **Incorporada el 2026-11-19** (decisión 196 de `docs/avance.md`), con los
+> huecos de abajo cerrados: orders dirigidas, robots sin red y la web.
+
+Apuntada desde el gemelo de planta (`~/simulador-planta-v2`),
+a petición del usuario, como **posible mejora futura**. No está valorada ni
+incorporada al plan, y el código de este proyecto no se ha modificado: el
+cambio vive solo en la copia fijada que usa el gemelo (versión `3a5c8b6`),
+como parche.
+
+**El caso.** En el gemelo todos los robots llevan cambiador y las herramientas
+son de todos: hay 3 de cada tipo para 4 robots, repartidas entre lo que llevan
+puesto y los soportes de dos cambiadores. Hoy el FM da por bueno a cualquier
+robot que tenga la herramienta en su `tool_changer` (decisión 184), aunque en
+ese momento estén todas montadas en otros robots. La order se asigna, el robot
+va al cambiador y no hay nada que coger.
+
+**Lo que se quiere.** Que esa order espere en la cola del FM hasta que pase lo
+primero de dos cosas: queda libre un robot que ya lleva la herramienta, o
+alguien devuelve una a un cambiador.
+
+**Cómo está hecho en el gemelo** (unas 40 líneas en tres ficheros):
+
+- `fm/config.py`, `_tools`: clave opcional `count` en cada herramienta del
+  catálogo (`vgc10: { code: 3, count: 3 }`): unidades que hay en la planta,
+  montadas incluidas. Sin `count` no se cuenta y todo sigue como ahora.
+- `fm/fleet.py`, `_tool_free`: libres = `count` − las que llevan puestas los
+  robots (telemetría) − las que van a buscar los robots con una order asignada
+  que aún no la han montado.
+- `fm/assigner.py`, `assign(..., tool_free)`: con 0 libres solo vale un robot
+  que ya la lleve; los demás se rechazan con «no queda <herramienta> libre en
+  los cambiadores», y la order se queda `QUEUED` con ese motivo.
+
+Parche y pruebas: `parches/gestor-flota-existencias.patch` y
+`tests/test_gestor_existencias.py` en el proyecto del gemelo. Probado con
+cuatro robots simulados y cuatro orders de abrir puerta a la vez: dos van a
+los robots con ventosa, la tercera a uno que se cambia y la cuarta espera en
+la cola 86 s, hasta que el primero queda libre.
+
+**Lo que faltaría para traerlo aquí:**
+
+- Las orders dirigidas a un robot (`Robot._check_tool`) no miran las
+  existencias.
+- El Configurador y la web no conocen `count`; habría que poder editarlo y
+  enseñar cuántas quedan libres.
+- Un robot deshabilitado o sin telemetría no cuenta como portador de la que
+  lleve puesta.
+- No hay pruebas en la suite de este proyecto.
+- Con dos robots reales y un cambiador por robot el caso no se da todavía;
+  tendría sentido cuando se compartan herramientas o haya más robots que juegos.

@@ -48,6 +48,9 @@ class Robot:
         self.connected = False
         self.last_telemetry: Telemetry | None = None
         self.poll_failures = 0           # fallos de red consecutivos
+        # La última herramienta que se le leyó (decisión 196): con el robot
+        # inalcanzable sigue contando como suya para el soporte. None = nunca.
+        self.known_tool: str | None = None
         self.next_poll_at = 0.0          # no volver a preguntar al robot antes de esto
         self.next_connect_at = 0.0       # no reintentar connect() antes de esto
         # Config cambiada en caliente (fm/reload.py): volver a cargar los
@@ -91,6 +94,8 @@ class Robot:
         if now < self.next_poll_at:
             return None
         self.last_telemetry = self.driver.poll()
+        if self.last_telemetry is not None and self.last_telemetry.tool is not None:
+            self.known_tool = self.last_telemetry.tool
         if self.last_telemetry is None:
             self.poll_failures += 1
             wait = min(2.0 ** (self.poll_failures - 1), BACKOFF_MAX_S)

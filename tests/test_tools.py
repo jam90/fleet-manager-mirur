@@ -11,7 +11,7 @@ from fm.config import ConfigError, load_config
 from fm.fleet import Dispatcher
 from fm.reload import restart_reasons
 from fm.robot import Robot
-from fm.tools import changer_notice, needed_tool, tool_name, tool_problem
+from fm.tools import changer_notice, needed_tool, tool_name, tool_problem, stock_problem, tool_holders
 from fm.vda5050.header import HeaderCounter, make_header, topic
 from fm.vda5050.order import Action, ActionParameter, OrderRejected
 from test_fleet import FLEET_MAN, FakeBus
@@ -196,3 +196,89 @@ def test_factsheet_describe_el_parametro_de_herramienta(tmp_path):
     coger = next(a for a in d.describe_actions() if a.action_type == "coger")
     assert _action(coger)["actionParameters"] == [{"key": "garra", "valueDataType": "STRING", "isOptional": False,
                                                    "description": "herramienta: 2fg7, vgc10"}]
+
+
+# ------------------------------------------- unidades en el soporte (decisión 196)
+# Tres robots con acoplador y un soporte en la mesa con UNA ventosa; sim-3 lleva
+# fija una pinza de otra marca (sin acoplador), que no es del soporte.
+STOCK = """
+tools:
+  vgc10: {code: 1, count: 1}
+  2fg7: {code: 2, count: 1}
+  rq140: {code: 4}
+actions:
+  coger: {mission: coger, tool_input: garra}
+robots:
+  sim-1: {driver: sim, tool: "", tool_changer: [vgc10, 2fg7], actions: [coger]}
+  sim-2: {driver: sim, tool: "", tool_changer: [vgc10, 2fg7], actions: [coger]}
+  sim-3: {driver: sim, tool: rq140, actions: [coger]}
+"""
+
+
+def test_config_count(tmp_path):
+    cfg = _cfg(tmp_path, STOCK)
+    assert cfg.tools["vgc10"] == {"code": 1, "description": "", "count": 1} and "count" not in cfg.tools["rq140"]
+    for bad in ("0", "true", "1.5"):
+        with pytest.raises(ConfigError, match="count debe ser un entero"):
+            _cfg(tmp_path, STOCK.replace("vgc10: {code: 1, count: 1}", f"vgc10: {{code: 1, count: {bad}}}"))
+
+
+def test_tool_holders_y_stock_problem():
+    robots = [("a", {"v"}, "v", None),          # la lleva
+              ("b", {"v"}, "", "v"),            # va a buscarla
+              ("c", {"v"}, None, None),         # no se sabe qué lleva: por prudencia, ocupa
+              ("d", {"x"}, "v", None),          # no es del soporte de `v` (no la tiene en su cambiador)
+              ("e", {"v"}, "", None)]           # libre, sin ella
+    assert tool_holders("v", robots) == ["a", "b", "c"]
+    assert stock_problem("v", None, ["a"], "e", "") == ""                      # sin count: no se cuenta
+    assert stock_problem("v", 1, ["a"], "a", "v") == ""                        # la lleva él
+    assert stock_problem("v", 1, ["b"], "b", "") == ""                         # la pidió él
+    assert stock_problem("v", 4, ["a", "b", "c"], "e", "") == ""               # queda una
+    assert stock_problem("v", 3, ["a", "b", "c"], "e", "") == "no queda v libre en el soporte (ocupada por a, b, c)"
+
+
+def test_la_segunda_order_espera_a_que_quede_la_ventosa(tmp_path):
+    disp, robots, bus = _fleet(tmp_path, STOCK)
+    _send(disp, "o1", "vgc10")
+    assert _resp(bus, "o1")["assignedSerial"] == "sim-1"            # alfabético; va a por ella
+    _send(disp, "o2", "vgc10")                                       # sim-2 está libre, pero no hay otra
+    r = _resp(bus, "o2")
+    assert r["status"] == "QUEUED"
+    assert "sim-2: no queda vgc10 libre en el soporte (ocupada por sim-1)" in r["description"]
+    assert "sim-3: lleva rq140, no vgc10 (sin cambiador)" in r["description"]
+    # Otra herramienta sí: sim-2 va a por la 2fg7.
+    _send(disp, "o3", "2fg7")
+    assert _resp(bus, "o3")["assignedSerial"] == "sim-2"
+    # sim-1 termina y se queda con la ventosa puesta: la order de la cola es para él.
+    robots["sim-1"].driver.clock = lambda: 10**6
+    for r in robots.values():
+        r.poll()
+    disp.tick()
+    assert _resp(bus, "o2")["assignedSerial"] == "sim-1"
+
+
+def test_sin_count_no_se_cuenta(tmp_path):
+    disp, robots, bus = _fleet(tmp_path, STOCK.replace("vgc10: {code: 1, count: 1}", "vgc10: {code: 1}"))
+    _send(disp, "o1", "vgc10")
+    _send(disp, "o2", "vgc10")
+    assert {_resp(bus, "o1")["assignedSerial"], _resp(bus, "o2")["assignedSerial"]} == {"sim-1", "sim-2"}
+
+
+def test_robot_sin_respuesta_sigue_ocupando_la_que_llevaba(tmp_path):
+    disp, robots, bus = _fleet(tmp_path, STOCK.replace('sim-1: {driver: sim, tool: ""', 'sim-1: {driver: sim, tool: vgc10'))
+    assert robots["sim-1"].known_tool == "vgc10"
+    robots["sim-1"].last_telemetry = None                            # se cae la red: no se sabe ahora…
+    _send(disp, "o1", "vgc10")                                       # …pero la última vez la llevaba
+    r = _resp(bus, "o1")
+    assert r["status"] == "QUEUED" and "no queda vgc10 libre en el soporte (ocupada por sim-1)" in r["description"]
+
+
+def test_order_dirigida_sin_unidad_libre(tmp_path):
+    disp, robots, bus = _fleet(tmp_path, STOCK)
+    _send(disp, "o1", "vgc10")                                       # sim-1 va a por ella
+    disp.handle(topic("SIM", "sim-2", "order"), _order("d1", "vgc10", serial="sim-2", man="SIM"))
+    errors = [e for e in robots["sim-2"].orders.order_errors if e.errorType == "TOOL_NOT_AVAILABLE"]
+    assert errors and "ocupada por sim-1" in errors[0].errorDescription
+    assert robots["sim-2"].driver._jobs == {}
+    disp.handle(topic("SIM", "sim-2", "order"), _order("d2", "2fg7", serial="sim-2", man="SIM"))
+    assert robots["sim-2"].driver._jobs                              # la otra sí está en el soporte

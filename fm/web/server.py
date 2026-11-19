@@ -66,6 +66,7 @@ from fm.adapters import DRIVERS
 from fm.adapters.base import describe_actions
 from fm.config import ConfigError, FleetConfig, load_config
 from fm.config_edit import EditError, save, validate
+from fm.tools import tool_holders
 from fm.mqtt_bus import FLEET, MqttBus
 from fm.robot import Robot
 from fm.vda5050.header import parse_topic, topic
@@ -205,6 +206,7 @@ class ConfigEditIn(BaseModel):
     assigner: dict[str, Any] = {}
     site: dict[str, Any] | None = None                    # solo si se manda; None = quitarlo
     idle_return: dict[str, Any] | None = None             # ídem (decisión 136)
+    tools: dict[str, dict[str, Any] | None] = {}          # catálogo de herramientas; None = borrar (decisión 195)
 
 
 class WebServer:
@@ -472,7 +474,8 @@ class WebServer:
         for s, r in self.robots.items():
             rc = r.cfg
             settings = {k: v for k, v in rc.raw.items()
-                        if k not in ("actions", "driver", "manufacturer", "battery_min", "idle_return")}
+                        if k not in ("actions", "driver", "manufacturer", "battery_min", "idle_return",
+                                     "tool_codes", "tool_changer", "tool")}
             # Vuelta a la espera (decisión 136): la de la flota, la suya o ninguna.
             own = rc.raw.get("idle_return")
             idle = {"mode": "off" if own is False else "own" if isinstance(own, dict) else "fleet",
@@ -480,6 +483,8 @@ class WebServer:
             robots.append({"serial": s, "driver": rc.driver, "manufacturer": r.manufacturer,
                            "battery_min": rc.battery_min, "actions": sorted(rc.action_types),
                            "settings": settings, "sync": s in self.syncs, "idle_return": idle,
+                           # herramientas (decisión 195): las del cambiador y la fija, tal como están en fleet.yaml
+                           "tool_changer": sorted(rc.tool_changer), "tool": rc.raw.get("tool"),
                            # para avisar antes de reiniciar: el FM perdería de vista sus orders
                            "busy": r.busy, "order": r.orders.active.order.orderId if r.orders.busy else None})
         # Qué necesita cada action del catálogo: no depende del robot (el
@@ -505,12 +510,27 @@ class WebServer:
                 "auto_charge": asdict(self.cfg.auto_charge),
                 "assigner": {"prefer_not_charging": self.cfg.prefer_not_charging},
                 "idle_return": asdict(self.cfg.idle_return) if self.cfg.idle_return.enabled else None,
+                "tools": self.cfg.tools,
+                "tool_stock": self.tool_stock(),
                 "drivers": self.cfg.drivers,
                 "fleet_manufacturer": self.cfg.mqtt.fleet_manufacturer,
                 "editable": self.config_path is not None and self.reloader is not None,
                 "can_restart": self.on_restart is not None,
                 "drivers_available": sorted(DRIVERS),
                 "file": self.file_status()}
+
+    def tool_stock(self) -> dict:
+        """Las herramientas contadas (decisión 196): cuántas quedan ahora en el
+        soporte y quién tiene ocupadas las demás. Lo mismo que mira el
+        asignador (`Dispatcher._tool_stock`)."""
+        out = {}
+        for name, t in self.cfg.tools.items():
+            if t.get("count") is None:
+                continue
+            holders = tool_holders(name, ((s, r.cfg.tool_changer, r.known_tool, r.requested_tool())
+                                          for s, r in self.robots.items()))
+            out[name] = {"free": t["count"] - len(holders), "holders": holders}
+        return out
 
     def file_status(self) -> dict | None:
         """¿El `fleet.yaml` del disco es la config en uso? Si no (editado a

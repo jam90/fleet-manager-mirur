@@ -64,3 +64,39 @@ def tool_name(code: int, codes: Mapping[str, int]) -> str:
     if code == 0:
         return ""
     return next((name for name, c in codes.items() if c == code), f"código {code}")
+
+
+# ------------------------------------------------ unidades en el soporte (decisión 196)
+# Las herramientas de un soporte fijo (una mesa con el intercambiador) son de
+# todos los robots que tienen acoplador en la muñeca: si una está puesta en un
+# robot, los demás no pueden cogerla. `tools.<nombre>.count` dice cuántas
+# unidades circulan por el soporte; sin `count` no se cuentan (como antes).
+# Una herramienta fija de un robot sin acoplador (`tool:`) no es del soporte y
+# no cuenta: ese robot no la deja nunca.
+
+def tool_holders(tool: str, robots) -> list[str]:
+    """Quién tiene ocupada una unidad de `tool` del soporte: los robots con
+    `tool` en su cambiador que la llevan puesta, que la han pedido y aún no la
+    llevan (van a buscarla), o de los que no se sabe qué llevan (por
+    prudencia: si se diera por libre, otro robot iría a por una que no está).
+
+    `robots`: iterable de `(serial, changer, mounted, requested)`, con
+    `mounted` = la última que se le leyó ("" = ninguna; None = nunca se ha
+    sabido) y `requested` = la que pide su order en curso (o None)."""
+    out = []
+    for serial, changer, mounted, requested in robots:
+        if tool in changer and (mounted is None or mounted == tool or requested == tool):
+            out.append(serial)
+    return sorted(out)
+
+
+def stock_problem(tool: str, count: int | None, holders, serial: str, mounted: str | None) -> str:
+    """Por qué `serial` no puede ir a por `tool` al soporte ("" = sí puede, o
+    no hace falta porque ya la lleva). Él mismo no cuenta entre los que la
+    ocupan: si la pidió o no se sabe qué lleva, la unidad sería la suya."""
+    if count is None or mounted == tool:
+        return ""
+    others = [h for h in holders if h != serial]
+    if count - len(others) >= 1:
+        return ""
+    return f"no queda {tool} libre en el soporte (ocupada por {', '.join(others)})"

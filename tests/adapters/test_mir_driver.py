@@ -390,7 +390,7 @@ def test_herramienta_pedida_va_a_la_mission_como_su_codigo():
 
 
 def test_herramienta_fija_no_lee_el_registro():
-    # Decisión 193: mir-1 (UR5 sin cambiador, con la DH140) declara `tool: dh`.
+    # Decisión 193: un robot sin acoplador con su pinza siempre puesta declara `tool:`.
     from fm.adapters.mir.config import parse_config
     from fm.config import ConfigError
     codes = {"cgi": 1, "dh": 2, "vgc10": 3}

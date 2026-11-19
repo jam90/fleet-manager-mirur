@@ -2,7 +2,8 @@
 
 Filtros en orden (CLAUDE.md §6): soporta el actionType → (si la order pide
 herramienta) la lleva o la tiene en su cambiador → batería ≥ battery_min → no
-ocupado → (opcional) no cargando si hay otro libre. Ranking: primero los que
+ocupado → (si las herramientas del soporte están contadas, decisión 196) la
+lleva o queda alguna libre → (opcional) no cargando si hay otro libre. Ranking: primero los que
 ya llevan la herramienta pedida (sin cambio, decisión 184), luego mayor
 batería, desempate alfabético. Sin candidatos → rechazo con el detalle por robot.
 
@@ -15,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from fm.config import FleetConfig
-from fm.tools import tool_problem
+from fm.tools import stock_problem, tool_problem
 from fm.vda5050.state import E_NO_MOBILE_ROBOT_AVAILABLE
 
 # Comienzo del motivo sin candidatos. La cola lo cambia por «ahora no puede…»
@@ -49,8 +50,11 @@ class AssignResult:
 
 
 def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConfig,
-           tool: str | None = None) -> AssignResult:
-    """`tool`: la herramienta que pide la order (`fm.tools.needed_tool`), o None."""
+           tool: str | None = None, stock: tuple[int | None, list[str]] = (None, [])) -> AssignResult:
+    """`tool`: la herramienta que pide la order (`fm.tools.needed_tool`), o None.
+    `stock`: `(count, holders)` de esa herramienta en el soporte (decisión 196;
+    `fm.tools.tool_holders`); `count` None = no se cuenta."""
+    count, holders = stock
     rejections: dict[str, str] = {}
     candidates: list[RobotSnapshot] = []
     for serial in sorted(snapshots):
@@ -66,6 +70,8 @@ def assign(action_type: str, snapshots: dict[str, RobotSnapshot], cfg: FleetConf
             rejections[serial] = f"batería {s.battery:.1f}% < mínimo {rcfg.battery_min:.0f}%"
         elif s.busy:
             rejections[serial] = "ocupado"
+        elif tool and stock_problem(tool, count, holders, serial, s.tool):
+            rejections[serial] = stock_problem(tool, count, holders, serial, s.tool)
         else:
             candidates.append(s)
 

@@ -22,7 +22,7 @@ from fm.mqtt_bus import FLEET, MqttBus
 from fm.instant import apply_instant_actions
 from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
-from fm.tools import needed_tool, tool_problem
+from fm.tools import needed_tool, stock_problem, tool_holders, tool_problem
 from fm.tasks import (ASSIGNED, ASSIGNING, CANCELLED, EXPIRED, FAILED, FINISHED, QUEUED, REJECTED,
                       RETRYABLE, MemoryTaskStore, Task, TaskStore, iso)
 from fm.vda5050.header import parse_topic, validate_header
@@ -118,6 +118,7 @@ class Dispatcher:
                 raise OrderRejected(E_VALIDATION_FAILURE, invalid)
             order = parse_order(data)
             req = robot.translate_order(order)
+            self._check_stock(robot, order)
             robot.execute(order, req)
         except IgnoreOrder:
             log.info("[%s] order %s repetida: ignorada", serial, order_id)
@@ -253,7 +254,7 @@ class Dispatcher:
         except OrderRejected as e:
             self._drop(task, e)
             return
-        result = assign(task.action_type, snaps, self.cfg, tool)
+        result = assign(task.action_type, snaps, self.cfg, tool, self._tool_stock(tool))
         if not result.ok:
             self._wait(task, result.reason)
             return
@@ -583,6 +584,25 @@ class Dispatcher:
             return
         self._last_queue = body
         self.bus.publish(FLEET, "queue", {"tasks": body}, retain=True)
+
+    def _tool_stock(self, tool: str | None) -> tuple[int | None, list[str]]:
+        """`(count, holders)` de `tool` en el soporte de cambio (decisión 196):
+        cuántas unidades hay y qué robots tienen una ocupada (puesta, pedida o
+        sin saber qué llevan). `count` None = esa herramienta no se cuenta."""
+        count = (self.cfg.tools.get(tool) or {}).get("count") if tool else None
+        if count is None:
+            return None, []
+        return count, tool_holders(tool, ((s, r.cfg.tool_changer, r.known_tool, r.requested_tool())
+                                          for s, r in self.robots.items()))
+
+    def _check_stock(self, robot: Robot, order: Order) -> None:
+        """Una order dirigida a un robot que tendría que ir a por la
+        herramienta al soporte: si no queda ninguna, se rechaza (no hay cola
+        por robot). En `fleet/order` lo mira el asignador."""
+        tool = needed_tool(pick_action(order, robot.orders.done_action_ids(order)), self.cfg.actions, self.cfg.tools)
+        problem = tool and stock_problem(tool, *self._tool_stock(tool), robot.serial, robot.known_tool)
+        if problem:
+            raise OrderRejected(E_TOOL_NOT_AVAILABLE, problem)
 
     def _tool_of(self, task: Task) -> str | None:
         try:

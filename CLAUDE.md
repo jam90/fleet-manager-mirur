@@ -67,7 +67,9 @@
   grupos y pestaña **Catálogo** (decisión 175, 2026-11-04), con lista y ficha de
   cada recurso y un único «Quitar…» (decisión 182); Sincronización a varios robots a la vez (183).
   **Herramientas** (`fm/tools.py`, decisión 184): `tools:` y `tool_changer` en `fleet.yaml`,
-  la montada la lee el driver (MiR: registro PLC); el asignador elige quien la lleva o puede ponérsela. Pestaña **Robots**
+  la montada la lee el driver (MiR: registro PLC); el asignador elige quien la lleva o puede ponérsela.
+  Se editan en Configuración → Herramientas (decisión 195). Soporte de cambio compartido en una mesa:
+  `count` por herramienta y, sin unidad libre, la order espera (decisión 196). Pestaña **Robots**
   (decisiones 110–112, 2026-10-23): lo propio de cada marca llega en
   `state.information[]` con los `I_*` de `fm/vda5050/state.py`; los robots
   siguen siendo `mir-1`/`mir-2` y la UI enseña su nombre (Dejavu, Toretto). Lo abierto, ordenado, al final de

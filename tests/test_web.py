@@ -298,6 +298,32 @@ def test_config_vuelta_a_la_espera(tmp_path):
     assert bad.status_code == 400 and "no está habilitada en sim-1" in bad.json()["detail"]
 
 
+def test_config_herramientas(tmp_path):
+    """Decisión 195: catálogo y cambiador en caliente; la herramienta fija pide reiniciar."""
+    srv, p, notes = _server_editable(tmp_path)
+    c = TestClient(srv.app)
+    info = c.get("/api/config").json()
+    assert info["tools"] == {} and info["robots"][0]["tool_changer"] == [] and info["robots"][0]["tool"] is None
+    r = c.post("/api/config", json={"tools": {"dh": {"code": 2, "description": "Pinza"}, "vgc10": {"code": 3}},
+                                    "robots": {"sim-1": {"tool_changer": ["dh", "vgc10"]}}}).json()
+    assert r["changed"] and r["restart"] == []
+    srv.reloader.apply_pending()
+    assert srv.robots["sim-1"].cfg.tool_changer == {"dh", "vgc10"}
+    info = c.get("/api/config").json()
+    assert info["tools"]["dh"] == {"code": 2, "description": "Pinza"} and info["robots"][0]["tool_changer"] == ["dh", "vgc10"]
+    assert not {"tool_codes", "tool_changer", "tool"} & set(info["robots"][0]["settings"])
+    r = c.post("/api/config", json={"robots": {"sim-1": {"tool_changer": [], "tool": "dh"}}}).json()
+    assert r["restart"] == ["robots.sim-1: cambia tool"]
+    # Unidades en el soporte (decisión 196): sim-1 tiene acoplador y aún no se sabe qué lleva.
+    c.post("/api/config", json={"robots": {"sim-1": {"tool": None, "tool_changer": ["dh", "vgc10"]}},
+                                "tools": {"vgc10": {"code": 3, "count": 2}}})
+    srv.reloader.apply_pending()
+    assert c.get("/api/config").json()["tool_stock"] == {"vgc10": {"free": 1, "holders": ["sim-1"]}}
+    c.post("/api/config", json={"robots": {"sim-1": {"tool_changer": [], "tool": "dh"}}})
+    bad = c.post("/api/config", json={"tools": {"dh": None}})       # la lleva sim-1
+    assert bad.status_code == 400 and "no está en el catálogo" in bad.json()["detail"]
+
+
 def test_config_editada_a_mano(tmp_path):
     srv, p, notes = _server_editable(tmp_path)
     c = TestClient(srv.app)

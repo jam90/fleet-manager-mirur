@@ -293,3 +293,96 @@ def test_idle_return_errores():
         apply_edits(YAML, {"idle_return": {"after_s": 30}})
     with pytest.raises(EditError, match="params"):
         apply_edits(YAML, {"idle_return": {"action": "coger", "params": {"x": [1]}}})
+
+
+# --------------------------------------------------------- herramientas (decisión 195)
+TOOLS_YAML = """\
+tools:
+  cgi:   { code: 1, description: "CGI" }     # comentario de la línea
+  dh:    { code: 2, description: "Pinza DH140" }
+
+actions:
+  coger: { mission: coger, tool_input: garra }
+
+robots:
+  sim-1:
+    driver: sim
+    tool_changer: [cgi, dh]
+    actions: [coger]
+  sim-2:
+    driver: sim
+    actions: [coger]
+"""
+
+
+def test_herramienta_nueva_cambiada_y_borrada_en_su_linea():
+    new = apply_edits(TOOLS_YAML, {"tools": {"vgc10": {"code": 3, "description": "Ventosa VGC10"},
+                                             "cgi": {"code": 1, "description": "Garra CGI"}}})
+    assert '  cgi:   {code: 1, description: Garra CGI}   # comentario de la línea\n' in new   # el # en su columna
+    assert '  dh:    { code: 2, description: "Pinza DH140" }\n  vgc10: {code: 3, description: Ventosa VGC10}\n' in new
+    new = apply_edits(TOOLS_YAML, {"tools": {"cgi": None}})
+    assert "cgi" not in new.split("actions:")[0] and "  dh:" in new
+
+
+def test_herramienta_igual_no_cambia_nada():
+    assert apply_edits(TOOLS_YAML, {"tools": {"dh": {"code": 2, "description": "Pinza DH140"}}}) == TOOLS_YAML
+
+
+def test_sin_catalogo_de_herramientas_se_crea_el_bloque():
+    new = apply_edits(YAML, {"tools": {"dh": {"code": 2}}})
+    assert new.endswith("\ntools:\n  dh: {code: 2}\n")
+
+
+def test_borrar_todas_quita_el_bloque():
+    new = apply_edits(TOOLS_YAML.replace("tool_changer: [cgi, dh]", "tool_changer: [cgi]"),
+                      {"tools": {"cgi": None, "dh": None}})
+    assert "tools:" not in new and new.lstrip("\n").startswith("actions:")
+
+
+def test_cambiador_y_herramienta_fija_de_un_robot():
+    new = apply_edits(TOOLS_YAML, {"robots": {"sim-1": {"tool_changer": ["dh"]}, "sim-2": {"tool": "cgi"}}})
+    assert "    tool_changer: [dh]\n" in new
+    assert "  sim-2:\n    driver: sim\n    actions: [coger]\n    tool: cgi\n" in new
+    new = apply_edits(new, {"robots": {"sim-1": {"tool_changer": []}, "sim-2": {"tool": None}}})
+    assert "tool_changer" not in new and "tool: cgi" not in new
+
+
+@pytest.mark.parametrize("edits, msg", [
+    ({"tools": {"123": {"code": 1}}}, "nombre de herramienta"),      # solo cifras: YAML lo leería como número
+    ({"tools": {"-x": {"code": 1}}}, "nombre de herramienta"),
+    ({"tools": {"x": {"code": 0}}}, "mayor que 0"),
+    ({"tools": {"x": {"code": True}}}, "mayor que 0"),
+    ({"tools": {"x": {"code": 4, "otra": 1}}}, "se espera"),
+    ({"tools": {"x": {"code": 4, "description": "a\nb"}}}, "una línea"),
+    ({"robots": {"sim-1": {"tool_changer": "dh"}}}, "lista"),
+    ({"robots": {"sim-2": {"tool": 3}}}, "elige una herramienta"),
+])
+def test_ediciones_de_herramientas_invalidas(edits, msg):
+    with pytest.raises(EditError, match=msg):
+        apply_edits(TOOLS_YAML, edits)
+
+
+@pytest.mark.parametrize("edits, msg", [
+    ({"tools": {"dh": None}}, "no están en el catálogo"),                 # sim-1 la tiene en el cambiador
+    ({"tools": {"cgi": None}, "robots": {"sim-1": {"tool_changer": ["dh"]}, "sim-2": {"tool": "cgi"}}},
+     "no está en el catálogo"),                                            # sim-2 la lleva fija
+    ({"tools": {"vgc10": {"code": 2}}}, "ya es el de 'dh'"),              # código repetido
+    ({"robots": {"sim-2": {"tool_changer": ["vgc10"]}}}, "no están en el catálogo"),
+])
+def test_herramientas_que_no_valida_el_cargador_no_se_guardan(tmp_path, edits, msg):
+    path = tmp_path / "fleet.yaml"
+    path.write_text(TOOLS_YAML, encoding="utf-8")
+    with pytest.raises(ConfigError, match=msg):
+        save(path, edits)
+    assert path.read_text(encoding="utf-8") == TOOLS_YAML and not list(tmp_path.glob("*.bak"))
+
+
+def test_unidades_de_una_herramienta():
+    """Decisión 196: `count` se pone, se cambia y se quita en la misma línea."""
+    new = apply_edits(TOOLS_YAML, {"tools": {"dh": {"code": 2, "description": "Pinza DH140", "count": 1}}})
+    assert "  dh:    {code: 2, description: Pinza DH140, count: 1}\n" in new
+    assert apply_edits(new, {"tools": {"dh": {"code": 2, "description": "Pinza DH140", "count": 1}}}) == new
+    back = apply_edits(new, {"tools": {"dh": {"code": 2, "description": "Pinza DH140"}}})
+    assert "count" not in back
+    with pytest.raises(EditError, match="count debe ser un entero"):
+        apply_edits(TOOLS_YAML, {"tools": {"dh": {"code": 2, "count": 0}}})

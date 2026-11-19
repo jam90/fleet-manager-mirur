@@ -3828,6 +3828,84 @@ paneles, de los botones de peligro (`--bad-btn`) y de los enlaces en oscuro
      `#guia/<apartado>` abre el apartado también al cargar la página con ese
      enlace (antes solo desde otra pestaña de la web).
 
+## 2026-11-19 — Orden de lo siguiente: administración y luego herramientas
+
+194. **Las herramientas se prueban con misiones ficticias, sin esperar al
+     cambiador físico** (que tardará). Lo que comprueba la prueba es el FM:
+     que elige robot según la herramienta, que pasa su código a la mission
+     y que lee la montada del registro 5. Cuando exista la mission de
+     cambio real, basta con cambiar a qué mission llama la action
+     (`actions.<x>.mission` en `fleet.yaml`); el FM no cambia. El usuario
+     duda de cuánto sirve esto fuera de su caso; en el core es poco y
+     opcional (sin `tools:` el FM se comporta igual), así que se deja.
+     **Antes va la administración con los MiR** (puntos 3 y 4 de la
+     lista), que sirve a cualquier instalación.
+
+## 2026-11-19 — Herramientas en Configuración (punto 2)
+
+195. **Las herramientas se editan en Configuración → Herramientas**, sin
+     tocar `fleet.yaml` a mano. Una tabla: cada fila es una herramienta
+     del catálogo `tools:` (nombre, código y descripción, editables;
+     añadir y borrar) y cada columna un robot, con su modo debajo del
+     nombre: «sin herramienta», «siempre la misma» (`tool`, radio) o «con
+     cambiador» (`tool_changer`, casillas). El catálogo y los cambiadores
+     se aplican en caliente; cambiar la fija pide reiniciar (como decía la
+     193). En el formulario de un tipo de tarea, un input puede ser
+     «herramienta» (`tool_input`, uno como mucho). La Guía («Robots con
+     cambio de herramienta») apunta ya a Configuración.
+     - **Por qué así y no con la matriz de tipos de tarea:** las dos
+       preguntas son distintas (qué tareas hace un robot / qué garras puede
+       llevar) y el modo de cada robot cambia lo que significa la casilla.
+     - **Validación nueva en el cargador común:** que la `tool` fija de un
+       robot esté en el catálogo. Antes solo lo miraba el driver MiR, así
+       que con un `sim` se podía borrar del catálogo una herramienta que
+       llevaba puesta.
+     - **Nombres de herramienta:** pueden empezar por cifra (`2fg7`), pero
+       no ser solo cifras (YAML los leería como números).
+     - En modo cambiador la web no toca `tool` (en el simulador es la que
+       lleva al arrancar y puede convivir con `tool_changer`; en el MiR, no).
+     - Probado con la flota simulada en el navegador (sin pantalla): añadir
+       `vgc10`, marcarla en un cambiador, poner `tool_input` a `coger` y
+       ver el desplegable en Nueva tarea; y cambiar la fija, que avisa de
+       reiniciar. Tests: `test_config_edit.py` y `test_web.py`.
+
+## 2026-11-19 — Unidades de cada herramienta en el soporte de cambio
+
+196. **Se cuentan las herramientas del soporte compartido** (la sugerencia
+     del gemelo, `docs/sugerencias_mejora.md`). El soporte está en una mesa
+     con las herramientas colgadas; el brazo embarcado lleva en la muñeca
+     el acoplador (foto del usuario, 2026-11-13). Así que una herramienta
+     puesta en un robot no está para otro. Hay una de cada (`cgi`, `dh`,
+     `vgc10`).
+     - `tools.<nombre>.count` (opcional): unidades del soporte, contadas
+       las montadas. Sin él, nada cambia.
+     - Ocupan una unidad (`fm/tools.py::tool_holders`) los robots con esa
+       herramienta en su `tool_changer` que la llevan puesta, que la han
+       pedido y aún no la llevan, o de los que nunca se ha sabido qué
+       llevan (por prudencia). Un robot sin red sigue con la última que se
+       le leyó (`Robot.known_tool`). La fija de un robot sin acoplador
+       (`tool:`) no cuenta: no es del soporte.
+     - Las «pedidas» salen de la order en curso de cada robot
+       (`Robot.requested_tool`), no de la cola: así cuentan también las
+       orders dirigidas, y la reserva se suelta sola al acabar o fallar.
+     - Sin unidad libre, el asignador descarta a los que no la llevan («no
+       queda vgc10 libre en el soporte (ocupada por mir-2)») y la
+       `fleet/order` espera en la cola. Una order dirigida a un robot se
+       rechaza con `TOOL_NOT_AVAILABLE` (no hay cola por robot).
+     - En Configuración → Herramientas, columna «unidades» y, debajo,
+       cuántas quedan ahora. El modo del robot se llama «con acoplador»
+       (antes «con cambiador»): `tool_changer` son las del soporte que puede
+       ponerse. La clave no cambia de nombre.
+     - Con un solo soporte basta el número. Si hay un segundo soporte,
+       habrá que decir qué cuelga en cada uno (`tool_stations:`).
+     - **Corrección de la 193:** mir-1 no lleva la DH140, sino una
+       **Robotiq 2F-140** en el UR5, que no tiene acoplador. En
+       `mirur-instalacion`: `2f140` (código 4) en `tools:` y
+       `tool: 2f140` en mir-1; `count: 1` en `cgi`, `dh` y `vgc10`.
+     - Probado con la flota simulada (dos robots con acoplador y una
+       ventosa): la segunda order de ventosa espera con sim-2 libre y va a
+       sim-1 cuando termina con ella puesta. Tests en `test_tools.py`.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -3856,7 +3934,9 @@ Cerrado el 2026-11-06: #33 (copiar un mapa del catálogo con sus positions
 y zonas, decisión 176), y #31 (contestar a un `fleet/order` repetido con su estado,
 decisión 179).
 
-**En curso / siguiente** (al cerrar el 2026-11-07, viernes; se sigue el lunes 2026-11-10; robots apagados)
+**En curso / siguiente** (revisado el 2026-11-19, decisión 194: primero los
+puntos 3 y 4 con los MiR, que se encienden el 2026-11-20; después el 1, con
+misiones ficticias en mir-2; luego 1b y 2)
 
 0. ~~Corregir lo de la revisión de interfaz y aplicar 185–191~~ (hecho el
    2026-11-07, con cuatro pasadas del revisor; commit `7b89f86`).
@@ -3872,8 +3952,8 @@ decisión 179).
    order pide una herramienta concreta; habría que poder pedir una lista
    («cualquiera de estas») y que el asignador prefiera la que ya lleva.
    Sin decidir el formato.
-2. **Herramientas en Configuración**: editar el catálogo `tools:` y la
-   matriz robot × herramienta (hoy, a mano en `fleet.yaml`).
+2. ~~**Herramientas en Configuración**~~ (hecho el 2026-11-19, decisión
+   195; falta verlo con el FM real).
 3. **Probar con los MiR la interfaz nueva de administración** (decisiones
    182–183): ficha del Catálogo, «Quitar…», traer al catálogo y desplegar a
    los dos robots a la vez. Y el arreglo de «Traer al catálogo» (180).

@@ -56,14 +56,17 @@ drivers:
 # ese parámetro de la order (`garra: vgc10`); el FM elige un robot que la
 # lleve o la tenga en su `tool_changer`, y la mission recibe su código y la
 # cambia si hace falta.
+# Con un soporte de cambio compartido (decisión 196), `count` es cuántas hay
+# de cada una, contando las montadas: si están todas puestas o pedidas, la
+# order espera en la cola. Sin `count` no se cuentan.
 # tools:
-#   vgc10: { code: 1, description: "Ventosa VGC10" }
+#   vgc10: { code: 1, description: "Ventosa VGC10", count: 1 }
 #   2fg7:  { code: 2, description: "Pinza 2FG7" }
 # (en drivers.mir:)   tool_register: 5     (por defecto, el 5: el brazo escribe ahí la que lleva;
 #                                         la mission escribe en el 2 la que quiere)
 # (en una action:)    coger: { mission: "coger", tool_input: garra }
-# (en un robot:)      tool_changer: [vgc10, 2fg7]
-# (o, sin cambiador:) tool: vgc10           (la lleva siempre: no se lee el registro)
+# (en un robot:)      tool_changer: [vgc10, 2fg7]   (con acoplador: las del soporte que puede ponerse)
+# (o, sin acoplador:) tool: vgc10           (la lleva siempre: no se lee el registro)
 
 # Vuelta a la espera (opcional): si un robot lleva `after_s` segundos parado,
 # el FM le manda esta action del catálogo, una vez, para que no estorbe donde

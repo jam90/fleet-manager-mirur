@@ -18,8 +18,10 @@ Tres operaciones sobre el texto, todas a partir de una ruta de claves:
 Qué se puede editar (decisión 93): v1, las actions habilitadas y
 `battery_min` de cada robot, `auto_charge.*` y `assigner.prefer_not_charging`;
 v2, el catálogo `actions:` (crear, cambiar y borrar definiciones); v3, altas
-y bajas de robots y su `host` (piden reiniciar el FM, `fm/reload.py`); y la
-vuelta a la espera, `idle_return` de la flota y de cada robot (decisión 136). El
+y bajas de robots y su `host` (piden reiniciar el FM, `fm/reload.py`); la
+vuelta a la espera, `idle_return` de la flota y de cada robot (decisión 136); y
+las herramientas (decisión 195): el catálogo `tools:` y, en cada robot, su
+`tool_changer` y su herramienta fija `tool` (esta pide reiniciar). El
 contenido de una definición es del driver: aquí no se interpreta, lo valida
 el driver al guardar.
 
@@ -51,13 +53,18 @@ GLOBAL_KEYS: dict[tuple[str, str], type] = {
     ("auto_charge", "abort_cooldown_s"): float,
     ("assigner", "prefer_not_charging"): bool,
 }
-ROBOT_KEYS = ("actions", "battery_min", "host", "idle_return")   # editables en un robot que ya está
+ROBOT_KEYS = ("actions", "battery_min", "host", "idle_return",   # editables en un robot que ya está
+              "tool_changer", "tool")
 NEW_ROBOT_KEYS = ("driver", "host", "battery_min", "actions")   # al dar de alta, en este orden
 # Serial de un robot: segmento del topic MQTT y nombre de fichero; corto y sin sorpresas.
 SERIAL = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 # Nombre de action (= actionType VDA): que se pueda escribir en YAML sin comillas.
 ACTION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+# Nombre de herramienta: el valor que llega en el parámetro de la order. Puede
+# empezar por cifra (`2fg7`, la OnRobot 2FG7), pero no ser solo un número: YAML
+# lo leería como entero y no como nombre.
+TOOL_NAME = re.compile(r"^(?=.*[A-Za-z])[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 COMMENT_GAP = "   "          # espacios antes de un comentario nuevo, como en fleet.yaml
 
 
@@ -95,15 +102,18 @@ def plan(text: str, edits: dict) -> list[Op]:
       "robots": {"mir-1": {"actions": [...], "battery_min": 30}},
       "auto_charge": {"battery_floor": 20}, "assigner": {"prefer_not_charging": true},
       "site": {"guid": "imperialfleet-session000-…", "name": "suberri_mirur"},    # None = quitarlo
-      "idle_return": {"action": "ir_a_espera", "after_s": 30, "params": {}}}`     # None = quitarlo
+      "idle_return": {"action": "ir_a_espera", "after_s": 30, "params": {}},     # None = quitarlo
+      "tools": {"vgc10": {"code": 3, "description": "Ventosa"}, "vieja": None}}`   # None = borrar
     En un robot, `idle_return`: None = como la flota (se quita la clave),
-    False = desactivada, o su propio `{action, after_s, params}`.
+    False = desactivada, o su propio `{action, after_s, params}`;
+    `tool_changer`: lista de herramientas (vacía = quitar la clave); `tool`:
+    la herramienta fija (None = quitarla).
     """
-    unknown = set(edits) - {"actions", "robots", "auto_charge", "assigner", "site", "idle_return"}
+    unknown = set(edits) - {"actions", "robots", "auto_charge", "assigner", "site", "idle_return", "tools"}
     if unknown:
         raise EditError(f"no se puede editar {sorted(unknown)} desde aquí")
     current = yaml.safe_load(text) or {}
-    ops: list[Op] = []
+    ops: list[Op] = _plan_tools(current.get("tools"), edits.get("tools") or {})
     # El catálogo primero: un robot puede habilitar en la misma edición una action nueva.
     catalog = current.get("actions") or {}
     for name, change in (edits.get("actions") or {}).items():
@@ -140,6 +150,18 @@ def plan(text: str, edits: dict) -> list[Op]:
                 ops.append(Op(("robots", serial, "actions"), list(value)))
             elif key == "host":
                 ops.append(Op(("robots", serial, "host"), _host(f"robots.{serial}.host", value)))
+            elif key == "tool_changer":           # decisión 195; que existan lo mira el cargador
+                if not isinstance(value, list) or not all(isinstance(t, str) and t for t in value):
+                    raise EditError(f"robots.{serial}.tool_changer debe ser una lista de herramientas")
+                ops.append(Op(("robots", serial, "tool_changer"), list(dict.fromkeys(value)))
+                           if value else Op(("robots", serial, "tool_changer"), delete=True))
+            elif key == "tool":
+                if value is None:
+                    ops.append(Op(("robots", serial, "tool"), delete=True))
+                elif isinstance(value, str) and TOOL_NAME.match(value):
+                    ops.append(Op(("robots", serial, "tool"), value))
+                else:
+                    raise EditError(f"robots.{serial}.tool: elige una herramienta del catálogo")
             elif key == "idle_return":
                 where = f"robots.{serial}.idle_return"
                 if value is None:
@@ -181,6 +203,47 @@ def plan(text: str, edits: dict) -> list[Op]:
                 ops.append(Op((block, key), value))
             else:
                 ops.append(Op((block, key), _number(f"{block}.{key}", value, typ)))
+    return ops
+
+
+def _plan_tools(now, edits: dict) -> list[Op]:
+    """Catálogo `tools:` (decisión 195): `{nombre: {code, description, count} | None}`
+    (`count`, decisión 196: unidades en el soporte; None o ausente = no se cuentan).
+    Cada herramienta es una línea en flujo (`cgi: { code: 1, description: CGI }`),
+    así que se escribe entera; si quedan todas borradas, se quita el bloque.
+    Que el código no se repita, y que ningún robot use una borrada, lo
+    comprueba el cargador al guardar (con el mismo mensaje que al arrancar)."""
+    now = now if isinstance(now, dict) else {}
+    ops: list[Op] = []
+    for name, spec in edits.items():
+        if not isinstance(name, str) or not TOOL_NAME.match(name):
+            raise EditError(f"'{name}' no vale como nombre de herramienta: letras, números, '_', '-' o '.', "
+                            "con al menos una letra (p. ej. vgc10, 2fg7)")
+        if spec is None:
+            if name in now:
+                ops.append(Op(("tools", name), delete=True))
+            continue
+        if not isinstance(spec, dict) or set(spec) - {"code", "description", "count"}:
+            raise EditError(f"tools.{name}: se espera {{code, description, count}}")
+        code = spec.get("code")
+        if isinstance(code, bool) or not isinstance(code, int) or code <= 0:
+            raise EditError(f"tools.{name}.code debe ser un entero mayor que 0 (0 = sin herramienta)")
+        desc = spec.get("description") or ""
+        if not isinstance(desc, str) or "\n" in desc:
+            raise EditError(f"tools.{name}.description debe ser texto de una línea")
+        count = spec.get("count")
+        if count is not None and (isinstance(count, bool) or not isinstance(count, int) or count < 1):
+            raise EditError(f"tools.{name}.count debe ser un entero mayor que 0, o nada para no contarlas")
+        value = {"code": code, **({"description": desc.strip()} if desc.strip() else {}),
+                 **({"count": count} if count is not None else {})}
+        old = now.get(name)
+        if not isinstance(old, dict) or {"code": old.get("code"), **(
+                {"description": old["description"]} if old.get("description") else {}), **(
+                {"count": old["count"]} if old.get("count") is not None else {})} != value:
+            ops.append(Op(("tools", name), value))
+    left = {n for n in now if edits.get(n, ...) is not None} | {n for n, v in edits.items() if v is not None}
+    if now and not left:
+        return [Op(("tools",), delete=True)]
     return ops
 
 
@@ -403,7 +466,7 @@ def _set(text: str, op: Op) -> str:
 def _insert(text: str, parent, rest: tuple[str, ...], op: Op, where: str, depth: int) -> str:
     """La clave no existe. Se añade como última clave de su bloque, con la
     sangría de sus hermanas; si falta un bloque de primer nivel, al final."""
-    if len(rest) == 2 and not where and rest[0] in ("auto_charge", "assigner", "actions", "idle_return"):
+    if len(rest) == 2 and not where and rest[0] in ("auto_charge", "assigner", "actions", "idle_return", "tools"):
         sep = "" if text.endswith("\n") else "\n"
         return f"{text}{sep}\n{rest[0]}:\n" + _render(rest[1], op.value, 2, depth, op.comment)
     if len(rest) != 1:

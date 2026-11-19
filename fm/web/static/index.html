@@ -962,13 +962,13 @@
          lo guarda el FM y vale para todos los navegadores (decisión 188). -->
     <div class="panel tool-check" v-if="toolCheckDue" role="status" aria-labelledby="tool-check-title">
       <b id="tool-check-title">Revisa los cambiadores de herramienta.</b>
-      <p>El FM manda las tareas según lo que dice la configuración que tiene cada cambiador. Si falta una, la misión
-        fallará al intentar cambiarla. Comprueba que tienen:</p>
+      <p>El FM manda las tareas según lo que dice la configuración que puede ponerse cada robot con acoplador. Si en el
+        soporte falta una, la misión fallará al intentar cambiarla. Comprueba que están:</p>
       <ul><li v-for="r in robotsView.filter(x => x.toolChanger.length)" :key="r.serial">
         <b>{{ r.name || r.serial }}</b>: {{ r.toolChanger.join(', ') }}<span class="muted"> · {{ toolLabel(r, false) }}</span></li></ul>
-      <p><b>Si no coincide</b>, pon en el cambiador las que faltan o corrige <code>tool_changer</code> de ese robot en
-        <code>fleet.yaml</code> y «Aplicar el fichero» en <a href="#configurador">Configuración</a> (sin reiniciar). Hasta
-        entonces, el FM le mandaría tareas que no puede hacer. <a href="#guia/herramientas">Cómo funciona</a></p>
+      <p><b>Si no coincide</b>, pon en el soporte las que faltan o corrige lo que tiene ese robot en
+        <a href="#configurador">Configuración</a> → Herramientas (sin reiniciar). Hasta entonces, el FM le mandaría tareas
+        que no puede hacer. <a href="#guia/herramientas">Cómo funciona</a></p>
       <div class="acts"><button class="btn" id="tool-checked" @click="toolChecked">Revisado</button>
         <span class="feedback" aria-live="polite">{{ toolCheckMsg }}</span></div>
     </div>
@@ -1623,7 +1623,7 @@
     <p class="page-sub">Tipos de tarea, reglas de funcionamiento y conexión de los robots.</p>
     <p class="site-scope" v-if="fleet.site"><span>Solo lo del site <b>«{{ siteName }}»</b>, el de la flota.</span>
       <label><input type="checkbox" v-model="ui.allSites"> Ver todo el catálogo</label></p>
-    <nav class="cfg-subnav" aria-label="Apartados de configuración"><button class="btn" @click="cfgJump('cfg-actions')">Tipos de tarea y asignación</button><button class="btn" @click="cfgJump('cfg-thresholds')">Batería y carga</button><button class="btn" @click="cfgJump('cfg-idle')">Vuelta a la espera</button><button class="btn" @click="cfgJump('cfg-robots')">Alta y conexión</button></nav>
+    <nav class="cfg-subnav" aria-label="Apartados de configuración"><button class="btn" @click="cfgJump('cfg-actions')">Tipos de tarea y asignación</button><button class="btn" @click="cfgJump('cfg-tools')">Herramientas</button><button class="btn" @click="cfgJump('cfg-thresholds')">Batería y carga</button><button class="btn" @click="cfgJump('cfg-idle')">Vuelta a la espera</button><button class="btn" @click="cfgJump('cfg-robots')">Alta y conexión</button></nav>
     <div class="panel cfg-bar">
       <template v-if="!cfgState.editable">
         <span class="tag">solo lectura</span>
@@ -1631,7 +1631,7 @@
       </template>
       <template v-else-if="!cfgEdit.on">
         <button class="btn primary" id="cfg-edit" @click="startEdit" :disabled="!cfgState.robots.length">Editar</button>
-        <span class="hint">Casillas de la matriz, batería mínima de cada robot y umbrales. Se aplica en caliente, sin reiniciar.</span>
+        <span class="hint">Casillas de la matriz, herramientas, batería mínima de cada robot y umbrales. Se aplica en caliente, sin reiniciar (salvo lo que avisa).</span>
       </template>
       <template v-else>
         <button class="btn primary" id="cfg-save" @click="saveConfig" :disabled="!nChanges || cfgEdit.saving">Guardar {{ nChanges ? '(' + nChanges + ')' : '' }}</button>
@@ -1687,6 +1687,68 @@
       <ul class="warns" v-if="cfgWarnings.length">
         <li v-for="(w, i) in cfgWarnings" :key="i">{{ w }}</li>
       </ul>
+    </div>
+
+    <!-- Herramientas (decisiones 184 y 195): catálogo `tools:` y, por robot,
+         cambiador (`tool_changer`), herramienta fija (`tool`) o ninguna. -->
+    <div class="panel" id="cfg-tools">
+      <h3>Herramientas</h3>
+      <p class="hint">Solo hacen falta si algún tipo de tarea pide herramienta (en su definición, un input de tipo
+        «herramienta»). El <b>código</b> es el número con el que la identifica el programa del brazo (0 = ninguna). Cada robot
+        puede no usar herramientas, llevar <b>siempre la misma</b> (el FM no lee nada y la da por puesta; cambiarla pide
+        reiniciar el FM) o tener <b>acoplador</b> para coger del soporte de cambio las marcadas (la que lleva la lee su driver).
+        Las <b>unidades</b> son las que hay de cada una en el soporte, contadas las que llevan puestas los robots: si están todas
+        puestas o pedidas, la tarea espera en la cola a que quede una (sin poner nada, no se cuentan).
+        <code>tools</code>, <code>tool</code>, <code>tool_changer</code>, <code>count</code></p>
+      <div class="matrix-wrap" v-if="toolRows.length || cfgEdit.on">
+        <table class="matrix">
+          <thead>
+            <tr><th scope="col">herramienta</th><th scope="col">código</th>
+              <th scope="col">unidades <span class="muted sub">en el soporte</span></th>
+              <th scope="col" v-for="r in cfgState.robots" :key="r.serial">{{ r.serial }}
+                <span class="muted sub" v-if="!cfgEdit.on">{{ TOOL_MODES[toolMode(r)] }}</span>
+                <select v-else class="sub" v-model="cfgEdit.draft.robots[r.serial].toolMode" :aria-label="'herramientas de ' + r.serial">
+                  <option v-for="(label, m) in TOOL_MODES" :key="m" :value="m">{{ label }}</option></select></th>
+              <th v-if="cfgEdit.on"></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="t in toolRows" :key="t.name" :class="{ deleted: t.status === 'borrada' }">
+              <th scope="row"><b>{{ t.name }}</b> <span class="chip" v-if="t.status">{{ t.status }}</span>
+                <input v-if="cfgEdit.on && t.status !== 'borrada'" class="sub" v-model="cfgEdit.draft.tools[t.name].description"
+                       placeholder="descripción" :aria-label="'descripción de ' + t.name">
+                <span class="muted sub" v-else-if="t.description">{{ t.description }}</span></th>
+              <td><input v-if="cfgEdit.on && t.status !== 'borrada'" class="num-in sm" type="number" min="1" step="1"
+                         v-model.number="cfgEdit.draft.tools[t.name].code" :aria-label="'código de ' + t.name">
+                <template v-else>{{ t.code }}</template></td>
+              <td><input v-if="cfgEdit.on && t.status !== 'borrada'" class="num-in sm" type="number" min="1" step="1"
+                         v-model.number="cfgEdit.draft.tools[t.name].count" placeholder="sin contar" :aria-label="'unidades de ' + t.name">
+                <template v-else-if="t.count">{{ t.count }}</template><span class="muted" v-else>sin contar</span>
+                <span class="muted sub" v-if="!cfgEdit.on && stockText(t.name)" :title="stockTitle(t.name)">{{ stockText(t.name) }}</span></td>
+              <td v-for="r in cfgState.robots" :key="r.serial" :class="{ on: toolCell(t.name, r) }">
+                <template v-if="cfgEdit.on && t.status !== 'borrada'">
+                  <input v-if="cfgEdit.draft.robots[r.serial].toolMode === 'changer'" type="checkbox" :value="t.name"
+                         v-model="cfgEdit.draft.robots[r.serial].tool_changer" :aria-label="t.name + ' en el cambiador de ' + r.serial">
+                  <input v-else-if="cfgEdit.draft.robots[r.serial].toolMode === 'fixed'" type="radio" :name="'tool-fixed-' + r.serial"
+                         :value="t.name" v-model="cfgEdit.draft.robots[r.serial].tool" :aria-label="t.name + ' fija en ' + r.serial">
+                  <span class="muted" v-else>—</span></template>
+                <template v-else>{{ toolCell(t.name, r) || '' }}</template></td>
+              <td v-if="cfgEdit.on">
+                <button class="btn" v-if="t.status !== 'borrada'" @click="deleteTool(t)" :disabled="toolUsers(t.name).length > 0"
+                        :title="toolUsers(t.name).length ? 'La usa ' + toolUsers(t.name).join(', ') + ': quítasela antes' : ''">Borrar</button>
+                <button class="btn" v-else @click="undoTool(t)">Deshacer</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="empty" v-else>No hay herramientas en <code>fleet.yaml</code> (<code>tools:</code>).</p>
+      <ul class="warns" v-if="cfgEdit.on && toolWarnings.length"><li v-for="(w, i) in toolWarnings" :key="i">{{ w }}</li></ul>
+      <div class="acts" v-if="cfgEdit.on">
+        <input class="num-in" style="width: 10em" id="tool-new-name" v-model.trim="toolForm.name" placeholder="nombre (p. ej. vgc10)" aria-label="nombre de la herramienta nueva">
+        <input class="num-in sm" type="number" min="1" step="1" id="tool-new-code" v-model.number="toolForm.code" placeholder="código" aria-label="código de la herramienta nueva">
+        <input class="num-in" style="width: 14em" v-model.trim="toolForm.description" placeholder="descripción (opcional)" aria-label="descripción de la herramienta nueva">
+        <button class="btn" id="tool-add" @click="addTool" :disabled="!toolForm.name">Añadir herramienta</button>
+        <span class="err" v-if="toolForm.error">{{ toolForm.error }}</span>
+      </div>
     </div>
 
     <!-- Vuelta a la espera (fm/idle.py, decisión 136): idle_return de la
@@ -1872,6 +1934,7 @@
                   <option value="position">posición (nombre → GUID)</option>
                   <option value="number">número</option>
                   <option value="text">texto obligatorio</option>
+                  <option value="tool" v-if="toolRows.some(t => t.status !== 'borrada') || i.kind === 'tool'">herramienta (nombre → código)</option>
                   <option value="none">no declarar</option></select></td>
                 <td><template v-if="i.kind === 'number'">
                   <input class="num-in sm" type="number" v-model.number="i.min" placeholder="mín" :aria-label="'mínimo de ' + i.name">
@@ -1884,7 +1947,9 @@
           <p class="hint" v-else>Esta misión no tiene inputs.</p>
           <div class="acts"><input class="num-in" style="width: 14em" v-model.trim="actForm.newInput" placeholder="añadir input a mano" @keyup.enter="addInput">
             <button class="btn" @click="addInput" :disabled="!actForm.newInput">Añadir</button></div>
-          <span class="hint">«No declarar»: si la order lo trae y la misión lo tiene, se pasa igual, pero no es obligatorio.</span>
+          <span class="hint">«No declarar»: si la order lo trae y la misión lo tiene, se pasa igual, pero no es obligatorio.
+            «Herramienta»: la order trae su nombre, la misión recibe su código y el FM elige un robot que la lleve o pueda
+            ponérsela (como mucho uno por tipo de tarea).</span>
         </div>
 
         <div class="field" v-if="actForm.inputs.some(i => i.kind === 'position')">Posiciones admitidas (ninguna marcada = cualquiera del robot)
@@ -2499,37 +2564,47 @@
         </ol>
       </details>
 
-      <!-- Decisión 184: herramientas. Hoy se configuran a mano en fleet.yaml. -->
+      <!-- Decisiones 184 y 195: herramientas, desde Configuración → Herramientas. -->
       <details class="guide-sec" id="guia-herramientas">
         <summary>Robots con cambio de herramienta
           <span class="hint">Que cada tarea vaya a un robot que lleve, o pueda ponerse, la garra que hace falta.</span></summary>
         <ol class="steps">
-          <li><b>Las herramientas de la planta</b><span class="where"><code>fleet.yaml</code></span>
-            <p>En <code>tools:</code>, cada una con su <code>code</code>: el número con el que la identifica el programa del brazo
-              (0 es «ninguna»). De momento se escribe a mano en <code>fleet.yaml</code>; se aplica sin reiniciar.</p></li>
+          <li><b>Las herramientas de la planta</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>En «Herramientas», «Editar» y «Añadir herramienta»: un nombre (el que llega en las orders), su <b>código</b> (el
+              número con el que la identifica el programa del brazo; 0 es «ninguna») y una descripción. Se guarda en
+              <code>tools:</code> de <code>fleet.yaml</code> y se aplica sin reiniciar. Una que use algún robot no se puede borrar
+              hasta quitársela.</p></li>
           <li><b>Que el robot diga cuál lleva</b><span class="where">programa del brazo</span>
             <p>El brazo escribe el <code>code</code> de la que lleva en un registro PLC del MiR (<code>tool_register</code> en
               <code>drivers.mir</code>; por defecto, el 5). El FM lo lee y lo enseña en <a href="#operacion">Operación</a> y en Robots.
               Si el brazo no lo escribe, mira el paso siguiente (<code>tool:</code>).</p></li>
-          <li><b>Qué tiene cada cambiador</b><span class="where"><code>fleet.yaml</code></span>
-            <p>En cada robot con cambiador, <code>tool_changer</code> con las que tiene a mano. Un robot sin cambiador solo
-              recibe tareas de la herramienta que lleve puesta. Si la lleva siempre y su brazo no escribe el registro,
-              <code>tool:</code> con su nombre en el bloque del robot (p. ej. <code>tool: dh</code>): el FM no lee nada y
-              la da por puesta (solo en robots sin <code>tool_changer</code>). Cambiar <code>tool:</code> pide reiniciar el
-              FM.</p></li>
+          <li><b>Qué tiene cada robot</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>En la misma tabla, debajo del nombre de cada robot: «con acoplador» si su brazo lleva en la muñeca la pieza
+              para cambiar de herramienta, y marca las del soporte que puede ponerse (<code>tool_changer</code>; sin
+              reiniciar). Un robot sin acoplador solo recibe tareas de la herramienta que lleve puesta. Si la lleva siempre y su brazo no escribe el registro, «siempre la misma» y elige cuál
+              (<code>tool:</code>): el FM no lee nada y la da por puesta. Cambiar esta pide reiniciar el FM (botón arriba, al
+              guardar).</p></li>
+          <li><b>Cuántas hay en el soporte</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>Si varios robots con acoplador comparten el soporte, pon en «unidades» cuántas hay de cada una, contando las que
+              llevan puestas (<code>count</code>; sin reiniciar). Si están todas puestas o pedidas, una tarea que la pide a un
+              robot que no la lleva espera en la cola («no queda vgc10 libre en el soporte») hasta que quede una o hasta que
+              quede libre el robot que la lleva. Una order dirigida a ese robot se rechaza. Debajo sale cuántas quedan ahora.
+              Un robot del que no se sabe qué lleva cuenta como si tuviera una de cada (por prudencia), y uno sin red, con la
+              última que se le leyó. La que lleva fija un robot sin acoplador no cuenta: no es del soporte.</p></li>
           <li><b>La misión cambia la herramienta</b><span class="where">web del MiR</span>
             <p>Recibe la pedida como un número y la escribe en el registro 2 para el brazo. Si no coincide con la que lleva
               (el registro de <code>tool_register</code>, por defecto el 5), <i>Load mission</i> de la de cambio y después
               sigue. El FM no la cambia: solo elige robot.</p></li>
-          <li><b>El tipo de tarea pide herramienta</b><span class="where"><code>fleet.yaml</code></span>
-            <p>En su definición, <code>tool_input</code> con el nombre del parámetro (p. ej. <code>garra</code>). La order trae el
-              nombre de la herramienta; en «Nueva tarea» sale como desplegable.</p></li>
+          <li><b>El tipo de tarea pide herramienta</b><a class="where" href="#configurador">→ Configuración</a>
+            <p>En «Definición de los tipos de tarea», «Editar» el tipo y, en el input de la misión con la herramienta (p. ej.
+              <code>garra</code>), «herramienta» en «qué es» (<code>tool_input</code>; uno por tipo de tarea). La order trae el
+              nombre de la herramienta y la misión recibe su código; en «Nueva tarea» sale como desplegable.</p></li>
           <li><b>Al arrancar el FM, revisar los cambiadores</b><a class="where" href="#operacion">→ Operación</a>
             <p>Sale el aviso con lo que dice la configuración de cada cambiador: compruébalo y «Revisado». Lo guarda el FM: el
               aviso se quita en todos los navegadores hasta el próximo arranque, y queda dicho a qué hora y desde qué equipo.
-              <b>Si no coincide</b>, pon en el cambiador la que falta o corrige <code>tool_changer</code> en
-              <code>fleet.yaml</code> y «Aplicar el fichero» en Configuración (sin reiniciar). Si no, la misión fallará al
-              intentar ponérsela.</p></li>
+              <b>Si no coincide</b>, pon en el cambiador la que falta o corrige lo que tiene en
+              <a href="#configurador">Configuración</a> → Herramientas (sin reiniciar). Si no, la misión fallará al intentar
+              ponérsela.</p></li>
           <li><b>Seguirlo en Operación</b><a class="where" href="#operacion">→ Operación</a>
             <p>Al enviar una tarea y en la cola, cada una dice la herramienta que pide («pide vgc10»). La tarjeta de cada
               robot (y su pestaña en Robots) dice la que lleva, la que pide su tarea en curso y las de su cambiador. En
@@ -3648,6 +3723,14 @@ createApp({
     const say = (msg, cls = '') => { cfgEdit.msg = msg; cfgEdit.msgCls = cls; };
     // ---- vuelta a la espera (decisión 136)
     const IDLE_MODES = { fleet: 'como la flota', own: 'otro tipo de tarea', off: 'desactivada' };
+    // ---- herramientas (decisión 195)
+    const TOOL_MODES = { none: 'sin herramienta', fixed: 'siempre la misma', changer: 'con acoplador' };
+    // Cuántas quedan ahora en el soporte (decisión 196), según el FM.
+    const stockOf = name => (cfgState.tool_stock || {})[name];
+    const stockText = name => { const s = stockOf(name); return s ? (s.free > 0 ? `${s.free} libre${s.free > 1 ? 's' : ''} ahora` : 'ninguna libre ahora') : ''; };
+    const stockTitle = name => { const s = stockOf(name); return s && s.holders.length ? 'Puestas, pedidas o sin saber qué lleva: ' + s.holders.join(', ') : ''; };
+    const toolMode = r => (r.tool_changer || []).length ? 'changer' : r.tool ? 'fixed' : 'none';
+    const toolForm = reactive({ name: '', code: '', description: '', error: '' });
     const idleCopy = c => ({ action: c.action || '', after_s: c.after_s ?? null, params: { ...(c.params || {}) },
                              zone: c.zone || '' });
     // Lo que se guarda: sin params vacíos ni after_s sin poner (= el de la flota).
@@ -3674,7 +3757,8 @@ createApp({
       const keys = v => Array.isArray(v) ? v : Object.keys(v || {});
       return [...keys(d.position_inputs).map(key => ({ key, kind: 'position' })),
               ...keys(d.number_inputs).map(key => ({ key, kind: 'number' })),
-              ...keys(d.required_inputs).map(key => ({ key, kind: 'text' }))];
+              ...keys(d.required_inputs).map(key => ({ key, kind: 'text' })),
+              ...(d.tool_input ? [{ key: d.tool_input, kind: 'tool' }] : [])];
     }
     const idleText = c => `${c.action}${Object.keys(c.params || {}).length ? ' (' + Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(', ') + ')' : ''} tras ${c.after_s} s parado`
       + (c.zone ? ` y fuera de «${zoneName(c.zone)}»` : ', desde cualquier sitio');
@@ -3684,9 +3768,13 @@ createApp({
         removeRobots: {},             // serial → true (baja, pide reiniciar)
         newRobots: {},                // serial → { driver, host, battery_min, actions } (alta, pide reiniciar)
         hosts: Object.fromEntries(cfgState.robots.filter(r => 'host' in r.settings).map(r => [r.serial, r.settings.host])),
-        robots: Object.fromEntries(cfgState.robots.map(r => [r.serial, { actions: [...r.actions], battery_min: r.battery_min }])),
+        robots: Object.fromEntries(cfgState.robots.map(r => [r.serial, { actions: [...r.actions], battery_min: r.battery_min,
+          toolMode: toolMode(r), tool_changer: [...(r.tool_changer || [])], tool: r.tool || '' }])),
         auto_charge: { ...cfgState.auto_charge },
         assigner: { ...cfgState.assigner },
+        // Herramientas: copia editable del catálogo; las borradas, aparte (para «Deshacer»).
+        tools: Object.fromEntries(Object.entries(cfgState.tools || {}).map(([n, t]) => [n, { code: t.code, description: t.description || '', count: t.count ?? '' }])),
+        removeTools: {},
         // Vuelta a la espera (decisión 136): copias con `params` propios, que se editan.
         idle: {
           on: !!cfgState.idle_return,
@@ -3697,7 +3785,7 @@ createApp({
       };
       cfgEdit.on = true; say('');
     }
-    function cancelEdit() { cfgEdit.on = false; cfgEdit.draft = null; actForm.open = false; say(''); }
+    function cancelEdit() { cfgEdit.on = false; cfgEdit.draft = null; actForm.open = false; toolForm.error = ''; say(''); }
     function toggleAction(a, r) {
       const list = cfgEdit.draft.robots[r.serial].actions, i = list.indexOf(a.name);
       if (i >= 0) list.splice(i, 1); else list.push(a.name);
@@ -3721,10 +3809,24 @@ createApp({
         if (r.serial in d.hosts && d.hosts[r.serial] !== r.settings.host) e.host = d.hosts[r.serial];
         if (!sameSet(dr.actions, r.actions)) e.actions = order.filter(n => dr.actions.includes(n));
         if (dr.battery_min !== r.battery_min) e.battery_min = dr.battery_min;
+        // Herramientas: en modo cambiador no se toca `tool` (en el simulador es la del arranque).
+        const tc = dr.toolMode === 'changer' ? toolNames.value.filter(n => dr.tool_changer.includes(n)) : [];
+        if (!sameSet(tc, r.tool_changer || [])) e.tool_changer = tc;
+        const tool = dr.toolMode === 'fixed' ? dr.tool || null : dr.toolMode === 'changer' ? r.tool || null : null;
+        if (tool !== (r.tool || null)) e.tool = tool;
         if (Object.keys(e).length) (out.robots = out.robots || {})[r.serial] = e;
       }
       for (const f of THRESHOLDS)
         if (d[f.block][f.key] !== cfgState[f.block][f.key]) (out[f.block] = out[f.block] || {})[f.key] = d[f.block][f.key];
+      const tools = cfgState.tools || {};
+      for (const name of Object.keys(d.removeTools)) if (name in tools) (out.tools = out.tools || {})[name] = null;
+      for (const [name, t] of Object.entries(d.tools)) {
+        if (d.removeTools[name]) continue;
+        const was = tools[name], now = { code: t.code, description: (t.description || '').trim() };
+        if (t.count !== '' && t.count !== null && t.count !== undefined) now.count = t.count;
+        if (!was || was.code !== now.code || (was.description || '') !== now.description || (was.count ?? null) !== (now.count ?? null))
+          (out.tools = out.tools || {})[name] = now;
+      }
       const fleetIdle = d.idle.on ? idleClean(d.idle.fleet) : null;
       if (JSON.stringify(fleetIdle) !== JSON.stringify(cfgState.idle_return ? idleClean(cfgState.idle_return) : null))
         out.idle_return = fleetIdle;
@@ -3739,7 +3841,7 @@ createApp({
     });
     // Cuántos cambios: uno por action del catálogo y por alta o baja de robot; uno por campo de lo demás.
     const nChanges = computed(() => Object.entries(cfgEdits.value).reduce((n, [blk, b]) => n + Object.entries(b || { _: 0 })
-      .reduce((m, [k, v]) => m + (blk === 'actions' || v === null || !(v && typeof v === 'object' && !Array.isArray(v))
+      .reduce((m, [k, v]) => m + (blk === 'actions' || blk === 'tools' || v === null || !(v && typeof v === 'object' && !Array.isArray(v))
         || (blk === 'robots' && !cfgState.robots.some(r => r.serial === k)) ? 1 : Object.keys(v).length), 0), 0));
 
     // ---- altas y bajas de robots (v3, decisión 108)
@@ -3769,6 +3871,65 @@ createApp({
       cfgEdit.restarting = true; say('Reiniciando el FM… la página se reconecta sola.', 'warn');
     }
 
+    // Filas de la tabla de herramientas: la config en uso mezclada con el borrador.
+    const toolRows = computed(() => {
+      const now = cfgState.tools || {}, d = cfgEdit.on ? cfgEdit.draft : null;
+      const names = [...Object.keys(now), ...(d ? Object.keys(d.tools).filter(n => !(n in now)) : [])];
+      return names.map(name => {
+        const t = d ? d.tools[name] : now[name], was = now[name];
+        const count = t.count === '' ? null : t.count ?? null;
+        const status = !d ? '' : d.removeTools[name] ? 'borrada' : !was ? 'nueva'
+          : was.code !== t.code || (was.description || '') !== (t.description || '').trim() || (was.count ?? null) !== count ? 'cambiada' : '';
+        return { name, code: t.code, description: t.description, count, status };
+      });
+    });
+    const toolNames = computed(() => toolRows.value.filter(t => t.status !== 'borrada').map(t => t.name));
+    // Qué pone en la casilla (fuera de edición) o si está marcada: ✓ en el cambiador, «fija».
+    function toolCell(name, r) {
+      const d = cfgEdit.on ? cfgEdit.draft.robots[r.serial] : null;
+      const mode = d ? d.toolMode : toolMode(r);
+      if (mode === 'changer') return (d ? d.tool_changer : r.tool_changer || []).includes(name) ? '✓' : '';
+      return mode === 'fixed' && (d ? d.tool : r.tool) === name ? 'fija' : '';
+    }
+    const toolUsers = name => cfgState.robots.filter(r => toolCell(name, r)).map(r => r.serial);
+    function addTool() {
+      const f = toolForm, codes = toolRows.value.filter(t => t.status !== 'borrada').map(t => t.code);
+      f.error = !/^(?=.*[A-Za-z])[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(f.name) ? 'Nombre: letras, números, «_», «-» o «.», con al menos una letra (p. ej. vgc10, 2fg7).'
+        : f.name in cfgEdit.draft.tools ? `Ya hay una herramienta «${f.name}».`
+        : !(Number.isInteger(f.code) && f.code > 0) ? 'El código es un entero mayor que 0 (0 = ninguna).'
+        : codes.includes(f.code) ? `El código ${f.code} ya es de otra herramienta.` : '';
+      if (f.error) return;
+      cfgEdit.draft.tools[f.name] = { code: f.code, description: f.description, count: '' };
+      Object.assign(f, { name: '', code: '', description: '' });
+    }
+    function deleteTool(t) {
+      if (t.status === 'nueva') delete cfgEdit.draft.tools[t.name]; else cfgEdit.draft.removeTools[t.name] = true;
+    }
+    function undoTool(t) {
+      delete cfgEdit.draft.removeTools[t.name];
+      const was = (cfgState.tools || {})[t.name];
+      if (was) cfgEdit.draft.tools[t.name] = { code: was.code, description: was.description || '', count: was.count ?? '' };
+    }
+    // Avisos antes de guardar (el servidor también lo comprueba, con su mensaje).
+    const toolWarnings = computed(() => {
+      if (!cfgEdit.on) return [];
+      const out = [], rows = toolRows.value.filter(t => t.status !== 'borrada'), seen = {};
+      for (const t of rows) {
+        if (!(Number.isInteger(t.code) && t.code > 0)) out.push(`${t.name}: el código debe ser un entero mayor que 0.`);
+        else if (seen[t.code]) out.push(`${t.name} y ${seen[t.code]} tienen el mismo código (${t.code}).`);
+        else seen[t.code] = t.name;
+        if (t.count !== null && !(Number.isInteger(t.count) && t.count > 0)) out.push(`${t.name}: las unidades son un entero mayor que 0 (o nada, sin contar).`);
+      }
+      for (const r of cfgState.robots) {
+        const d = cfgEdit.draft.robots[r.serial];
+        if (d.toolMode === 'fixed' && !d.tool) out.push(`${r.serial}: elige cuál lleva siempre.`);
+        if (d.toolMode === 'changer' && !d.tool_changer.some(n => toolNames.value.includes(n)))
+          out.push(`${r.serial}: marca las herramientas de su cambiador.`);
+        if (d.toolMode === 'fixed' && d.tool && d.tool !== (r.tool || '')) out.push(`${r.serial}: cambiar la herramienta fija pide reiniciar el FM.`);
+      }
+      return out;
+    });
+
     // ---- catálogo de actions (v2): la vista mezcla la config en uso con el borrador
     const cfgChoices = computed(() => cfgState.choices || { missions: [], positions: [] });
     function guessNeeds(def, orig) {
@@ -3793,7 +3954,7 @@ createApp({
     });
     const actForm = reactive({ open: false, isNew: false, name: '', mission: '', missionOther: '', inputs: [],
                                allow: [], newInput: '', error: '', extra: {}, expected: '' });
-    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist', 'expected_s'];
+    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist', 'expected_s', 'tool_input'];
     const catInputs = guid => (cfgChoices.value.missions.find(m => m.guid === guid) || { inputs: [] }).inputs;
     // Definición (claves del driver MiR) → filas del formulario, y al revés.
     function openActForm(a) {
@@ -3805,6 +3966,7 @@ createApp({
       if (Array.isArray(num)) num.forEach(n => add(n, 'number'));
       else for (const [n, r] of Object.entries(num)) add(n, 'number', r || {});
       for (const n of def.required_inputs || []) add(n, 'text');
+      if (def.tool_input) add(def.tool_input, 'tool');
       for (const i of catInputs(def.mission)) if (!rows.some(r => r.name === i.name)) add(i.name, 'none');
       if (!inCat) rows.forEach(r => { r.manual = true; });
       Object.assign(actForm, { open: true, isNew: !a, name: a ? a.name : '', error: '', newInput: '',
@@ -3841,6 +4003,8 @@ createApp({
       const bad = num.find(i => i.min !== '' && i.max !== '' && i.min > i.max);
       if (!f.error && bad) f.error = `${bad.name}: el mínimo es mayor que el máximo.`;
       if (!f.error && f.expected !== '' && !(f.expected > 0)) f.error = 'El tiempo normal debe ser un número de segundos mayor que 0.';
+      const tool = f.inputs.filter(i => i.kind === 'tool');
+      if (!f.error && tool.length > 1) f.error = 'Solo un input puede ser la herramienta.';
       if (f.error) return;
       const def = { mission, ...f.extra };
       const pos = f.inputs.filter(i => i.kind === 'position').map(i => i.name);
@@ -3853,6 +4017,7 @@ createApp({
       const req = f.inputs.filter(i => i.kind === 'text').map(i => i.name);
       if (req.length) def.required_inputs = req;
       if (pos.length && f.allow.length) def.positions_allowlist = [...f.allow];
+      if (tool.length) def.tool_input = tool[0].name;
       if (f.expected !== '') def.expected_s = f.expected;
       const m = cfgChoices.value.missions.find(x => x.guid === mission);
       cfgEdit.draft.actions[name] = { definition: def, comments: m ? { mission: m.name } : {} };
@@ -4505,7 +4670,7 @@ createApp({
              catalogItems, catItem, catCreated, placeOf, openItem, backToList, detailRobots, detailQuick, detailUses, detailUsedBy, detailMsg,
              detailChecking, deepCheckAll, recaptureFrom, captureFromDetail, rmState, rmScopes, rmScopeSerial, rmOpen, rmClose, rmReview, rmApply, rmTodo,
              cfgState, cell, missionLabel, enabledIn, catName, fmtVal, cfgWarnings,
-             cfgEdit, THRESHOLDS, IDLE_MODES, idleLabel, maintLabel, toggleMaintenance, retryIdle, resetRobot, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
+             cfgEdit, THRESHOLDS, IDLE_MODES, TOOL_MODES, toolMode, toolForm, stockText, stockTitle, toolRows, toolCell, toolUsers, addTool, deleteTool, undoTool, toolWarnings, idleLabel, maintLabel, toggleMaintenance, retryIdle, resetRobot, idleParamKeys, idleText, idleZones, zoneLabel, startEdit, cancelEdit, toggleAction, nChanges, saveConfig, reloadFile, floor, batteryMin,
              changeSite, siteName, inSite, siteMaps, createdInSite, createState, canCreate, zoneHelp, CREATE_KINDS, createWhat, createKind, setCreateWhat, createdKinds, createdShown, mapForm, pickMapFile, canUploadMap, uploadMap,
              capState, capSelected, setMapMode, copyForm, copyExample, pickCopySource, proposeAffix, setCopyAt, canCopyMap, copyMap, loadCapturable, pickCapturable, canCaptureMap, captureMap, siteForm, createSite, groupForm, createGroup, CATALOG_ONLY, createRes, captureRes, deleteRes, adoptState, adoptRes, missionName,
              robotForm, openRobotForm, acceptRobotForm, restartFm,

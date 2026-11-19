@@ -73,7 +73,7 @@ class MirRobotConfig:
     tool_register: int | None = None
     tool_codes: dict[str, int] = field(default_factory=dict)
     # Herramienta fija (decisión 193): un brazo sin cambiador cuyo programa no
-    # escribe el registro (mir-1: UR5 con la DH140). Con ella no se lee nada.
+    # escribe el registro (mir-1: UR5 con la Robotiq 2F-140). Con ella no se lee nada.
     fixed_tool: str | None = None
 
 
