@@ -114,3 +114,30 @@ def test_driver_usa_mqtt_y_vuelve_a_arcl(entorno):  # noqa: F811
         assert d.fuente == "ARCL"
     finally:
         d.client.cerrar()
+
+
+# --- OMRON digital con la API MQTT simulada: sin broker, publicador → receptor ---
+
+def test_digital_publica_lo_que_entiende_el_driver(entorno):  # noqa: F811
+    from simuladores.omron.mqtt import ApiMqtt
+    _, robot, srv = entorno
+    m = _m()
+    # Un suscriptor ya conectado recibe en vivo (retain=False) aunque se publique retenido
+    api = ApiMqtt(robot, lambda t, p, r: m.recibir(t, p.encode(), False))
+    for n in DATASTORE:                              # lo que pide OmronMqtt al conectar
+        api.pedir_datastore(n, '{"interval": "1s"}')
+    with srv.candado:
+        api.tick(time.monotonic())
+    assert m.al_dia()
+    st = m.como_status_arcl()
+    assert st["Status"].startswith("DockingState: Docked") and m.goals == ["Taller 2", "Almacen"]
+    assert float(st["LocalizationScore"]) == pytest.approx(robot.score, abs=0.01)
+
+
+def test_digital_datastore_desconocido_da_error(entorno):  # noqa: F811
+    from simuladores.omron.mqtt import ApiMqtt
+    _, robot, _ = entorno
+    salida = []
+    api = ApiMqtt(robot, lambda t, p, r: salida.append(t))
+    api.pedir_datastore("NoExiste", '{"interval": "1s"}')
+    assert salida == ["itk/cmd/dataStore/subscribe/res/error"]

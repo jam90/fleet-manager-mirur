@@ -10,6 +10,9 @@ Ejemplos:
 
     # diez veces más rápido, con poca batería para ver el autodock
     python -m simuladores.omron --acelerar 10 --soc 27 --fuera-del-dock descanso
+
+    # con la API MQTT simulada en el Mosquitto local (topics itk/…)
+    python -m simuladores.omron --mqtt localhost:1883
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ import signal
 
 from .mapa import leer_mapa
 from .robot import DATOS, OmronDigital, poner_config
+from .mqtt import PublicadorMQTT
 from .servidor import ServidorARCL
 
 
@@ -42,6 +46,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--autodock-soc", type=float, help="AutoDockStateOfCharge (%%)")
     p.add_argument("--autodock-idle", type=float, help="AutoDockIdleTime (minutos)")
     p.add_argument("--dock-hasta-cargar", choices=["true", "false"], help="DockUntilDoneCharging")
+    p.add_argument("--mqtt", metavar="HOST:PUERTO",
+                   help="publica también la API MQTT del robot en ese broker (sin TLS)")
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args(argv)
 
@@ -73,6 +79,9 @@ def main(argv: list[str] | None = None) -> None:
         raise KeyboardInterrupt          # SIGTERM (kill, docker stop) igual que Ctrl-C
 
     signal.signal(signal.SIGTERM, _terminar)
+    if a.mqtt:
+        h, _, puerto = a.mqtt.partition(":")
+        PublicadorMQTT(servidor, h or "localhost", int(puerto or 1883)).arrancar()
     logging.info("OMRON digital '%s' en %s:%d (mapa %s, goals %s, rutas %s)", robot.nombre, a.host,
                  servidor.puerto, mapa.fichero, list(mapa.goals), list(mapa.rutas))
     try:

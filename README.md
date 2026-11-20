@@ -138,7 +138,8 @@ por defecto `apiMonitor`) en `.env`, el estado, la batería y la posición
 llegan por la API MQTT del robot (puerto 8883) en vez de preguntarlos
 por ARCL en cada tick; si dejan de llegar, vuelve a ARCL solo. Las
 órdenes van siempre por ARCL (decisión 207; `mqtt: false` en el robot lo
-desactiva). La carga la hace el autodock del propio robot
+desactiva; `mqtt_host`, `mqtt_port` y `mqtt_tls: false` para apuntarlo al
+OMRON digital con `--mqtt`). La carga la hace el autodock del propio robot
 (decisión 198). Sin el robot, el **OMRON digital** (`python -m
 simuladores.omron`, `simuladores/omron/README.md`) contesta como uno real.
 

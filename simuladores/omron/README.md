@@ -78,6 +78,14 @@ Se para con Ctrl-C o con SIGTERM.
   las da el real (esta última enseña la clave en claro, como el real).
 - **E/S:** `inputList`, `outputList`, `analogInputList`, `inputQuery`,
   `outputQuery`, `outputOn`/`Off`.
+- **API MQTT** (con `--mqtt localhost:1883`, `mqtt.py`): la telemetría
+  que publica la aplicación MQTT API del LD (`itk/dt/robot/status` 5
+  veces por segundo, `pose`, `qmState`, `goals` y los valores del
+  DataStore que se pidan), en un broker sin TLS. El driver se apunta con
+  `mqtt_host`, `mqtt_port` y `mqtt_tls: false` en `fleet.yaml` y
+  `OMRON_MQTT_PASSWORD` con cualquier valor (decisión 207). Los comandos
+  por MQTT (`itk/cmd/arcl`, trabajos) no se simulan: el FM manda por ARCL.
+  Los topics no llevan el nombre del robot: un digital con MQTT por broker.
 
 ## Comandos solo del digital
 
@@ -134,9 +142,11 @@ las secciones de configuración. Detalle en `docs/avance.md` (entradas del
   autodock y cola.
 - `arcl.py`: el intérprete de comandos ARCL.
 - `servidor.py`: el socket TCP; un hilo por cliente y un reloj.
+- `mqtt.py`: la API MQTT (`ApiMqtt`, pura) y su publicador en un broker.
 - `datos/`: lo copiado del LD real (ayuda, secciones de configuración,
   listas de E/S y tipos de objeto) y `aula_ejemplo.map`, un mapa con los
   goals, la ruta y las paredes del LD real, sin la nube de puntos.
 
 Tests: `tests/test_omron_digital.py` y, con el driver del FM por socket,
-`tests/adapters/test_omron_driver.py`.
+`tests/adapters/test_omron_driver.py`; la API MQTT, en
+`tests/adapters/test_omron_mqtt.py`.

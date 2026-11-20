@@ -55,7 +55,8 @@ class OmronMqtt:
     (asignaciones simples, sin locks: el hilo de `poll()` solo los lee).
     """
 
-    def __init__(self, serial: str, host: str, user: str, password: str, port: int = 8883):
+    def __init__(self, serial: str, host: str, user: str, password: str, port: int = 8883,
+                 tls: bool = True):
         self.serial, self.host, self.port = serial, host, port
         self.pose: dict | None = None
         self.status: dict | None = None
@@ -65,10 +66,11 @@ class OmronMqtt:
         self._cliente = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                                     client_id=f"fm-{serial}-{int(time.time())}")
         self._cliente.username_pw_set(user, password)
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE   # certificado autofirmado del robot
-        self._cliente.tls_set_context(ctx)
+        if tls:                            # sin TLS solo contra el OMRON digital
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE   # certificado autofirmado del robot
+            self._cliente.tls_set_context(ctx)
         self._cliente.on_connect = self._al_conectar
         self._cliente.on_message = lambda c, u, m: self.recibir(m.topic, m.payload, m.retain)
 

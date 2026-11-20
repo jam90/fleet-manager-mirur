@@ -4103,9 +4103,18 @@ autofirmado, usuario `apiControl` (el que usan en ese centro) o
        batería 0.0: se descarta.
      - `mosquitto_sub --insecure` no basta con un certificado autofirmado
        (sigue validando la cadena); con paho y `CERT_NONE`, sí.
-     Probado `OmronMqtt` con el LD real (en el dock, cargando: telemetría
-     al día en 1 s). Falta probar el driver entero con MQTT desde el FM
-     de prueba, y el OMRON digital no simula la API MQTT.
+     - Las peticiones al DataStore **se quedan** en el robot: al
+       reconectar seguían llegando valores pedidos en una sesión anterior.
+       No hay forma documentada de anularlas; no molestan (QoS 0).
+     - Fuera del dock: `DockingState` `UNDOCKED` y `RobotChargeState`
+       `Not`, como ARCL. `LaserLocalizationScore` 39 ↔ ARCL 0,392.
+     Probado el driver entero con el LD (solo lectura): cada `poll()`
+     tarda ~50 ms con MQTT frente a 140–180 ms preguntando por ARCL, con
+     los mismos datos; cortado el MQTT, el tick siguiente va por ARCL.
+     El **OMRON digital** simula la API MQTT (`--mqtt localhost:1883`,
+     sin TLS; `mqtt_host`, `mqtt_port` y `mqtt_tls: false` en el robot
+     de `fleet.yaml`): un trabajo de la cola mandado por ARCL y seguido
+     con la telemetría MQTT, del dock hasta `FINISHED`.
 
 ## Pendiente (a 2026-10-29)
 
@@ -4248,9 +4257,9 @@ las del FM son placeholders y no hay tiempos que medir.
     (decisión 204, avisando en la Guía de cerrar MobilePlanner); probar
     `ir_a_omron`, `cancelOrder` y `startPause` desde el FM con el robot;
     action "ir a punto" con `MacroTemplateCoordenadas` (decisión 206) y,
-    en el digital, `MacroTask` y `gotoPoint`; probar el driver entero
-    con la telemetría MQTT (decisión 207) y simular la API MQTT en el
-    digital;
+    en el digital, `MacroTask` y `gotoPoint`; una order desde el FM de
+    prueba con la telemetría MQTT (decisión 207; el driver ya está
+    probado con el LD solo leyendo);
     el autodock por batería baja (no se pudo provocar). El robot no es
     nuestro: solo se tiene a ratos y moverlo requiere permiso.
 

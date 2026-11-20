@@ -81,6 +81,8 @@ class OmronRobotConfig:
     mqtt_user: str | None = None
     mqtt_password: str | None = None
     mqtt_port: int = 8883
+    mqtt_host: str | None = None             # por defecto, el del robot
+    mqtt_tls: bool = True                    # false solo con el OMRON digital
 
 
 def _accion(serial: str, tipo_action: str, spec: Mapping) -> OmronAction:
@@ -122,7 +124,8 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
         mqtt_user = env.get(f"OMRON_MQTT_USER_{clave_env}") or env.get("OMRON_MQTT_USER") or "apiMonitor"
     return OmronRobotConfig(serial, str(host), password, int(m.get("port", 7171)), acciones,
                             mqtt_user if mqtt_password else None, mqtt_password,
-                            int(m.get("mqtt_port", 8883)))
+                            int(m.get("mqtt_port", 8883)), m.get("mqtt_host"),
+                            m.get("mqtt_tls", True) is not False)
 
 
 @dataclass
@@ -143,7 +146,8 @@ class OmronDriver:
         self.serial = cfg.serial
         self.client = client or ArclClient(cfg.host, cfg.password, cfg.port)
         if mqtt is None and cfg.mqtt_password:
-            mqtt = OmronMqtt(cfg.serial, cfg.host, cfg.mqtt_user, cfg.mqtt_password, cfg.mqtt_port)
+            mqtt = OmronMqtt(cfg.serial, cfg.mqtt_host or cfg.host, cfg.mqtt_user, cfg.mqtt_password,
+                             cfg.mqtt_port, cfg.mqtt_tls)
         self.mqtt = mqtt
         self._mqtt_arrancado = False
         self.fuente: str | None = None       # "MQTT" | "ARCL": de dónde salió la última telemetría
