@@ -74,14 +74,16 @@
   `state.information[]` con los `I_*` de `fm/vda5050/state.py`; los robots
   siguen siendo `mir-1`/`mir-2` y la UI enseña su nombre (Dejavu, Toretto). Lo abierto, ordenado, al final de
   `docs/avance.md` ("Pendiente"; los `#N` son identificadores fijos).
-- **OMRON** (2026-11-20, `docs/plan-omron.md`, decisiones 197–205, #43–#44):
+- **OMRON** (2026-11-20, `docs/plan-omron.md`, decisiones 197–207, #43–#44):
   **driver `omron`** (`fm/adapters/omron/`, ARCL): goals de la cola,
   macros y macro templates con parámetros (bloque `omron:` en la action
   del catálogo; clave ARCL en `.env`, `OMRON_PASSWORD`). Probado con un LD
   real de otro centro desde un FM de prueba (broker y web aparte), que
   solo se tiene a ratos: moverlo requiere permiso. Sin él, el **OMRON LD
   digital** (`python -m simuladores.omron`, servidor ARCL en el 7171 que
-  contesta como el real, README con lo visto y lo supuesto).
+  contesta como el real, README con lo visto y lo supuesto). Telemetría
+  por la API MQTT del robot (8883, `fm/adapters/omron/mqtt.py`) si hay
+  `OMRON_MQTT_PASSWORD`; las órdenes, siempre por ARCL (decisión 207).
 - **Vuelta a la espera** (`fm/idle.py`, decisión 136): `idle_return` en
   `fleet.yaml` (flota y por robot) y en el Configurador; tras `after_s` s
   parado, el FM lanza esa action del catálogo una vez; no ocupa al robot

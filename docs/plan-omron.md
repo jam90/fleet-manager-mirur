@@ -30,6 +30,11 @@ el repo es público.
 - Los goals, las rutas, las macros y los sectores viven **dentro del
   fichero `.map`**. Se identifican por nombre, único en el mapa: no hay
   GUIDs.
+- **API MQTT** (FLOW Core ≥ 4.1, manual M107): broker en el robot, puerto
+  **8883**, TLS con certificado autofirmado, usuarios `apiControl` /
+  `apiMonitor` creados en SetNetGo. Publica el estado (`itk/dt/robot/…`),
+  los goals y lo que se pida del DataStore. El driver la usa para la
+  telemetría y deja las órdenes en ARCL (decisión 207).
 
 ## 2. Traducción MiR ↔ OMRON
 

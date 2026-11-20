@@ -113,7 +113,7 @@ Por `action` (driver `mir`):
 | `positions_allowlist` | (por action) positions admitidas en los `position_inputs` de **esa** action; se suma a la del robot. Fuera de ella → `NO_ROUTE_TO_TARGET`; la UI solo ofrece estas |
 
 Por `action` (driver `omron`, un OMRON LD/HD/MD por ARCL; decisiones
-197–205, `docs/plan-omron.md`). El bloque va dentro de `omron:` (o directo):
+197–207, `docs/plan-omron.md`). El bloque va dentro de `omron:` (o directo):
 
 | Clave | Significado |
 |---|---|
@@ -133,7 +133,12 @@ robots:
 ```
 
 La clave ARCL va en `.env` (`OMRON_PASSWORD`, o `OMRON_PASSWORD_<SERIAL>`),
-nunca en `fleet.yaml`. La carga la hace el autodock del propio robot
+nunca en `fleet.yaml`. Con `OMRON_MQTT_PASSWORD` (y `OMRON_MQTT_USER`,
+por defecto `apiMonitor`) en `.env`, el estado, la batería y la posición
+llegan por la API MQTT del robot (puerto 8883) en vez de preguntarlos
+por ARCL en cada tick; si dejan de llegar, vuelve a ARCL solo. Las
+órdenes van siempre por ARCL (decisión 207; `mqtt: false` en el robot lo
+desactiva). La carga la hace el autodock del propio robot
 (decisión 198). Sin el robot, el **OMRON digital** (`python -m
 simuladores.omron`, `simuladores/omron/README.md`) contesta como uno real.
 

@@ -25,6 +25,11 @@ Cómo se sigue cada una (todo visto en el LD real, 2026-11-20):
   going to goal` y nunca llega el Completed. Un goal inexistente NO da error
   (la macro "termina" sin hacer nada): por eso se comprueban antes los goals.
 - La carga la hace el autodock del robot (decisión 198): `charge_job()` = None.
+
+Telemetría (decisión 207): si hay usuario MQTT en `.env`, el estado llega por
+la API MQTT del robot (`fm/adapters/omron/mqtt.py`) y el tick no pregunta
+`status` por ARCL; si esos datos dejan de llegar, vuelve a ARCL solo. Los
+avisos de la cola y las órdenes van siempre por ARCL.
 """
 from __future__ import annotations
 
@@ -36,6 +41,7 @@ from typing import Mapping
 
 from fm.adapters.base import ActionInfo, Job, JobStatus, ParamInfo, RobotSpec, Telemetry
 from fm.adapters.omron.client import ArclClient, ArclError
+from fm.adapters.omron.mqtt import OmronMqtt
 from fm.config import ConfigError
 from fm.vda5050.order import Action, OrderRejected
 from fm.vda5050.state import (E_INVALID_ORDER_ACTION, E_NO_ROUTE_TO_TARGET, E_VALIDATION_FAILURE,
@@ -71,6 +77,10 @@ class OmronRobotConfig:
     password: str
     port: int = 7171
     actions: dict[str, OmronAction] = field(default_factory=dict)
+    # API MQTT del robot (decisión 207); sin usuario, solo ARCL
+    mqtt_user: str | None = None
+    mqtt_password: str | None = None
+    mqtt_port: int = 8883
 
 
 def _accion(serial: str, tipo_action: str, spec: Mapping) -> OmronAction:
@@ -105,7 +115,14 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
     if not password:
         raise ConfigError(f"[{serial}] falta la clave ARCL: OMRON_PASSWORD (o OMRON_PASSWORD_{clave_env}) en .env")
     acciones = {a: _accion(serial, a, d) for a, d in (m.get("actions") or {}).items()}
-    return OmronRobotConfig(serial, str(host), password, int(m.get("port", 7171)), acciones)
+    # Telemetría por MQTT: con su clave en .env, salvo `mqtt: false` en fleet.yaml
+    mqtt_user = mqtt_password = None
+    if m.get("mqtt", True) is not False:
+        mqtt_password = env.get(f"OMRON_MQTT_PASSWORD_{clave_env}") or env.get("OMRON_MQTT_PASSWORD") or None
+        mqtt_user = env.get(f"OMRON_MQTT_USER_{clave_env}") or env.get("OMRON_MQTT_USER") or "apiMonitor"
+    return OmronRobotConfig(serial, str(host), password, int(m.get("port", 7171)), acciones,
+                            mqtt_user if mqtt_password else None, mqtt_password,
+                            int(m.get("mqtt_port", 8883)))
 
 
 @dataclass
@@ -120,10 +137,16 @@ class _Trabajo:
 class OmronDriver:
     manufacturer = "OMRON"
 
-    def __init__(self, cfg: OmronRobotConfig, client: ArclClient | None = None):
+    def __init__(self, cfg: OmronRobotConfig, client: ArclClient | None = None,
+                 mqtt: OmronMqtt | None = None):
         self.cfg = cfg
         self.serial = cfg.serial
         self.client = client or ArclClient(cfg.host, cfg.password, cfg.port)
+        if mqtt is None and cfg.mqtt_password:
+            mqtt = OmronMqtt(cfg.serial, cfg.host, cfg.mqtt_user, cfg.mqtt_password, cfg.mqtt_port)
+        self.mqtt = mqtt
+        self._mqtt_arrancado = False
+        self.fuente: str | None = None       # "MQTT" | "ARCL": de dónde salió la última telemetría
         self.last_error: str | None = None
         self.goals: list[str] = []
         self.macros: list[str] = []
@@ -159,6 +182,9 @@ class OmronDriver:
         log.info("[%s] mapa %s: goals %s, macros %s", self.serial, self.mapa, self.goals, self.macros)
 
     def connect(self) -> bool:
+        if self.mqtt is not None and not self._mqtt_arrancado:
+            self.mqtt.arrancar()             # en segundo plano: no retrasa el arranque
+            self._mqtt_arrancado = True
         if not self._asegurar():
             return False
         try:
@@ -178,12 +204,20 @@ class OmronDriver:
             self._procesar(self.client.leer_eventos())
             if self._recargar_mapa:
                 self._leer_mapa()
-            st = self.client.status()
-            self._procesar(self.client.leer_eventos())
+            if self.mqtt is not None and self.mqtt.al_dia():
+                st, fuente = self.mqtt.como_status_arcl(), "MQTT"
+                if self.mqtt.goals:
+                    self.goals = self.mqtt.goals
+            else:
+                st, fuente = self.client.status(), "ARCL"
+                self._procesar(self.client.leer_eventos())
             self._reconciliar(st)
         except (ArclError, OSError, TimeoutError) as e:
             self.last_error = f"ARCL: {e}"
             return None
+        if fuente != self.fuente and self.mqtt is not None:
+            log.info("[%s] telemetría por %s", self.serial, fuente)
+        self.fuente = fuente
         self.last_error = None
         self._ultimo_status = st
         return self._telemetria(st)
@@ -220,7 +254,8 @@ class OmronDriver:
             # Moverse, ir al dock o salir de él sin que lo haya pedido el FM
             # (MobilePlanner, el PLC, el autodock…): ocupado por otro (decisión 16).
             foreign_busy=moviendo and not nuestro,
-            information=[Info(I_ROBOT_STATE, "INFO", f"{estado} · {humano}" if humano != estado else estado)],
+            information=[Info(I_ROBOT_STATE, "INFO", f"{estado} · {humano}" if humano and humano != estado
+                              else estado)],
         )
 
     # --- seguimiento de trabajos por los mensajes del robot ---

@@ -4066,6 +4066,47 @@ Otras cosas que quedan apuntadas:
        (`RouteInfo: MacroTask "MacroTemplateCoordenadas" "…" "…" "…"`). El
        OMRON digital aún no simula ni `MacroTask` ni `gotoPoint`.
 
+## 2026-11-20 — OMRON: telemetría por su API MQTT
+
+En el mismo LD, su API MQTT (FLOW Core, manual M107 en `omron_docs/`):
+broker en el propio robot, puerto 8883, TLS 1.2 con certificado
+autofirmado, usuario `apiControl` (el que usan en ese centro) o
+`apiMonitor` (solo lectura). Solo se ha leído, sin mover el robot.
+
+207. **El estado del OMRON llega por MQTT; las órdenes, por ARCL.** Con
+     `OMRON_MQTT_PASSWORD` en `.env`, el driver se suscribe a
+     `itk/dt/robot/status`, `…/pose`, `itk/dt/goals` y tres valores del
+     DataStore (`DockingState`, `RobotChargeState`,
+     `LaserLocalizationScore`), y el tick deja de preguntar `status` por
+     ARCL (`fm/adapters/omron/mqtt.py`). Lo recibido se pasa al formato de
+     `status` de ARCL, así que la telemetría sale de una sola función. Si
+     pasan 2 s sin `status`, vuelve a ARCL solo. Macros, templates, cola,
+     cancelar, pausa y los avisos de cada trabajo siguen por ARCL: el
+     manual dice que la API MQTT no sustituye a ARCL para controlar, y sus
+     respuestas a comandos ARCL llegan por `itk/dt/arcl/update` sin el id
+     de la petición, mezcladas con el resto (el mismo problema que el
+     socket, sin ganar nada). `mqtt: false` en el robot lo desactiva.
+     Visto en el robot:
+     - `status` llega ~5 veces/s aunque nada cambie; `pose`, solo al
+       moverse; el DataStore hay que pedirlo (`…/subscribe/req/<n>` con
+       intervalo) y llega en `itk/dt/dataStore/value/<n>`.
+     - En el dock, `status` trae el texto para humanos («Charging,
+       Connected to Charging Station DOCK»), no la línea `DockingState:`
+       de ARCL: el dock y la carga se toman del DataStore (`DOCKED`,
+       `Bulk`). `LaserLocalizationScore` va de 0 a 100.
+     - Tras pulsar la seta la aplicación MQTT API se quedó colgada: el
+       broker aceptaba conexiones pero solo daba los retenidos de horas
+       antes, y no contestaba a nada. Se arregló reiniciándola en SetNetGo
+       → Software. Por eso los retenidos no cuentan como datos frescos, y
+       la edad se mide con la hora local (el reloj del robot iba una hora
+       atrasado). Tras reiniciarla, el primer `status` llega vacío y con
+       batería 0.0: se descarta.
+     - `mosquitto_sub --insecure` no basta con un certificado autofirmado
+       (sigue validando la cadena); con paho y `CERT_NONE`, sí.
+     Probado `OmronMqtt` con el LD real (en el dock, cargando: telemetría
+     al día en 1 s). Falta probar el driver entero con MQTT desde el FM
+     de prueba, y el OMRON digital no simula la API MQTT.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4198,7 +4239,7 @@ las del FM son placeholders y no hay tiempos que medir.
 **Funcionalidad nueva**
 
 - **#43** **Driver OMRON (ARCL)** (2026-11-20, `docs/plan-omron.md`,
-    decisiones 197–206). Hechos el OMRON digital y el driver, probado
+    decisiones 197–207). Hechos el OMRON digital y el driver, probado
     con el LD real desde un FM de prueba (template con parámetros desde
     `fleet/order` y desde la web). Falta: enseñar el autodock del robot
     en la web (decisión 198); `find_job`/`adopt_job` para retomar tras un
@@ -4207,7 +4248,9 @@ las del FM son placeholders y no hay tiempos que medir.
     (decisión 204, avisando en la Guía de cerrar MobilePlanner); probar
     `ir_a_omron`, `cancelOrder` y `startPause` desde el FM con el robot;
     action "ir a punto" con `MacroTemplateCoordenadas` (decisión 206) y,
-    en el digital, `MacroTask` y `gotoPoint`;
+    en el digital, `MacroTask` y `gotoPoint`; probar el driver entero
+    con la telemetría MQTT (decisión 207) y simular la API MQTT en el
+    digital;
     el autodock por batería baja (no se pudo provocar). El robot no es
     nuestro: solo se tiene a ratos y moverlo requiere permiso.
 
