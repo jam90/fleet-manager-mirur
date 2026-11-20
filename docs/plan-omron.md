@@ -136,3 +136,5 @@ robot pierde la localización a medio camino.
    `ir_a_omron`, `cancelOrder` y `startPause`.
 6. Crear goals desde la pestaña Crear (decisión 204) y `find_job` para
    retomar tras un reinicio.
+7. Action "ir a punto" con un template de `gotoPoint` (mm, mm, grados;
+   decisión 206), y `MacroTask`/`gotoPoint` en el digital.

@@ -4052,6 +4052,20 @@ Otras cosas que quedan apuntadas:
 - `getMacroTemplates` lista las macros, no los templates: para saber qué
   templates hay hay que leer el `.map`.
 
+206. **Ir a coordenadas sin goals: un template con `gotoPoint`.** En el
+     centro crearon `MacroTemplateCoordenadas` (`Task "gotoPoint" "$1" "$2"
+     "$3"`). Lanzado desde aquí con las coordenadas de `Taller 2`
+     (`executeMacroTemplate MacroTemplateCoordenadas 8513 -6166 -89`), el
+     robot terminó en (8518, −6165, −89): **x e y en mm y el ángulo en
+     grados**, enteros y sin comas, como el resto de ARCL. Con eso el FM
+     puede tener una action "ir a punto" sin crear goals; el driver ya la
+     admite (`template` con los tres en `number_params`), falta darla de
+     alta y probarla desde el FM.
+     - Una macro puede llamar a un template con valores fijos: así guarda
+       MobilePlanner una macro hecha desde un template
+       (`RouteInfo: MacroTask "MacroTemplateCoordenadas" "…" "…" "…"`). El
+       OMRON digital aún no simula ni `MacroTask` ni `gotoPoint`.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4184,7 +4198,7 @@ las del FM son placeholders y no hay tiempos que medir.
 **Funcionalidad nueva**
 
 - **#43** **Driver OMRON (ARCL)** (2026-11-20, `docs/plan-omron.md`,
-    decisiones 197–205). Hechos el OMRON digital y el driver, probado
+    decisiones 197–206). Hechos el OMRON digital y el driver, probado
     con el LD real desde un FM de prueba (template con parámetros desde
     `fleet/order` y desde la web). Falta: enseñar el autodock del robot
     en la web (decisión 198); `find_job`/`adopt_job` para retomar tras un
@@ -4192,6 +4206,8 @@ las del FM son placeholders y no hay tiempos que medir.
     tienen id); crear goals desde la pestaña Crear con `mapObjectUpdate`
     (decisión 204, avisando en la Guía de cerrar MobilePlanner); probar
     `ir_a_omron`, `cancelOrder` y `startPause` desde el FM con el robot;
+    action "ir a punto" con `MacroTemplateCoordenadas` (decisión 206) y,
+    en el digital, `MacroTask` y `gotoPoint`;
     el autodock por batería baja (no se pudo provocar). El robot no es
     nuestro: solo se tiene a ratos y moverlo requiere permiso.
 
