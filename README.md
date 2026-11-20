@@ -112,6 +112,31 @@ Por `action` (driver `mir`):
 | `number_inputs` | parámetros obligatorios **numéricos**: `5`, `5.0`, `"5"` o `"2,5"` se mandan al MiR como número (`5`, `2.5`); ausente o no numérico → `VALIDATION_FAILURE`. P.ej. `n_piezas_pedidas` (registro PLC 22). Lista de nombres, o mapping con rango `{n_piezas_pedidas: {min: 1, max: 10, step: 1}}`: fuera de rango → `VALIDATION_FAILURE`, y la UI pinta un deslizador |
 | `positions_allowlist` | (por action) positions admitidas en los `position_inputs` de **esa** action; se suma a la del robot. Fuera de ella → `NO_ROUTE_TO_TARGET`; la UI solo ofrece estas |
 
+Por `action` (driver `omron`, un OMRON LD/HD/MD por ARCL; decisiones
+197–205, `docs/plan-omron.md`). El bloque va dentro de `omron:` (o directo):
+
+| Clave | Significado |
+|---|---|
+| `goal_input` | trabajo de la cola del robot: `queuePickup "<goal>"`. El parámetro es un **nombre de goal** del mapa; inexistente → `NO_ROUTE_TO_TARGET` |
+| `template` + `params` | macro template de MobilePlanner: `executeMacroTemplate <template> $1 $2 …`, con los `actionParameters` de `params` en ese orden (los de texto, entre comillas) |
+| `goal_params` | de `params`, los que son goals: se comprueban contra `getGoals` **antes** de mandar (con un goal inexistente el robot da la macro por terminada sin hacer nada) |
+| `number_params` | de `params`, los numéricos (no numérico → `VALIDATION_FAILURE`) |
+| `macro` | macro sin parámetros: `executeMacro <macro>` |
+
+```yaml
+actions:
+  ir_y_esperar:
+    omron: { template: MacroTemplateFM, params: [destino, espera_s],
+             goal_params: [destino], number_params: [espera_s] }
+robots:
+  omron-1: { driver: omron, host: 192.168.1.50, battery_min: 30, actions: [ir_y_esperar] }
+```
+
+La clave ARCL va en `.env` (`OMRON_PASSWORD`, o `OMRON_PASSWORD_<SERIAL>`),
+nunca en `fleet.yaml`. La carga la hace el autodock del propio robot
+(decisión 198). Sin el robot, el **OMRON digital** (`python -m
+simuladores.omron`, `simuladores/omron/README.md`) contesta como uno real.
+
 **`expected_s`** (cualquier driver, opcional): segundos normales en
 ejecución de la action. Si una order la supera, su robot lleva en
 `state.errors[]` un `ORDER_DURATION_EXCEEDED` con `errorLevel: WARNING` y

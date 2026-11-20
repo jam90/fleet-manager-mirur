@@ -35,9 +35,36 @@ def _mir():
     return d, avanzar
 
 
-@pytest.fixture(params=[_sim, _mir], ids=["sim", "mir"])
-def driver(request):
-    return request.param()
+def _omron(tmp_path):
+    """El driver OMRON contra el OMRON digital, por un socket de verdad."""
+    from fm.adapters.omron import OmronDriver
+    from fm.adapters.omron.driver import OmronAction, OmronRobotConfig
+    from simuladores.omron import OmronDigital, ServidorARCL, leer_mapa
+    f = tmp_path / "c.map"
+    f.write_text('2D-Map-Ex4\nCairn: Goal 1000 0 0.0 "" ICON "Mesa"\nRouteInfo: Macro "Coger"\n'
+                 'RouteInfo: Task "wait" 1\nLINES\nDATA\n', encoding="latin-1")
+    robot = OmronDigital(mapa=leer_mapa(f), password="k", dock=(0, 0, 0))
+    srv = ServidorARCL(("127.0.0.1", 0), robot, periodo=0.02, acelerar=50)
+    srv.arrancar()
+    d = OmronDriver(OmronRobotConfig("omron-1", "127.0.0.1", "k", srv.puerto,
+                                     {"coger": OmronAction("coger", "macro", nombre="Coger")}))
+
+    def avanzar():
+        import time
+        fin = time.monotonic() + 5
+        while time.monotonic() < fin and not all(t.estado == "FINISHED" for t in d._trabajos.values()):
+            d.poll()
+            time.sleep(0.05)
+    return d, avanzar, srv
+
+
+@pytest.fixture(params=["sim", "mir", "omron"])
+def driver(request, tmp_path):
+    if request.param != "omron":
+        return {"sim": _sim, "mir": _mir}[request.param]()
+    d, avanzar, srv = _omron(tmp_path)
+    request.addfinalizer(lambda: (d.client.cerrar(), srv.parar()))
+    return d, avanzar
 
 
 def test_ciclo_completo(driver):

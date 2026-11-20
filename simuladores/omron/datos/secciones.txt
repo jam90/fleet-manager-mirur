@@ -1,0 +1,75 @@
+GetConfigSectionList: A/V Config
+GetConfigSectionList: Absolute Movement Maximums
+GetConfigSectionList: Acuity Camera
+GetConfigSectionList: ARCL server setup
+GetConfigSectionList: Battery_1
+GetConfigSectionList: Bumpers Settings
+GetConfigSectionList: Connection timeouts
+GetConfigSectionList: Core Digital Inputs
+GetConfigSectionList: Core Digital Outputs
+GetConfigSectionList: Custom Arguments
+GetConfigSectionList: Custom Enterprise Queuing Tasks
+GetConfigSectionList: CustomCart
+GetConfigSectionList: Data Log Settings
+GetConfigSectionList: Debug Features
+GetConfigSectionList: Debug log
+GetConfigSectionList: Docking
+GetConfigSectionList: Driving problem response
+GetConfigSectionList: Dynamic Obstacles
+GetConfigSectionList: Enterprise Manager Connection
+GetConfigSectionList: Extra Logging
+GetConfigSectionList: Feedback
+GetConfigSectionList: Files
+GetConfigSectionList: Follow (laser) settings
+GetConfigSectionList: General
+GetConfigSectionList: Goal Button Settings
+GetConfigSectionList: GuideSensor_Front
+GetConfigSectionList: GuideSensor_Rear
+GetConfigSectionList: Instant Macro Button Settings
+GetConfigSectionList: Internal Extra Logging
+GetConfigSectionList: Internal Testing Features
+GetConfigSectionList: Language/Location
+GetConfigSectionList: Laser_1
+GetConfigSectionList: Laser_1 Settings
+GetConfigSectionList: Laser_2
+GetConfigSectionList: Laser_2 Settings
+GetConfigSectionList: Laser_3
+GetConfigSectionList: Laser_4
+GetConfigSectionList: Laser_5
+GetConfigSectionList: Laser_6
+GetConfigSectionList: LCD_1
+GetConfigSectionList: Light Analysis
+GetConfigSectionList: Localization Modules
+GetConfigSectionList: Localization settings
+GetConfigSectionList: Log Config
+GetConfigSectionList: Map Features
+GetConfigSectionList: MARC Configuration
+GetConfigSectionList: MobileIO
+GetConfigSectionList: Move: Path Defaults
+GetConfigSectionList: Move: Segment Defaults
+GetConfigSectionList: Outgoing ARCL commands
+GetConfigSectionList: Outgoing ARCL connection setup
+GetConfigSectionList: Path Planning Settings
+GetConfigSectionList: Patrol
+GetConfigSectionList: Payload
+GetConfigSectionList: Payload Present Messages and Behavior
+GetConfigSectionList: Periodic Macros
+GetConfigSectionList: Peripheral Power Digital Outputs
+GetConfigSectionList: Queuing Manager
+GetConfigSectionList: Robot config
+GetConfigSectionList: Robot Fleet Features
+GetConfigSectionList: Robot joystick goal button
+GetConfigSectionList: Robot Type
+GetConfigSectionList: Safety Zones
+GetConfigSectionList: Sensors
+GetConfigSectionList: Sonar
+GetConfigSectionList: Sonar Debugging
+GetConfigSectionList: Sonar Settings
+GetConfigSectionList: SonarBoard_1
+GetConfigSectionList: Speech Synthesis
+GetConfigSectionList: Standby
+GetConfigSectionList: Target Definition
+GetConfigSectionList: Task Features
+GetConfigSectionList: Teleop Settings
+GetConfigSectionList: Testing Features
+EndOfGetConfigSectionList

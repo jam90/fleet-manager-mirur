@@ -1,0 +1,70 @@
+2D-Map-Ex4
+MinPos: -10880 -3820
+MaxPos: 1360 9900
+Resolution: 20
+LineMinPos: -10605 -1008
+LineMaxPos: -3970 7172
+NumLines: 39
+LinesAreSorted: true
+NumPoints: 0
+RouteInfo: EveryBefore "_everyBefore"
+RouteInfo: EveryAfter "_everyAfter"
+RouteInfo: Route "Ruta1"
+RouteInfo: GoalTask "goto" "descanso"
+RouteInfo: _goto "descanso"
+RouteInfo: GoalTask "goto" "habitacion1"
+RouteInfo: _goto "habitacion1"
+RouteInfo: GoalTask "goto" "habitacion2"
+RouteInfo: _goto "habitacion2"
+Cairn: ForbiddenLine -8970 6169 0.000000 "" ICON "Forbidden Line4" -8970 6169 -7246 7000
+Cairn: ForbiddenLine -8671 3999 0.000000 "" ICON "Forbidden Line5" -8671 3999 -7389 929
+Cairn: Goal -8016 6148 0.000000 "" ICON "habitacion1"
+Cairn: Goal -7975 4852 0.000000 "" ICON "habitacion2"
+Cairn: ForbiddenLine -7221 1287 0.000000 "" ICON "Forbidden Line1" -7221 1287 -8644 4406
+Cairn: PreferredLine -6905 4634 0.000000 "" ICON "PreferredLine2" -6905 4634 -6128 1829
+Cairn: ForbiddenLine -6892 1291 0.000000 "" ICON "Forbidden Line3" -6892 1291 -5474 1856
+Cairn: Goal -6239 1933 0.000000 "" ICON "descanso"
+Cairn: ForbiddenLine -6237 5290 0.000000 "" ICON "Forbidden Line2" -6237 5290 -4723 1994
+Cairn: FeedbackHandler 0 0 0.000000 "" ICON "Custom Responses" 0 0 0 0
+Cairn: RobotArrivalHandler 0 0 0.000000 "" ICON "Queuing Manager" 0 0 0 0
+LINES
+-10605 1272 -9417 640
+-10444 1574 -10605 1272
+-9613 3120 -9881 2616
+-9424 3518 -9493 3089
+-9247 3845 -9166 3701
+-9166 3701 -9424 3518
+-8941 -428 -8253 -794
+-8465 1102 -7960 833
+-8371 5490 -9247 3845
+-7593 311 -7363 427
+-7359 -567 -6922 -871
+-6911 -856 -6625 -1008
+-6898 646 -6543 715
+-6534 638 -6516 482
+-6516 482 -6397 558
+-6128 -238 -6052 71
+-6110 4871 -5906 5075
+-6052 71 -5899 -11
+-5899 -11 -5678 405
+-5805 4160 -5434 4859
+-5757 3981 -5788 3997
+-5692 2036 -5410 1886
+-5678 405 -5118 107
+-5521 2329 -5247 2183
+-5442 2283 -5090 2494
+-5410 1884 -5252 2182
+-5354 3915 -5149 4301
+-5339 2655 -5050 2655
+-5248 2180 -5442 2283
+-5123 333 -4686 734
+-5099 2899 -5203 2954
+-5091 2495 -5351 2633
+-5055 1690 -5413 1880
+-5035 3800 -5340 3812
+-4782 6998 -5110 7172
+-4776 1030 -4624 1174
+-4759 3109 -4937 3203
+-4528 765 -4776 1030
+-3970 1741 -4148 1892
+DATA

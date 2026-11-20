@@ -4,13 +4,15 @@ Objetivo: segundo driver real en `fm/adapters/omron/`, para un OMRON LD,
 sin tocar el core. Sirve para comprobar que la frontera de
 `fm/adapters/base.py` aguanta una marca que no se parece al MiR.
 
-Estado: **en diseño, sin código**. Fecha: 2026-11-20. Decisiones 197–198
-en `docs/avance.md`.
+Estado: **driver hecho y probado con el LD real** desde un FM de prueba
+(2026-11-20): un macro template con parámetros mandado por `fleet/order` y
+desde la web. Decisiones 197–205 en `docs/avance.md`; lo que falta, en el
+punto #43 de su lista de pendientes.
 
 Lo de abajo sale de un LD de otro centro de formación (firmware
-`SNG Robot-8.2.7`), conectado por cable y consultado **solo con comandos
-de lectura**. La IP y la clave de ARCL van en `.env`, nunca aquí: el repo
-es público.
+`SNG Robot-8.2.7`): primero solo con comandos de lectura y después, con
+permiso, moviéndolo. La IP y la clave de ARCL van en `.env`, nunca aquí:
+el repo es público.
 
 ## 1. Cómo se habla con un OMRON
 
@@ -35,12 +37,12 @@ es público.
 |---|---|---|
 | position | goal (`getGoals`, `mapObjectInfo <goal>` da x y θ) | Nombre único en el mapa. |
 | mission sin parámetros | macro (`executeMacro`) o ruta (`patrolOnce <ruta>`) | |
-| mission con parámetros | macro template (`executeMacroTemplate`) | El LD probado no tiene ninguno; se crean en MobilePlanner. |
+| mission con parámetros | macro template (`executeMacroTemplate <nombre> $1 $2…`) | Se crean en MobilePlanner; parámetros por posición, los de texto entre comillas. Probado (decisión 201). `getMacroTemplates` no los lista. |
 | `POST mission_queue` | `queuePickup <goal> [prioridad] [job_id]` | **El `job_id` lo pone el FM**: sirve de etiqueta para `find_job` tras reiniciar (decisión 161) sin depender de `description`. |
 | mission de varios pasos | `queueMulti <n_goals> <campos_por_goal> <goal1> <args1> … [job_id]` | |
-| `GET mission_queue/<id>` | `queueQueryLocal <tipo> <valor>` | Estados `Pending/Available/InProgress/Completed/Cancelled/Interrupted/Failed` → `JobStatus`. |
+| `GET mission_queue/<id>` | `queueQuery jobid <id>` (**sin** Local) y los `QueueUpdate:` | Fases vistas: `Pending` → `InProgress UnAllocated/Allocated/Driving/After` → `Completed`; `Cancelling` → `Cancelled`. Con Local, un trabajo devuelto a la cola sin robot no sale (decisión 201). |
 | `DELETE mission_queue/<id>` | `queueCancelLocal <tipo> <valor>` | |
-| `PUT status 4/3` (pausa) | `applicationBlockDrivingSet <nombre> "<corto>" "<largo>"` / `applicationBlockDrivingClear <nombre>` | Lleva el motivo escrito, que el robot enseña. |
+| `PUT status 4/3` (pausa) | `applicationBlockDrivingSet <nombre> "<corto>" "<largo>"` / `applicationBlockDrivingClear <nombre>` | No es una pausa: interrumpe y devuelve el trabajo a la cola; al quitarlo, el robot lo retoma. Corta una macro (decisión 202). |
 | `GET status` | `status` / `oneLineStatus` + `getInfo <nombre>` | `Location` en **mm, mm, grados** → m y rad. |
 | `battery_percentage` | `StateOfCharge` (también `getInfo ChargeEstimate`) | |
 | `charging` (deducido) | `DockingState: Docked` + `ChargeState` (`Bulk/Overcharge/Float`), `getInfo OnCharger` | El OMRON lo dice directamente. |
@@ -63,10 +65,15 @@ El LD ya se carga solo (sección `Docking` de su configuración):
   la espera).
 - `DockUntilDoneCharging true`: se queda hasta terminar de cargar.
 
-El FM no lo duplica: `charge_job()` devuelve `None`, no se configura
-`idle_return` para el OMRON, y mientras esté yendo al dock o cargando
-cuenta como `busy`. `battery_min` del robot por encima de
+El FM no lo duplica: `charge_job()` devuelve `None` y no se configura
+`idle_return` para el OMRON. `battery_min` del robot por encima de
 `AutoDockStateOfCharge`, por la misma histéresis del §6 del brief.
+
+Visto en el LD (decisión 203): cargando en el dock **no** está ocupado: un
+trabajo de la cola lo saca del dock aunque no haya terminado de cargar. Lo
+que cuenta como ocupado por otro (`foreign_busy`) es ir al dock, salir de
+él o moverse sin que lo pida el FM. Un dock fallido no se anuncia
+(decisión 205).
 
 La web enseña en la ficha del robot OMRON si el autodock está activado y
 sus valores (`AutoDock`, `AutoDockStateOfCharge`, `AutoDockIdleTime`,
@@ -98,31 +105,34 @@ coinciden entre marcas (position / goal, mission / macro / ruta, zona /
 sector) y el Configurador, el Catálogo y las fichas de robot hablan hoy
 en términos del MiR.
 
-## 5. Por comprobar en el robot
+## 5. Visto en el robot (2026-11-20)
 
-Sin mover el robot:
+Comprobado (detalle en la entrada del 2026-11-20 de `docs/avance.md`):
+formatos de la cola y sus fases, cancelación, pausa (que es un fallo que
+devuelve el trabajo a la cola, decisión 202), seta, dock (textos, tiempos,
+reintentos y fallos), movimientos a mano, crear goals con `mapObjectUpdate`
+(decisión 204), macros y macro templates con parámetros (decisión 201), y
+que un trabajo saca al robot del dock aunque esté cargando (decisión 203).
 
-- Formato exacto de `queueQueryLocal` y de los `QueueUpdate:` asíncronos.
-- Qué devuelve `status` con la seta pulsada, en manual y con un fallo.
-
-Con movimiento (con permiso del usuario y el robot localizado antes,
-desde MobilePlanner o con `localizeAtGoal` encima de un goal):
-
-- `queuePickup <goal> 10 <job_id>`: seguimiento hasta `Completed`,
-  cancelación a medias y pausa con `applicationBlockDriving*`.
-- Si un trabajo nuevo saca al robot del dock antes de terminar de cargar
-  con `DockUntilDoneCharging true` (la trampa del §7 del brief).
+Sin ver todavía: el autodock por batería baja, `status` en modo manual,
+`queueMulti` con varios goals, y qué pasa con un trabajo de la cola si el
+robot pierde la localización a medio camino.
 
 ## 6. Orden de trabajo
 
-1. Cliente ARCL (`fm/adapters/omron/client.py`): socket con login,
-   reconexión, una función por comando con el nombre del comando ARCL, y
-   lectura de respuestas hasta su línea final. Tests con un servidor
-   ARCL falso en local.
-2. `driver.py`: `poll` (`status` + `getInfo`), `translate`, `execute`,
-   `job_status`, `cancel`, `pause`/`resume`, `charge_job` → `None`,
-   `extra_state` con el autodock. Pasar `tests/adapters/test_contract.py`.
-3. Formato del catálogo por marca (decisión 197) en `fm/config.py` y el
-   driver MiR.
+0. ~~OMRON digital~~ (hecho el 2026-11-20, decisión 199): servidor ARCL
+   que contesta como el LD, en `simuladores/omron/` (ver su README). El
+   driver se desarrolla contra él; lo marcado como supuesto se corrige
+   cuando se pueda probar con el robot.
+1. ~~Cliente ARCL~~ (`fm/adapters/omron/client.py`, decisión 200): un
+   socket, separa respuestas de mensajes repartidos a todos.
+2. ~~`driver.py`~~ (decisiones 200–203): goals de la cola, macros y
+   templates; pasa el contrato contra el digital
+   (`tests/adapters/test_omron_driver.py`, `test_contract.py`).
+3. Formato del catálogo por marca (decisión 197): el OMRON ya lee su bloque
+   `omron:`; falta llevar el del MiR a `mir:` y decidir la interfaz (#44).
 4. Web: ficha del robot OMRON (autodock) y #44.
-5. Prueba con el robot.
+5. ~~Prueba con el robot~~ (2026-11-20). Pendiente probar desde el FM
+   `ir_a_omron`, `cancelOrder` y `startPause`.
+6. Crear goals desde la pestaña Crear (decisión 204) y `find_job` para
+   retomar tras un reinicio.

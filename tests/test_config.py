@@ -73,8 +73,8 @@ def test_registro_make_driver(tmp_path):
     assert isinstance(d1, MirDriver) and d1.manufacturer == "MiR"
     d2 = make_driver(cfg.robots["mir-2"], cfg, env={"MIR_AUTH": "Basic x", "MIR_HOST_MIR_2": "h"})
     assert d2.manufacturer == "MiR-Custom"
-    cfg.robots["mir-1"].driver = "omron"
-    with pytest.raises(ConfigError, match="omron"):
+    cfg.robots["mir-1"].driver = "inexistente"
+    with pytest.raises(ConfigError, match="inexistente"):
         make_driver(cfg.robots["mir-1"], cfg, env={})
 
 

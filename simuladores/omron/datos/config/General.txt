@@ -1,0 +1,37 @@
+GetConfigSectionValue: UseStandardFeedback true
+GetConfigSectionValue: Radius 348
+GetConfigSectionValue: Width 500
+GetConfigSectionValue: LengthFront 348
+GetConfigSectionValue: LengthRear 348
+GetConfigSectionValue: DistanceCalibrationFactor 1
+GetConfigSectionValue: NumberOfFrontBumpers 3
+GetConfigSectionValue: NumberOfRearBumpers 3
+GetConfigSectionValue: MaxNumberOfLasers 6
+GetConfigSectionValue: MaxNumberOfBatteries 1
+GetConfigSectionValue: MaxNumberOfLCDs 1
+GetConfigSectionValue: MaxNumberOfSonarBoards 1
+GetConfigSectionValue: MaxNumberOfTimeOfFlightBoards 0
+GetConfigSectionValue: DockType LD
+GetConfigSectionValue: RobotBaseShape _beginList
+GetConfigSectionValue:     Point1  
+GetConfigSectionValue:     Point2  
+GetConfigSectionValue:     Point3  
+GetConfigSectionValue:     Point4  
+GetConfigSectionValue:     Point5  
+GetConfigSectionValue:     Point6  
+GetConfigSectionValue:     Point7  
+GetConfigSectionValue:     Point8  
+GetConfigSectionValue:     Point9  
+GetConfigSectionValue:     Point10  
+GetConfigSectionValue:     Point11  
+GetConfigSectionValue:     Point12  
+GetConfigSectionValue:     Point13  
+GetConfigSectionValue:     Point14  
+GetConfigSectionValue:     Point15  
+GetConfigSectionValue:     Point16  
+GetConfigSectionValue:     Point17  
+GetConfigSectionValue:     Point18  
+GetConfigSectionValue:     Point19  
+GetConfigSectionValue:     Point20  
+GetConfigSectionValue: RobotBaseShape _endList
+EndOfGetConfigSectionValues

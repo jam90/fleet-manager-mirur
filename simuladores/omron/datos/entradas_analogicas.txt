@@ -1,0 +1,5 @@
+AnalogInputListHelper: List format is: <minVoltage> <maxVoltage> <maxRaw> <name>
+AnalogInputListHelper: The data returned by analogInputQueryVoltage is a voltage as a double between <minVoltage> and <maxVoltage>
+AnalogInputListHelper: The data returned by analogInputQueryRaw is an int called <rawValue>
+AnalogInputListHelper: To get <rawValue> to voltage do '<minVoltage> + (<maxVoltage> - <minVoltage>) * <rawValue> / <maxRaw>
+End of AnalogInputList

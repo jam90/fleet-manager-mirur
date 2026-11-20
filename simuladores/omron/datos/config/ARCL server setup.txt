@@ -1,0 +1,12 @@
+GetConfigSectionValue: OpenTextServer true
+GetConfigSectionValue: PortNumber 7171
+GetConfigSectionValue: Password {password}
+GetConfigSectionValue: LogReceived true
+GetConfigSectionValue: LogSent false
+GetConfigSectionValue: SessionTimeoutMins -1
+GetConfigSectionValue: ArclConfig false
+GetConfigSectionValue: ArclConfigAddParamMulti false
+GetConfigSectionValue: ArclScan false
+GetConfigSectionValue: ArclDisableMotors false
+GetConfigSectionValue: ArclFreeMotors false
+EndOfGetConfigSectionValues

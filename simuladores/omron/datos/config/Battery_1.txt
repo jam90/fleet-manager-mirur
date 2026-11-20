@@ -1,0 +1,6 @@
+GetConfigSectionValue: BatteryAutoConnect true
+GetConfigSectionValue: BatteryType mtx
+GetConfigSectionValue: BatteryPortType serial
+GetConfigSectionValue: BatteryPort /dev/ttyUSB1
+GetConfigSectionValue: BatteryBaud 115200
+EndOfGetConfigSectionValues

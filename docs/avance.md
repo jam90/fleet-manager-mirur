@@ -3929,6 +3929,129 @@ en `docs/plan-omron.md`. Sin código todavía (#43).
      en la web enseña si el autodock está activado y sus valores (solo
      lectura; se cambian en MobilePlanner).
 
+## 2026-11-20 — OMRON digital
+
+199. **Un OMRON LD digital: servidor ARCL que contesta como el robot**
+     (pedido por el usuario: no tendrá el robot a mano). En
+     `simuladores/omron/` (`python -m simuladores.omron`), fuera de `fm/`
+     porque no es parte del FM sino un robot simulado, como el robot al
+     que se conectará el driver. Sin dependencias fuera de la biblioteca
+     estándar.
+     - Antes de escribirlo se grabaron del LD real, solo con comandos de
+       lectura, las respuestas a unos noventa comandos y casos de error.
+       Eso se copió tal cual (`datos/`) y las respuestas del digital se
+       compararon con las del real en el mismo estado: solo cambian los
+       valores del momento y los comandos sin simular. Cosas que salieron
+       de ahí: una clave mala corta la conexión con un RST; `goto`
+       funciona aunque no salga en `help`; algunas respuestas acaban en
+       espacio.
+     - Lo que no se pudo ver sin mover el robot (trabajos en la cola,
+       eventos de movimiento, dock) está marcado como supuesto en el
+       código y en el README del digital, para corregirlo cuando se pruebe.
+     - Comandos propios (`digitalEstop`, `digitalSoc`, `digitalLost`) para
+       provocar la seta, la batería baja o perder la localización.
+     - El mapa de ejemplo lleva los goals, la ruta y las paredes del LD
+       real, pero no la nube de puntos ni el nombre del mapa original. En
+       el repo no van la clave ni la IP del robot.
+     - Tests en `tests/test_omron_digital.py` (21), con socket incluido.
+
+## 2026-11-20 — OMRON real: pruebas con movimiento, driver y primera order desde el FM
+
+Con permiso del usuario y el robot localizado (en el centro lo movían desde
+MobilePlanner), se grabó todo lo que el LD dice por ARCL, primero por cable
+y luego por wifi (`172.20.x`, 0,2–1 s por respuesta): una escucha pasiva y
+un sondeo de `status`/`modeQuery`/cola cada segundo. Además, cosas mandadas
+desde aquí: tres trabajos de la cola (terminar, pausa y cancelar), crear un
+goal, una macro y un macro template con parámetros. Cambiaron dos veces de
+mapa (`distamr26_1.map` y luego `distamr261120ImperialFleet.map`, con dock
+dibujado, cuatro goals y zonas prohibidas). PNG de los mapas en
+`img_referencia/omron/` (fuera de git).
+
+Lo que corrige a lo supuesto en el digital (todo pasado a `simuladores/omron/`):
+- **Cola:** `Pending` → `InProgress UnAllocated` (saliendo del dock) →
+  `Allocated` → `Driving` → `After` (tareas del goal al llegar) →
+  `Completed`. `QueueUpdate` acaba en espacio; `QueueQuery` lleva un `""`
+  antes de los fallos. La respuesta de `queuePickup` no lleva coma.
+  Cancelar: `Cancelling` → `Interrupted` → `Cancelled`, con
+  `Stopping`/`Stopped`.
+- **Dock:** al cambiar de fase repite la línea `DockingState: …`; textos
+  `Decoupling from DOCK`, `Driving to Charging Station DOCK`, `Finding
+  Charging Station Target`, `Failed to acquire Charging Station Target`
+  (reintenta solo) y `Charging, Connected to Charging Station DOCK`. Salir
+  del dock: 11–26 s. Acoplar: ~1 min con un reintento.
+- **Seta:** `Motors disabled` + `EStop pressed`; al soltar, `EStop relieved
+  but motors still disabled` hasta `enableMotors` (→ `Motors enabled`,
+  `Stopped`). Corta el movimiento, no lo pausa.
+- **A mano:** `Going to <goal>`/`Going to point x y`, `Arrived at …`,
+  `Interrupted: Going to …`, `Error: Failed going to goal`, `Error: Cannot
+  find path`; en la cola `UnAvailable Interrupted`. `modeQuery`: `Goal
+  "Goal seeking"`, `stop "Stop" false true false`, `dock "Dock"`,
+  `MotorsAndEStop "…"`, `QM` tras un trabajo de la cola.
+- Guardar el mapa da `Map changed` (y `Configuration changed` al cargar otro).
+
+200. **Driver OMRON** (`fm/adapters/omron/`, registrado como `omron`).
+     Tres tipos de action: `goal_input` (`queuePickup`, trabajo de la cola
+     con el `job_id` del FM), `template` + `params` (`executeMacroTemplate`)
+     y `macro` (`executeMacro`). El bloque va dentro de `omron:` en la
+     action del catálogo: primer paso de la 197 (el MiR sigue con `mission`
+     en la raíz; los dos formatos conviven). Clave ARCL en `.env`
+     (`OMRON_PASSWORD`). Un solo socket ARCL por robot: el cliente separa lo
+     que es respuesta de cada comando de los mensajes que el robot reparte a
+     todos, y el driver sigue los trabajos con esos mensajes en su `poll()`.
+     Pasa el test de contrato de drivers contra el OMRON digital.
+201. **Seguimiento.** Trabajo de la cola: `QueueUpdate` y, de respaldo,
+     `queueQuery` **sin Local** (con Local, un trabajo devuelto a la cola
+     sin robot deja de verse). Macro y template: no tienen id; `Executing
+     macro (template) X` → `Completed …`, y si un goto falla, `Error: …` sin
+     `Completed`. Dentro de una macro no hay `Going to`/`Arrived at`: es una
+     caja negra, como una mission del MiR. **Un goal inexistente en un
+     template no da error (la macro "termina" sin hacer nada)**: el driver
+     comprueba los goals contra `getGoals` antes de mandar
+     (`NO_ROUTE_TO_TARGET`), igual que los `position_inputs` del MiR.
+202. **Pausa = `applicationBlockDrivingSet`**, con su comportamiento real: es
+     un fallo de la aplicación (`Fault_Driving_Application`) que interrumpe
+     el trabajo y lo devuelve a la cola sin robot (`Pending Interrupted`);
+     al quitarlo, el robot lo retoma solo. Para el FM funciona como
+     pausa/reanudación de un trabajo de la cola. Una macro en marcha, en
+     cambio, se corta (queda `FAILED`).
+203. **Corrige la 198 en lo de "cargar cuenta como busy".** Con
+     `DockUntilDoneCharging true`, un trabajo de la cola saca al robot del
+     dock aunque esté cargando (PRUEBA-1 salió en `Overcharge`), y en la
+     cola está `Available`. Así que cargando en el dock **no** está ocupado;
+     ir al dock, salir de él o moverse sin que lo pida el FM (MobilePlanner,
+     el autodock, el PLC) es `foreign_busy`. Lo demás de la 198 sigue: la
+     carga la hace el autodock del robot. La configuración del autodock ya
+     la lee el driver (`OmronDriver.autodock()`); falta enseñarla en la web.
+204. **Se pueden crear goals desde el FM** con `mapObjectUpdate` (formato de
+     las líneas `Cairn:` del `.map`): se guardan en el fichero del mapa
+     activo (comprobado bajándolo) y piden el robot parado y libre (`robot
+     not idle`). No se pueden borrar por ARCL. **El FM y MobilePlanner no
+     deben editar el mapa a la vez**: si el FM cambia el mapa con
+     MobilePlanner abierto, este ya no deja guardar y pide guardar copia y
+     recargar. El FM aún no lo usa (sería la pestaña Crear para el OMRON).
+205. **Un dock fallido no se anuncia.** Ni mensaje ni fallo en
+     `faultsGet`: el aviso de "no ha podido" sale solo en la pantalla del
+     robot y en MobilePlanner. Se deduce de `Docking` → `Undocked` sin
+     `Docked`, o de `Failed to acquire Charging Station Target` en el estado.
+
+**Primera prueba del FM con el OMRON real** (FM de prueba aparte para no
+tocar el del usuario: broker propio en el 1884, web en el 8051, config en el
+scratchpad). `omron-1` publica su `state` a 1 Hz con pose, batería y estado.
+`fleet/order ir_y_esperar` (`destino=Taller 2`, `espera_s=3`) → `ASSIGNED`
+a omron-1 → `executeMacroTemplate MacroTemplateFM "Taller 2" 3` → `RUNNING`
+→ `FINISHED` en 13 s, con el robot en `Taller 2`. Con `destino=NoExiste`,
+`REJECTED NO_ROUTE_TO_TARGET` sin mandar nada al robot. El usuario lanzó
+orders desde la web de ese FM y funcionaron.
+
+Otras cosas que quedan apuntadas:
+- En el robot hay entradas digitales asignadas a acciones (`Boton1` →
+  macro, `boton2` → goal); en ese centro mandan las órdenes desde un PLC.
+  Si es por entradas, el FM solo verá el robot moverse (`foreign_busy`).
+- MobilePlanner guarda una macro creada desde un template como una macro
+  más, con los valores en el nombre (`MacroTemplateFM "Almacen" "3"`).
+- `getMacroTemplates` lista las macros, no los templates: para saber qué
+  templates hay hay que leer el `.map`.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4061,10 +4184,16 @@ las del FM son placeholders y no hay tiempos que medir.
 **Funcionalidad nueva**
 
 - **#43** **Driver OMRON (ARCL)** (2026-11-20, `docs/plan-omron.md`,
-    decisiones 197–198). Plan escrito, sin código. Por probar en el
-    robot: el seguimiento de la cola (`queueQueryLocal`), la pausa y si
-    un trabajo lo saca del dock a media carga. Antes de mover el robot
-    hay que localizarlo y pedir permiso.
+    decisiones 197–205). Hechos el OMRON digital y el driver, probado
+    con el LD real desde un FM de prueba (template con parámetros desde
+    `fleet/order` y desde la web). Falta: enseñar el autodock del robot
+    en la web (decisión 198); `find_job`/`adopt_job` para retomar tras un
+    reinicio (el `job_id` de la cola ya lo pone el FM; las macros no
+    tienen id); crear goals desde la pestaña Crear con `mapObjectUpdate`
+    (decisión 204, avisando en la Guía de cerrar MobilePlanner); probar
+    `ir_a_omron`, `cancelOrder` y `startPause` desde el FM con el robot;
+    el autodock por batería baja (no se pudo provocar). El robot no es
+    nuestro: solo se tiene a ratos y moverlo requiere permiso.
 
 - **#44** **Interfaz con varias marcas** (2026-11-20, decisión 197). Cada
     marca nombra distinto lo mismo: position / goal, mission / macro /
