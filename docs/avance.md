@@ -3906,6 +3906,29 @@ paneles, de los botones de peligro (`--bad-btn`) y de los enlaces en oscuro
        ventosa): la segunda order de ventosa espera con sim-2 libre y va a
        sim-1 cuando termina con ella puesta. Tests en `test_tools.py`.
 
+## 2026-11-20 — OMRON LD: primer contacto y plan del driver
+
+En otro centro de formación, con un OMRON LD por cable, consultado solo
+con comandos de lectura de ARCL (puerto 7171) y el paquete *debug info*
+de SetNetGo, que trae los mapas. Lo visto y la traducción MiR ↔ OMRON,
+en `docs/plan-omron.md`. Sin código todavía (#43).
+
+197. **Catálogo de actions con una definición por marca** (aceptado por
+     el usuario). Cada action del catálogo lleva un bloque por driver
+     (`mir: {mission: …}`, `omron: {goal_input: …}`); lo común, como los
+     `*_inputs`, queda en la action. Sustituirá a la `mission` en la raíz
+     de la action (decisión 92) cuando se escriba el driver. Queda
+     abierto cómo lo enseña y edita la interfaz, porque cada marca llama
+     distinto a las mismas cosas (#44).
+198. **El OMRON se carga con su propio autodock**, no con el
+     `ChargeGuard` del FM. El LD ya lo trae (`AutoDock`, al 25 % o tras
+     15 min parado, y hasta terminar de cargar); duplicarlo en el FM sería
+     tener dos lógicas peleando por lo mismo. El driver devuelve `None` en
+     `charge_job()`, ir al dock o cargar cuenta como `busy`, y
+     `battery_min` va por encima del umbral del robot. La ficha del robot
+     en la web enseña si el autodock está activado y sus valores (solo
+     lectura; se cambian en MobilePlanner).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4036,6 +4059,18 @@ las del FM son placeholders y no hay tiempos que medir.
     (MESA_TKNIKA nueva + sustituir `coger`) y comprobar allí el atraque
     (offset calibrado con mir-1).
 **Funcionalidad nueva**
+
+- **#43** **Driver OMRON (ARCL)** (2026-11-20, `docs/plan-omron.md`,
+    decisiones 197–198). Plan escrito, sin código. Por probar en el
+    robot: el seguimiento de la cola (`queueQueryLocal`), la pausa y si
+    un trabajo lo saca del dock a media carga. Antes de mover el robot
+    hay que localizarlo y pedir permiso.
+
+- **#44** **Interfaz con varias marcas** (2026-11-20, decisión 197). Cada
+    marca nombra distinto lo mismo: position / goal, mission / macro /
+    ruta, zona / sector. Falta decidir cómo lo enseñan el Configurador, el
+    Catálogo y las fichas de robot, que hoy hablan en términos del MiR, y
+    cómo se edita el bloque de cada marca dentro de una action.
 
 - **#41** **Prueba: posición de los robots por WebSocket** (pedido el
     2026-11-03, sale de #40; decisión 166). Prueba de concepto **fuera del
