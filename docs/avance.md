@@ -4115,6 +4115,80 @@ autofirmado, usuario `apiControl` (el que usan en ese centro) o
      sin TLS; `mqtt_host`, `mqtt_port` y `mqtt_tls: false` en el robot
      de `fleet.yaml`): un trabajo de la cola mandado por ARCL y seguido
      con la telemetría MQTT, del dock hasta `FINISHED`.
+     Con permiso del usuario, una order de verdad: FM de prueba en este PC
+     (flota temporal con solo `omron-1`, broker local), `fleet/order
+     ir_a destino=Almacen` → `ASSIGNED` a omron-1 → `queuePickup` por ARCL
+     → `RUNNING` → `FINISHED` en 22 s, con el robot en `Almacen`
+     (10,20, −6,20) y la telemetría por MQTT de principio a fin.
+     Después, mandarlo a cargar con el comando ARCL `dock` (fuera del
+     FM, con permiso): por ARCL llega `DockingState: Undocked … ChargeState:
+     Not` y el `status` pasa a «No available Charging Stations to drive
+     to»; a los 5 s, `Stopping` / `Stopped`, sin moverse de (6,71, −5,76)
+     y sin ningún error. Repetido, lo mismo. Según el usuario, en el centro
+     habían movido el cargador y el robot no lo encontraba. Con el
+     cargador en su sitio, `dock` lo lleva a cargar. Para el driver: un
+     `dock` que no encuentra cargador **no da error**; solo se ve en el
+     texto de `status` (como el dock fallido de la decisión 205). En la
+     configuración `Docking` está `FailedDriveInAttemptsBeforeIgnore 3` y
+     `FailedDriveInIgnoreMinutes 60`: tras tres intentos fallidos, el
+     robot ignora ese cargador una hora (sin probar).
+
+## 2026-11-24 — Administración con los MiR (punto 3): ficha, Quitar, traer y desplegar a dos robots
+
+Probado por el usuario con mir-1 y mir-2: ficha del Catálogo de
+`prueba-mapaprueba` (en qué robots está, qué usa, «Sincronizar este
+recurso →») y «Quitar…» → «Retirar de la flota» (número reservado en
+`retirados.json`); una position nueva hecha en la web de mir-2
+(`prueba-traer`, en `mapa-pruebas`) traída con «Hecho en la web de un
+robot» (`…-position00-01-0002-027`) y desplegada a mir-1 con los dos
+robots marcados (mir-2 fuera, «nada que cambiar»). Salieron dos fallos de
+la página:
+
+208. **«Nada» desmarca todo, también lo que la búsqueda esconde.** Con una
+     búsqueda puesta, «Nada» solo desmarcaba lo visible, y la vista previa
+     llevaba `MESA_TKNIKA` (marcada antes, p. ej. por «Preparar» en mir-2)
+     sin que se viera: a mir-2 con el offset calibrado en mir-1 (#28).
+     «Todo» sigue marcando solo lo que se ve (para eso está la búsqueda) y
+     el contador dice cuántos marcados no se ven. Y «Traer al catálogo»
+     desde «Hecho en la web de un robot» comprueba después los robots
+     (rápida), como el de la ficha: sin eso, la ficha y el estado de la
+     flota no sabían del recurso nuevo hasta pulsar «Comprobar». Guía al día.
+
+Después, «Sustituir» con una position (punto 4): `prueba-traer` movida en
+la web de mir-1, traída desde su ficha y llevada a mir-2 con «Sustituir»;
+en mir-2, pose nueva con el mismo GUID (PUT en su sitio). Probado por el
+usuario. La Guía mandaba a «Sincronizar este recurso →» y marcar
+«Sustituir» a mano; ahora dice primero «Llevarle la del catálogo →» en la
+fila del robot con la versión anterior, que llega con «Sustituir» ya
+marcado (lo propuso el usuario).
+
+Docking offset de `FM-mapa-pruebasH2D1-VL`: cambiado a mano en mir-1
+(x −1,086 → −1,186), detectado, traído y sustituido en mir-2: bien. Con la
+**entrada** del marcador movida en la web de mir-2, la comprobación a fondo
+sí la daba `corregir` (vista previa: mover 30,561 → 30,861), pero la página
+no lo enseñaba: las marcas de las listas (Catálogo y Sincronización) solo
+miraban el GUID del marcador, y la línea del robot en «Estado de la flota»
+solo enseña lo que pide su `fleet.yaml`. Arreglado:
+
+209. **Las marcas de las listas miran también la entrada del marcador**, con
+     el peor estado de los dos, como ya hacía la ficha (`~ mir-2`, «a
+     corregir: su entrada está en otro sitio»). Y **«Sincronizar este
+     recurso →» marca «Sustituir»** en los robots con la versión anterior a
+     la traída (el catálogo es el bueno); en uno solo *distinto*, sin traer,
+     no: no se sabe cuál es el bueno (lo pidió el usuario).
+
+     Probado por el usuario: el marcador sale `~ mir-2` y la entrada de
+     mir-2 se llevó a mir-1. Abierto: la entrada sale `corregir` y se
+     corrige sola al desplegar el marcador, sin «Sustituir»; ¿debería salir
+     *distinta* y esperar a «Sustituir», como lo demás?
+
+Mapa retocado: `suberri_mirur` corregido en la web de mir-1 (una parte mal
+dibujada), traído desde su ficha y sustituido en mir-2 con «Llevarle la del
+catálogo →»: los dos robots `igual` al catálogo y mir-2 con el mapa
+corregido, el mismo GUID y sus positions en su sitio. Con esto quedan
+probados con los MiR los puntos 3 y 4 de «En curso» (falta solo la
+pregunta de la entrada, arriba). `mapa-pruebas` no se retocó: con
+`suberri_mirur` ya se probó lo mismo.
 
 ## Pendiente (a 2026-10-29)
 
@@ -4257,17 +4331,41 @@ las del FM son placeholders y no hay tiempos que medir.
     (decisión 204, avisando en la Guía de cerrar MobilePlanner); probar
     `ir_a_omron`, `cancelOrder` y `startPause` desde el FM con el robot;
     action "ir a punto" con `MacroTemplateCoordenadas` (decisión 206) y,
-    en el digital, `MacroTask` y `gotoPoint`; una order desde el FM de
-    prueba con la telemetría MQTT (decisión 207; el driver ya está
-    probado con el LD solo leyendo);
+    en el digital, `MacroTask` y `gotoPoint`;
     el autodock por batería baja (no se pudo provocar). El robot no es
     nuestro: solo se tiene a ratos y moverlo requiere permiso.
 
-- **#44** **Interfaz con varias marcas** (2026-11-20, decisión 197). Cada
+- **#44** **Interfaz con varias marcas** (2026-11-20, decisiones 197 y 207). Cada
     marca nombra distinto lo mismo: position / goal, mission / macro /
     ruta, zona / sector. Falta decidir cómo lo enseñan el Configurador, el
     Catálogo y las fichas de robot, que hoy hablan en términos del MiR, y
     cómo se edita el bloque de cada marca dentro de una action.
+    Ampliado el 2026-11-20 (tras el driver OMRON y su telemetría MQTT,
+    decisión 207), a pensar antes de tocar la web:
+    - **Qué es una "tarea" en cada marca.** MiR: mission de Blockly con
+      parámetros por nombre (`input_name`), en la cola del robot y con id
+      propio. OMRON: trabajo de la cola (`queuePickup`, con el `job_id`
+      que pone el FM), macro (sin parámetros ni id) o macro template
+      (parámetros por posición `$1 $2…`, sin id). Cómo se llama cada cosa
+      en la interfaz y qué se ve de cada una (estado, cancelar, pausa).
+    - **Qué se puede hacer desde el FM con cada marca.** MiR por REST:
+      crear missions, positions, zonas y mapas, sincronizar, retirar.
+      OMRON por ARCL: solo usar lo que hay en el `.map` (goals, macros,
+      templates se crean en MobilePlanner); crear goals sí se podría
+      (`mapObjectUpdate`, decisión 204). Las pestañas Crear,
+      Sincronización y Retirar no tienen sentido para un OMRON: ocultarlas
+      o explicar por qué no están.
+    - **Diferencias de comportamiento** que la web debe dejar claras: la
+      pausa del OMRON interrumpe y devuelve el trabajo a la cola (decisión
+      202); la carga la hace su autodock, no el FM (198); un dock o un goal
+      que falla no da error, solo un texto (205 y lo de hoy); la llave
+      auto/manual del MiR no existe en el OMRON.
+    - **De dónde sale la telemetría**: MiR por REST cada segundo; OMRON
+      por MQTT o, si no llega, por ARCL. Enseñarlo en la ficha del robot
+      (hoy solo va al log) y avisar cuando cae a ARCL.
+    - Cómo se editan en el Configurador los campos propios de cada marca
+      (`goal_input`, `template` + `params`, `macro`, `mqtt_*`…) sin que el
+      formulario sea solo del MiR.
 
 - **#41** **Prueba: posición de los robots por WebSocket** (pedido el
     2026-11-03, sale de #40; decisión 166). Prueba de concepto **fuera del

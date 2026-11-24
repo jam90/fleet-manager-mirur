@@ -2035,7 +2035,8 @@
         <div class="acts">
           <button class="btn" id="sync-all" @click="selectAll(true)">Todo</button>
           <button class="btn" id="sync-none" @click="selectAll(false)">Nada</button>
-          <span class="feedback">{{ nSelected }} seleccionados</span>
+          <span class="feedback">{{ nSelected }} seleccionados<template v-if="nHiddenSel">
+            ({{ nHiddenSel }} no {{ nHiddenSel === 1 ? 'se ve' : 'se ven' }} con esta búsqueda o este site)</template></span>
         </div>
         <!-- Buscador: por nombre, GUID o detalle, sin tildes ni mayúsculas. Abre
              solo las secciones con resultados; su título dice dónde está cada cosa. -->
@@ -2045,7 +2046,7 @@
           <p class="hint" v-if="syncState.q.trim()">
             {{ catMatches.here }} {{ catMatches.here === 1 ? 'resultado' : 'resultados' }}<template v-if="catMatches.elsewhere">
             · {{ catMatches.elsewhere }} más en otros sites (marca «Ver todo el catálogo» arriba)</template>.
-            «Todo» y las casillas de sección marcan solo lo que se ve.</p>
+            «Todo» y las casillas de sección marcan solo lo que se ve; «Nada» lo desmarca todo, también lo que no se ve.</p>
         </div>
         <p class="empty" v-if="!syncCatalog.length">El catálogo está vacío o ningún robot ofrece sincronización.</p>
         <details v-for="sec in catSections" :key="sec.key" class="cat-sec" :open="sec.open">
@@ -2552,9 +2553,14 @@
               no se toca nada y el aviso dice cuál. Una posición no puede llamarse como otra de ningún mapa ni robot.
               Antes de borrar el original se comprueba que la copia es igual a lo traído: si un intento anterior dejó la copia
               y luego se editó el original, no se borra nada y el aviso pide llevarle la versión del catálogo
-              («Sustituir») y volver a traerla.</p></li>
+              («Sustituir») y volver a traerla. Al terminar, el FM comprueba los robots: su ficha ya dice a cuáles les falta.</p></li>
           <li><b>Llevarlo a los demás robots</b><a class="where" href="#sincronizacion">→ Sincronización</a>
-            <p>«Sincronizar este recurso →» en su ficha: en la vista previa de los demás robots, lo cambiado sale
+            <p>Tras traerlo, en su ficha los robots con la versión anterior ofrecen <b>«Llevarle la del catálogo →»</b>: abre
+              la vista previa de ese robot con «Sustituir» ya marcado; revísala y «Desplegar». Para varios robots a la vez,
+              «Sincronizar este recurso →»: marca solo ese recurso, los robots donde falta o es distinto y «Sustituir» en los
+              que tienen la versión anterior (en uno solo <i>distinto</i>, sin traer, lo marcas tú si quieres la del catálogo). Si lo marcas a mano en el catálogo de
+              Sincronización, pulsa antes «Nada»: lo marcado que la búsqueda esconde también va a la vista previa (el contador
+              dice cuántos no se ven). En la vista previa de los demás robots, lo cambiado sale
               <i>distinta</i>: marca <b>Sustituir</b> en la de cada robot y lo nuevo sale <i>crear</i>. «Desplegar». Una misión se borra y se vuelve a crear con el mismo GUID; una posición (nombre, pose y
               docking offset), una zona o un mapa (imagen, origen, resolución) se corrigen en su sitio, así que lo que va a
               ellos sigue valiendo. El tipo de una posición y el site de un mapa no se cambian: salen sin «Sustituir».
@@ -3094,7 +3100,17 @@ createApp({
         if ((c.kind === 'position' || c.kind === 'zone') && c.parent === it.guid && !c.auto) syncState.sel[c.guid] = on;
     }
     const selectSection = (sec, on) => { for (const i of sec.items) setSel(i, on); };
-    const selectAll = on => { for (const sec of catSections.value) selectSection(sec, on); };
+    // «Todo» marca solo lo que se ve (la búsqueda sirve para eso); «Nada» lo desmarca todo:
+    // una casilla marcada que la búsqueda esconde acabaría en la vista previa sin que nadie la vea.
+    const selectAll = on => {
+      if (!on) { for (const g of Object.keys(syncState.sel)) syncState.sel[g] = false; return; }
+      for (const sec of catSections.value) selectSection(sec, true);
+    };
+    // Marcado pero fuera de la búsqueda o del site: se dice junto al contador.
+    const nHiddenSel = computed(() => {
+      const seen = new Set(catSections.value.flatMap(sec => sec.items.map(i => i.guid)));
+      return selected.value.filter(g => !seen.has(g) && !(catByGuid.value[g] || {}).auto).length;
+    });
     // Recursos distintos marcados para sustituir (decisión 117), por robot:
     // forman parte de su vista previa, así que cambiar uno la vuelve a pedir.
     const replaceOf = serial => Object.keys(syncState.replace[serial] || {}).filter(g => syncState.replace[serial][g]).sort();
@@ -3270,6 +3286,9 @@ createApp({
       await loadSync();
       await loadForeign();
       foreignState.msg = msg;
+      // Como «Traer al catálogo» en la ficha: sin comprobar, el estado de la flota y las fichas
+      // no saben del recurso nuevo y no dicen a qué robots les falta.
+      for (const r of syncState.robots.filter(r => r.supported && r.online)) await syncCheck(r.serial, false);
     }
     // ---- estado de la flota: informes de SyncMonitor (rápida cada 5 min, completa bajo demanda)
     const catByGuid = computed(() => Object.fromEntries(syncState.catalog.map(i => [i.guid, i])));
@@ -3349,10 +3368,15 @@ createApp({
     const W_TEXT = { ok: '✓', falta: '✗', distinta: '!', corregir: '~', sin: '?' };
     const W_TITLE = { ok: 'lo tiene', falta: 'no lo tiene', distinta: 'distinto del catálogo', corregir: 'a corregir',
                       sin: 'sin comprobar' };
+    // Un marcador o cargador, con su entrada (como en la ficha): si alguien mueve la entrada
+    // en la web del robot, el marcador sale «~» en las listas aunque él esté igual.
+    const worstWithEntries = (it, state) => withEntries(it).map(g => state[g] || 'sin')
+      .sort((a, b) => DETAIL_RANK.indexOf(a) - DETAIL_RANK.indexOf(b))[0];
     function whereIs(it) {
       const reps = syncState.robots.filter(r => r.supported && syncState.reports[r.serial] && syncState.reports[r.serial].state)
-                                   .map(r => [r.serial, syncState.reports[r.serial].state[it.guid] || 'sin']);
-      if (reps.length <= 6) return reps.map(([s, v]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`, title: `${s}: ${W_TITLE[v]}` }));
+                                   .map(r => [r.serial, worstWithEntries(it, syncState.reports[r.serial].state)]);
+      if (reps.length <= 6) return reps.map(([s, v]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`,
+                                                          title: `${s}: ${v === 'corregir' ? DETAIL_TEXT.corregir : W_TITLE[v]}` }));
       const ok = reps.filter(([, v]) => v === 'ok');
       return [{ serial: '*', state: ok.length === reps.length ? 'ok' : 'mixto', text: `✓ ${ok.length}/${reps.length}`,
                 title: 'falta en: ' + reps.filter(([, v]) => v !== 'ok').map(([s]) => s).join(', ') }];
@@ -4580,6 +4604,11 @@ createApp({
       if (replace) for (const s of serials || []) syncState.replace[s] = { ...(syncState.replace[s] || {}), [it.guid]: true };
       const all = syncState.robots.filter(r => r.supported).map(r => r.serial);
       const need = all.filter(s => ((syncState.reports[s] || {}).state || {})[it.guid] !== 'ok');
+      // Los que tienen la versión de antes de traerlo de otro robot: el catálogo es
+      // el bueno, así que llegan con «Sustituir» marcado (como «Llevarle la del catálogo →»).
+      // Un robot solo «distinto» no: no se sabe cuál es el bueno y lo decide quien despliega.
+      if (!serials) for (const s of all.filter(s => hasOld(it.guid, s)))
+        syncState.replace[s] = { ...(syncState.replace[s] || {}), [it.guid]: true };
       setTargets(serials || (need.length ? need : all));
       syncState.autoPreview = true;
       location.hash = '#sincronizacion/flota/' + encodeURIComponent(it.guid);
@@ -4663,7 +4692,7 @@ createApp({
              fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, cancelFleetOrder, fleetQueue, queueBusy, queuePos, waitedFor, queueAction, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
-             syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, selectSection, selectAll, previewFresh,
+             syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, nHiddenSel, selectSection, selectAll, previewFresh,
              canPreview, canDeploy, deployLabel, quietOp, hasOld, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, ago, syncCheck, prepare, removeFromRobot,
              toolLabel, toolText, PARAM_KIND, toolCheckDue, toolChecked, toolCheckMsg,
