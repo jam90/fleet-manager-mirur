@@ -2151,14 +2151,13 @@
                     <input type="checkbox" :checked="!!(syncState.replace[p.serial] || {})[o.guid]"
                            @change="toggleReplace(p.serial, o.guid, $event.target.checked)" :disabled="syncState.loading"> Sustituir</label>
                   <!-- #19: o al revés, la versión del robot al catálogo (mismo GUID; solo lee el robot). -->
-                  <!-- La entrada de un marcador movida en el robot sale «corregir»: traerla trae su marcador. -->
+                  <!-- La entrada de un marcador movida en el robot sale «distinta» (decisión 213): traerla trae su marcador. -->
                   <!-- Si este robot tiene la versión de antes de traerla de otro, no: desharía lo traído. -->
-                  <span class="hint block" v-if="o.status === 'pendiente' && hasOld(o.guid, p.serial)">tiene la versión anterior
-                    a la traída de {{ syncState.brought[o.guid].from }}: «Sustituir» le lleva la del catálogo</span>
-                  <button class="link-btn" type="button" v-else-if="o.status === 'pendiente' && ((o.verb === 'distinta' && RECAPTURABLE.includes(o.kind))
-                                                                                           || (o.verb === 'corregir' && o.kind === 'position'))"
+                  <span class="hint block" v-if="o.status === 'pendiente' && hasOld(ownerGuid(o.guid), p.serial)">tiene la versión anterior
+                    a la traída de {{ syncState.brought[ownerGuid(o.guid)].from }}: «Sustituir» le lleva la del catálogo</span>
+                  <button class="link-btn" type="button" v-else-if="o.status === 'pendiente' && o.verb === 'distinta' && RECAPTURABLE.includes(o.kind)"
                           :disabled="syncState.loading" @click="recaptureOp(o, p.serial)"
-                          :title="'Guardar en el catálogo la versión de ' + p.serial + (o.verb === 'corregir' ? ' (con su marcador o cargador)' : '') + ' (no escribe en el robot)'">Traer al catálogo</button>
+                          :title="'Guardar en el catálogo la versión de ' + p.serial + (isEntry(o.guid) ? ' (la entrada, con su marcador o cargador)' : '') + ' (no escribe en el robot)'">Traer al catálogo</button>
                   <span class="warnline" v-if="o.warning">⚠ {{ o.warning }}</span></span>
                 <span class="st" :class="'st-' + o.status.replace(' ', '-')">{{ o.status === 'pendiente' ? '' : o.status }}</span>
               </li>
@@ -2570,8 +2569,10 @@
               cambió sale <i>distinto del catálogo</i>: <b>«Traer al catálogo»</b> en su fila guarda en el catálogo la versión de
               ese robot, con el mismo GUID, y vuelve a comprobar a fondo los robots; al acabar, el mensaje dice cómo está cada
               uno. Los que tienen la versión anterior ofrecen «Llevarle la del catálogo →». Solo lee el robot. Lo que vio la
-              comprobación a fondo se conserva tras las rápidas mientras no cambie; cada fila dice de cuándo es. (También en la vista previa de Sincronización, en su fila.) La entrada de un marcador movida en el robot sale <i>corregir</i> (al desplegar,
-              el FM la devolvería a la pose del catálogo): su «Traer al catálogo» trae el marcador con su entrada. De un mapa se traen la imagen,
+              comprobación a fondo se conserva tras las rápidas mientras no cambie; cada fila dice de cuándo es. (También en la vista previa de Sincronización, en su fila.) La entrada de un marcador movida en el robot sale <i>distinta</i> («su entrada está en otro
+              sitio») y no se toca al desplegar salvo que marques «Sustituir»: puede que alguien la ajustara a propósito para
+              que ese robot atraque mejor. Su «Traer al catálogo» trae el marcador con su entrada. (Al crear un marcador en un
+              robot, su entrada sí se coloca sola en la pose del catálogo.) De un mapa se traen la imagen,
               la resolución y el origen; sus posiciones y zonas, una a una.</p></li>
           <li><b>Algo nuevo, hecho en la web de un robot</b><a class="where" href="#sincronizacion">→ Sincronización</a>
             <p>Abajo, «Hecho en la web de un robot»: elige el robot y «Buscar». Salen las posiciones y zonas creadas en su web sobre un mapa
@@ -3309,7 +3310,7 @@ createApp({
     }
     async function recaptureOp(o, robot) {
       syncState.loading = true; syncState.msg = `trayendo «${o.name}» de ${robot}…`;
-      const got = await recapture(robot, o.guid, o.name, o.verb === 'corregir');
+      const got = await recapture(robot, o.guid, o.name, isEntry(o.guid));
       syncState.loading = false;
       syncState.msg = got ? got.text : '';
       if (got && !got.ok) await loadSync();          // lo traído, al día: la fila deja de ofrecer traer
@@ -3440,13 +3441,14 @@ createApp({
                       sin: 'sin comprobar' };
     // Un marcador o cargador, con su entrada (como en la ficha): si alguien mueve la entrada
     // en la web del robot, el marcador sale «~» en las listas aunque él esté igual.
-    const worstWithEntries = (it, state) => withEntries(it).map(g => state[g] || 'sin')
-      .sort((a, b) => DETAIL_RANK.indexOf(a) - DETAIL_RANK.indexOf(b))[0];
+    const worstPair = (it, state) => withEntries(it).map(g => [state[g] || 'sin', g])
+      .sort((a, b) => DETAIL_RANK.indexOf(a[0]) - DETAIL_RANK.indexOf(b[0]))[0];
+    const worstWithEntries = (it, state) => worstPair(it, state)[0];
     function whereIs(it) {
       const reps = syncState.robots.filter(r => r.supported && syncState.reports[r.serial] && syncState.reports[r.serial].state)
-                                   .map(r => [r.serial, worstWithEntries(it, syncState.reports[r.serial].state)]);
-      if (reps.length <= 6) return reps.map(([s, v]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`,
-                                                          title: `${s}: ${v === 'corregir' ? DETAIL_TEXT.corregir : W_TITLE[v]}` }));
+                                   .map(r => [r.serial, ...worstPair(it, syncState.reports[r.serial].state)]);
+      if (reps.length <= 6) return reps.map(([s, v, g]) => ({ serial: s, state: v, text: `${W_TEXT[v]} ${s}`,
+        title: `${s}: ${v === 'corregir' ? DETAIL_TEXT.corregir : v === 'distinta' && g !== it.guid ? ENTRY_DISTINCT : W_TITLE[v]}` }));
       const ok = reps.filter(([, v]) => v === 'ok');
       return [{ serial: '*', state: ok.length === reps.length ? 'ok' : 'mixto', text: `✓ ${ok.length}/${reps.length}`,
                 title: 'falta en: ' + reps.filter(([, v]) => v !== 'ok').map(([s]) => s).join(', ') }];
@@ -4457,6 +4459,11 @@ createApp({
     const DETAIL_RANK = ['distinta', 'corregir', 'falta', 'sin', 'ok'];
     const DETAIL_TEXT = { falta: 'no lo tiene', distinta: 'distinto del catálogo', sin: 'sin comprobar',
                           corregir: 'a corregir: su entrada está en otro sitio' };
+    // Decisión 213: la entrada movida en el robot es una distinta más; se dice que es la entrada.
+    const ENTRY_DISTINCT = 'distinto: su entrada está en otro sitio';
+    // La entrada de un marcador o cargador (la crea el MiR) y el recurso al que pertenece.
+    const isEntry = g => !!(catByGuid.value[g] || {}).auto;
+    const ownerGuid = g => isEntry(g) ? catByGuid.value[g].parent_id : g;
     // ¿`serial` tiene aún la versión de antes de traer `guid` de otro robot? Lo sabe el FM
     // (`brought` de /api/sync), así vale tras recargar y en otro navegador.
     const hasOld = (guid, serial) => { const b = syncState.brought[guid];
@@ -4473,8 +4480,9 @@ createApp({
           .sort((a, b) => DETAIL_RANK.indexOf(a[0]) - DETAIL_RANK.indexOf(b[0]))[0];
         // Decisión 186: lo que sabe la completa se conserva tras una rápida; cada dato, con su hora.
         const deepAt = (rep.deep || {})[guid];
-        const text = state === 'ok' ? (deepAt ? 'igual que el catálogo' : 'lo tiene') : DETAIL_TEXT[state];
-        const fixable = RECAPTURABLE.includes(it.kind) && (state === 'distinta' || (state === 'corregir' && it.kind === 'position'));
+        const text = state === 'ok' ? (deepAt ? 'igual que el catálogo' : 'lo tiene')
+          : state === 'distinta' && guid !== it.guid ? ENTRY_DISTINCT : DETAIL_TEXT[state];
+        const fixable = RECAPTURABLE.includes(it.kind) && state === 'distinta';
         const after = hasOld(it.guid, r.serial);
         return { serial: r.serial, state, text, guid, online: r.online, quick: state === 'ok' && !deepAt,
                  bring: r.online && fixable && !after, push: fixable && after,
@@ -4554,7 +4562,7 @@ createApp({
     async function recaptureFrom(it, serial) {
       const row = detailRobots.value.find(r => r.serial === serial);
       syncState.loading = true;
-      const got = await recapture(serial, row.guid, it.name, row.state === 'corregir');
+      const got = await recapture(serial, row.guid, it.name, row.guid !== it.guid);
       syncState.loading = false;
       if (!got) return;
       if (!got.ok) {
@@ -4676,14 +4684,16 @@ createApp({
     function syncResource(it, serials = null, replace = false) {
       for (const k of Object.keys(syncState.sel)) syncState.sel[k] = false;
       syncState.sel[it.guid] = true;
-      if (replace) for (const s of serials || []) syncState.replace[s] = { ...(syncState.replace[s] || {}), [it.guid]: true };
+      // «Sustituir» en el recurso y en su entrada, si la tiene (decisión 213).
+      const mark = s => { syncState.replace[s] = { ...(syncState.replace[s] || {}),
+                                                   ...Object.fromEntries(withEntries(it).map(g => [g, true])) }; };
+      if (replace) for (const s of serials || []) mark(s);
       const all = syncState.robots.filter(r => r.supported).map(r => r.serial);
-      const need = all.filter(s => ((syncState.reports[s] || {}).state || {})[it.guid] !== 'ok');
+      const need = all.filter(s => worstWithEntries(it, (syncState.reports[s] || {}).state || {}) !== 'ok');
       // Los que tienen la versión de antes de traerlo de otro robot: el catálogo es
       // el bueno, así que llegan con «Sustituir» marcado (como «Llevarle la del catálogo →»).
       // Un robot solo «distinto» no: no se sabe cuál es el bueno y lo decide quien despliega.
-      if (!serials) for (const s of all.filter(s => hasOld(it.guid, s)))
-        syncState.replace[s] = { ...(syncState.replace[s] || {}), [it.guid]: true };
+      if (!serials) for (const s of all.filter(s => hasOld(it.guid, s))) mark(s);
       setTargets(serials || (need.length ? need : all));
       syncState.autoPreview = true;
       location.hash = '#sincronizacion/flota/' + encodeURIComponent(it.guid);
@@ -4768,7 +4778,7 @@ createApp({
              tabs: TABS, tab: computed(() => ui.tab),
              robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, nHiddenSel, selectSection, selectAll, previewFresh,
-             canPreview, canDeploy, deployLabel, quietOp, hasOld, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
+             canPreview, canDeploy, deployLabel, quietOp, hasOld, isEntry, ownerGuid, setSel, syncRobotState, syncPreview, syncDeploy, toggleReplace, RECAPTURABLE, recaptureOp, foreignState, loadForeign, bringForeign, VERB_LABEL, VERB_MARK, KIND_LABEL, CREATED_LABEL,
              fleetRows, whereIs, ago, syncCheck, prepare, removeFromRobot,
              toolLabel, toolText, PARAM_KIND, toolCheckDue, toolChecked, toolCheckMsg,
              catalogItems, catItem, catCreated, placeOf, openItem, backToList, detailRobots, detailQuick, detailUses, detailUsedBy, detailMsg,

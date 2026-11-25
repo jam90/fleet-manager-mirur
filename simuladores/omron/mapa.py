@@ -95,7 +95,12 @@ def leer_mapa(ruta: str | Path) -> Mapa:
             #   RouteInfo: Macro "Macro1" / MacroTemplate "X" / Route "R"
             #   RouteInfo: GoalTask "goto" "Taller 2"   ← paso
             #   RouteInfo: Task "wait" 5                ← paso
+            #   RouteInfo: Task "gotoPoint" "$1" "$2" "$3"           ← paso con varios argumentos
+            #   RouteInfo: MacroTask "MacroTemplateCoordenadas" "8513" "-6166" "-89"
+            #                                           ← paso: otra macro o template, con sus valores
             #   RouteInfo: _goto … / _goalAfter …       ← internas, se ignoran
+            # Un paso es una tupla (tarea, *argumentos): ("goto", "Taller 2"),
+            # ("gotoPoint", "$1", "$2", "$3"), ("MacroTask", "<nombre>", "<v1>"…).
             t = shlex.split(s)
             clave = t[1] if len(t) > 1 else ""
             if clave in ("Route", "Macro", "MacroTemplate") and len(t) >= 3:
@@ -108,11 +113,14 @@ def leer_mapa(ruta: str | Path) -> Mapa:
                 else:
                     mapa.templates[t[2]] = pasos_actuales
             elif clave in ("GoalTask", "Task") and len(t) >= 3:
-                valor = t[3] if len(t) > 3 else ""
                 if ruta_actual is not None and clave == "GoalTask":
-                    mapa.rutas[ruta_actual].append(valor)
+                    mapa.rutas[ruta_actual].append(t[3] if len(t) > 3 else "")
                 elif pasos_actuales is not None:
-                    pasos_actuales.append((t[2], valor))
+                    pasos_actuales.append((t[2], *(t[3:] or [""])))
+            elif clave == "MacroTask" and len(t) >= 3:
+                # visto en el LD: así guarda MobilePlanner una macro hecha desde un template
+                if pasos_actuales is not None:
+                    pasos_actuales.append(("MacroTask", *t[2:]))
             elif not clave.startswith("_"):
                 ruta_actual = pasos_actuales = None     # GoalAfter, EveryBefore… cierran el bloque
         elif seccion == "LINES":

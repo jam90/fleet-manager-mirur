@@ -433,7 +433,7 @@ class Sesion:
         def sustituir(v: str) -> str:
             return re.sub(r"\$(\d+)", lambda m: valores[int(m.group(1)) - 1]
                           if int(m.group(1)) <= len(valores) else "", v)
-        self.robot.ejecutar_macro(args[0], [(t, sustituir(v)) for t, v in pasos], template=True)
+        self.robot.ejecutar_macro(args[0], [tuple(sustituir(v) for v in paso) for paso in pasos], template=True)
         return []
 
     def c_doTask(self, args, resto):

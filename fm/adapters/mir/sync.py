@@ -10,10 +10,12 @@ una **selección** de ese catálogo:
    dependencias.
 2. `fetch_view(client, ...)` lee del robot solo lo que hace falta comparar.
 3. `plan(...)` — **puro, sin red** — compara y decide una operación por
-   recurso: crear, corregir, igual (no se toca), distinta (no se toca) o,
-   solo para las missions distintas que se piden en `replace`, sustituir
-   (borrar y volver a crear con el mismo GUID, decisión 117); una zona
-   distinta que se pide en `replace` se corrige en su sitio (decisión 124).
+   recurso: crear, igual (no se toca), distinta (no se toca) o, para las
+   distintas que se piden en `replace`, sustituir (una mission se borra y se
+   vuelve a crear con el mismo GUID, decisión 117; una position, zona o mapa
+   se corrige en su sitio, decisiones 124 y 178). La entrada de un marcador
+   recién creado se coloca sola en su pose; una que ya estaba y se ha movido
+   en el robot es una distinta más (decisión 213).
 4. `apply(...)` ejecuta las operaciones por REST e informa de cada una.
 
 Además, `MirSync.check()` dice qué recursos del catálogo tiene el robot
@@ -447,12 +449,21 @@ def plan(cat: Catalog, view: RobotView, guids: list[str], serial: str,
         elif k == "position" and d.get("creada_por_mir"):
             have = view.entry_of(d["parent_id"])
             if have is None:
+                # La crea el MiR al crear su marcador, donde él quiere: `apply`
+                # la lleva a la pose del catálogo sin preguntar (no hay nada que perder).
                 op.detail = "la crea el MiR con su madre; se deja en su sitio"
             else:
                 op.target = have["guid"]
                 if _pose_differs(have, d):
-                    op.verb = "corregir"
-                    op.detail = f"mover {_fmt_pose(have)} → {_fmt_pose(d)}"
+                    # Ya estaba y alguien la ha movido en el robot (quizá a propósito, para
+                    # que ese robot atraque mejor): como cualquier position distinta, solo
+                    # se toca con «Sustituir» (decisión 213; antes se corregía sola).
+                    op.verb = "distinta"
+                    op.detail = f"difiere: pose de la entrada {_fmt_pose(have)}, en el catálogo {_fmt_pose(d)}"
+                    op.replaceable = True
+                    if g in replace:
+                        op.verb = "sustituir"
+                        op.detail = f"mover la entrada {_fmt_pose(have)} → {_fmt_pose(d)}"
                 else:
                     op.verb = "igual"
         elif k == "position":

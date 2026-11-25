@@ -221,19 +221,25 @@ def test_desplegar_y_repetir_no_cambia_nada(cat):
     assert len(mir.writes) == n             # idempotente: ni una escritura
 
 
-def test_distinta_no_se_toca_y_entrada_movida_se_corrige(cat):
+def test_distinta_no_se_toca_y_entrada_movida_solo_con_sustituir(cat):
+    """Decisión 213: la entrada de un marcador recién creado se coloca sola;
+    una que ya estaba y alguien movió en el robot es una distinta más."""
     mir = FakeMir()
     guids = cat.closure([P_MARKER, P_NORMAL])
     apply(mir, cat, plan(cat, fetch_view(mir, cat, guids), guids, "mir-2"))
-    mir.db["positions"][P_NORMAL]["pos_x"] = 99.0                 # alguien la mueve a mano
     entry = next(p for p in mir.db["positions"].values() if p["parent_id"] == P_MARKER)
+    assert entry["pos_x"] == 6.0                                   # recién creada: a la pose del catálogo
+    mir.db["positions"][P_NORMAL]["pos_x"] = 99.0                 # alguien las mueve a mano
     entry["pos_x"] = 7.5
     ops = {o.guid: o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2")}
     assert ops[P_NORMAL].verb == "distinta" and "pose" in ops[P_NORMAL].detail
-    assert ops[P_ENTRY].verb == "corregir" and ops[P_ENTRY].target == entry["guid"]
+    assert ops[P_ENTRY].verb == "distinta" and ops[P_ENTRY].replaceable and "pose de la entrada" in ops[P_ENTRY].detail
     apply(mir, cat, list(ops.values()))
-    assert mir.db["positions"][P_NORMAL]["pos_x"] == 99.0          # no se toca
-    assert entry["pos_x"] == 6.0                                   # se corrige
+    assert mir.db["positions"][P_NORMAL]["pos_x"] == 99.0 and entry["pos_x"] == 7.5   # no se tocan
+    ops = {o.guid: o for o in plan(cat, fetch_view(mir, cat, guids), guids, "mir-2", replace={P_ENTRY})}
+    assert ops[P_ENTRY].verb == "sustituir" and ops[P_ENTRY].target == entry["guid"]
+    apply(mir, cat, list(ops.values()))
+    assert entry["pos_x"] == 6.0                                   # con «Sustituir», sí
 
 
 def test_si_falla_una_dependencia_se_saltan_las_que_la_usan(cat):
@@ -297,7 +303,7 @@ def test_form_choices_inputs_y_su_tipo(cat):
 def test_deploy_solo_crear_no_corrige_nada(cat):
     # Robot ocupado (decisión 103): crear sí; corregir lo que ya tiene, no.
     from fm.adapters.mir.sync import MirSync
-    from tests.adapters.test_mir_sync import P_MARKER
+    from tests.adapters.test_mir_sync import P_ENTRY, P_MARKER
     s = MirSync("mir-2", "0.0.0.0", "Basic x", cat.root)
     s.client = FakeMir()
     ops = s.deploy([P_MARKER], only_create=True)                  # robot vacío: todo es crear
@@ -305,10 +311,12 @@ def test_deploy_solo_crear_no_corrige_nada(cat):
     entry = next(p for p in s.client.db["positions"].values() if p["parent_id"] == P_MARKER)
     entry["pos_x"] += 3.0                                           # alguien la mueve en la web
     before = list(s.client.writes)
-    with pytest.raises(RuntimeError, match="ocupado"):
-        s.deploy([P_MARKER], only_create=True)
+    s.deploy([P_MARKER], only_create=True)                          # distinta (decisión 213): no se toca
+    assert s.client.writes == before
+    with pytest.raises(RuntimeError, match="ocupado"):              # pedir sustituirla, con el robot ocupado, no
+        s.deploy([P_MARKER], only_create=True, replace=[P_ENTRY])
     assert s.client.writes == before                                # no se ha tocado nada
-    assert any(o.status == "hecho" for o in s.deploy([P_MARKER]))   # libre: se corrige
+    assert any(o.status == "hecho" for o in s.deploy([P_MARKER], replace=[P_ENTRY]))   # libre: se corrige
 
 
 def test_sustituir_mission_distinta_solo_si_se_pide(cat):

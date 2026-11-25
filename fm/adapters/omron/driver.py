@@ -25,6 +25,9 @@ Cómo se sigue cada una (todo visto en el LD real, 2026-11-20):
   going to goal` y nunca llega el Completed. Un goal inexistente NO da error
   (la macro "termina" sin hacer nada): por eso se comprueban antes los goals.
 - La carga la hace el autodock del robot (decisión 198): `charge_job()` = None.
+- Tras reiniciar el FM (decisión 214) se retoman los trabajos de la cola, que
+  llevan el id que puso el FM (`find_job`/`adopt_job`); las macros y los
+  templates no tienen id y no se pueden retomar.
 
 Telemetría (decisión 207): si hay usuario MQTT en `.env`, el estado llega por
 la API MQTT del robot (`fm/adapters/omron/mqtt.py`) y el tick no pregunta
@@ -369,7 +372,7 @@ class OmronDriver:
         self._n += 1
         if pl["tipo"] == "goal":
             # El id del trabajo lo pone el FM (sin espacios: ARCL los separa)
-            ref = re.sub(r"\W", "_", job.tag or "") or f"FM{self._n}"
+            ref = self._id_de_trabajo(job.tag or "") or f"FM{self._n}"
             ref = f"{ref}-{self._n}" if ref in self._trabajos else ref
             self.client.queue_pickup(pl["goal"], pl.get("prioridad", 10), ref)
             self._trabajos[ref] = _Trabajo("goal", ref)
@@ -384,6 +387,44 @@ class OmronDriver:
         # La respuesta ya es "Executing macro …": está en marcha
         self._trabajos[job_id] = _Trabajo(pl["tipo"], pl["nombre"], "RUNNING")
         return job_id
+
+    # --- retomar tras reiniciar el FM (decisión 214) ---
+
+    @staticmethod
+    def _id_de_trabajo(tag: str) -> str:
+        """El id con que `execute` deja en la cola un trabajo etiquetado."""
+        return re.sub(r"\W", "_", tag)
+
+    def find_job(self, tag: str) -> str | None:
+        """El trabajo de la cola lanzado con esa etiqueta. Si no está, no se
+        puede asegurar que no le llegara: no se sabe si el LD guarda los
+        terminados ni cuánto (por comprobar con el robot), y relanzarlo podría
+        hacerlo dos veces. Así que lanza y el FM la deja en duda para que
+        decida una persona. Tampoco se pueden buscar macros: no tienen id."""
+        if not self._asegurar():
+            raise ConnectionError(self.last_error or "sin conexión ARCL")
+        ref = self._id_de_trabajo(tag)
+        for l in self.client.queue_query(ref):
+            partes = l.split()
+            if l.startswith("QueueQuery:") and len(partes) > 2 and partes[2] == ref:
+                return ref
+        raise LookupError(f"el OMRON no tiene en su cola el trabajo {ref}: no se sabe si no le llegó, "
+                          "si lo borró al terminar o si era una macro (sin id)")
+
+    def adopt_job(self, job_id: str) -> None:
+        """Un trabajo de la cola que lanzó el FM anterior: se vuelve a seguir,
+        empezando por su estado ahora. Una macro o un template no: no tienen id
+        y no se sabe si siguen en marcha (lanza ValueError)."""
+        if re.fullmatch(r"(macro|template)-\d+", job_id):
+            raise ValueError("las macros y los templates del OMRON no tienen id en el robot: "
+                             "no se puede saber si siguen en marcha")
+        self._trabajos[job_id] = _Trabajo("goal", job_id)
+        try:
+            lineas = self.client.queue_query(job_id)
+            self._procesar(["QueueUpdate:" + l[len("QueueQuery:"):] for l in lineas if l.startswith("QueueQuery:")])
+        except (ArclError, OSError, TimeoutError) as e:
+            # Lo reintenta `_reconciliar` cada pocos ticks.
+            log.warning("[%s] no se pudo leer el trabajo %s al retomarlo: %s", self.serial, job_id, e)
 
     def job_status(self, job_id: str) -> JobStatus | None:
         t = self._trabajos.get(job_id)

@@ -15,6 +15,7 @@ comporta, para corregirlo el día que se pueda probar.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -105,8 +106,9 @@ class Trabajo:
 class Paso:
     """Una cosa que el robot está haciendo o hará: salir del dock, ir a un goal,
     o ir al dock."""
-    tipo: str                           # "undock" | "goto" | "dock" | "wait" | "fin_macro"
+    tipo: str                           # "undock" | "goto" | "punto" | "dock" | "wait" | "fin_macro"
     goal: str | None = None
+    punto: tuple[float, float, float | None] | None = None   # "punto" (gotoPoint): x, y en mm; θ en grados
     macro: str | None = None            # paso de una macro: su nombre (los goto no dan mensajes)
     segundos: float = 0.0               # "wait"
     cerca: bool = False                 # "dock": ya junto al cargador, buscándolo
@@ -209,7 +211,7 @@ class OmronDigital:
     @property
     def moviendose(self) -> bool:
         p = self.paso
-        return bool(p and p.tipo in ("goto", "dock") and self.docking != "Docked"
+        return bool(p and p.tipo in ("goto", "punto", "dock") and self.docking != "Docked"
                     and not self.parado_por_algo)
 
     @property
@@ -449,23 +451,51 @@ class OmronDigital:
             hechos.append(t)
         return hechos
 
-    def ejecutar_macro(self, nombre: str, pasos: list[tuple[str, str]], template: bool) -> None:
-        """executeMacro / executeMacroTemplate (con los $n ya sustituidos)."""
+    def ejecutar_macro(self, nombre: str, pasos: list[tuple[str, ...]], template: bool) -> None:
+        """executeMacro / executeMacroTemplate (con los $n ya sustituidos).
+        Cada paso es (tarea, *argumentos), como lo lee `mapa.py`."""
         etiqueta = f"macro template {nombre}" if template else f"macro {nombre}"
         self._cortar_movimiento()
         self._interrumpir_trabajo()
         self.patrulla = None
-        plan = []
-        for tarea, valor in pasos:
-            if tarea == "goto":
-                plan.append(Paso("goto", goal=valor, macro=etiqueta))
-            elif tarea == "wait":
-                plan.append(Paso("wait", segundos=float(valor or 0), macro=etiqueta))
-            # el resto (say, salidas…) es instantáneo y sin efecto en el digital
+        plan = self._pasos_de_macro(pasos, etiqueta)
         plan.append(Paso("fin_macro", macro=etiqueta))
         self._plan(*plan)
         self.estado_texto = self.extendido = f"Executing {etiqueta}"
         self._evento(f"Executing {etiqueta}")                            # visto en el LD
+
+    def _pasos_de_macro(self, pasos: list[tuple[str, ...]], etiqueta: str, nivel: int = 0) -> list[Paso]:
+        plan: list[Paso] = []
+        for tarea, *args in pasos:
+            valor = args[0] if args else ""
+            if tarea == "goto":
+                plan.append(Paso("goto", goal=valor, macro=etiqueta))
+            elif tarea == "wait":
+                plan.append(Paso("wait", segundos=float(valor or 0), macro=etiqueta))
+            elif tarea == "gotoPoint":
+                # visto en el LD (2026-11-20): `Task "gotoPoint" x y θ`, x e y en mm y θ en
+                # grados, enteros; el robot acabó a pocos mm y con ese rumbo.
+                try:
+                    x, y = float(args[0]), float(args[1])
+                    th = float(args[2]) if len(args) > 2 and args[2] != "" else None
+                except (IndexError, ValueError):
+                    continue        # supuesto: un punto mal escrito no hace nada (como un goal que no existe)
+                plan.append(Paso("punto", punto=(x, y, th), macro=etiqueta))
+            elif tarea == "MacroTask" and nivel < 5:
+                # visto en el LD: una macro llama a otra (o a un template, con sus valores).
+                # supuesto: sus pasos se hacen dentro de la de fuera, sin mensajes propios.
+                otra, valores = valor, args[1:]
+                sub = self.mapa.templates.get(otra)
+                if sub is not None:
+                    def sustituir(v: str) -> str:
+                        return re.sub(r"\$(\d+)", lambda m: valores[int(m.group(1)) - 1]
+                                      if int(m.group(1)) <= len(valores) else "", v)
+                    sub = [tuple(sustituir(v) for v in p) for p in sub]
+                else:
+                    sub = self.mapa.macros.get(otra, [])
+                plan += self._pasos_de_macro(sub, etiqueta, nivel + 1)
+            # el resto (say, salidas…) es instantáneo y sin efecto en el digital
+        return plan
 
     def _fallo_app(self, nombre: str) -> str:
         corto, largo = self.bloqueos[nombre]
@@ -586,6 +616,13 @@ class OmronDigital:
                 if self.patrulla and not self.pasos:
                     self._siguiente_de_patrulla()
             return
+        if p.tipo == "punto":
+            x, y, th = p.punto
+            if self._acercarse(x, y, dt):
+                if th is not None:
+                    self.th = (th + 180) % 360 - 180      # llega con el rumbo pedido
+                self._terminar_paso()
+            return
         if p.tipo == "wait":
             if p.t >= p.segundos:
                 self._evento("WaitState: Waiting completed")              # visto en el LD
@@ -627,6 +664,12 @@ class OmronDigital:
         elif p.tipo == "goto" and p.macro is not None and p.goal not in self.mapa.goals:
             # visto en el LD: con un goal que no existe la macro "termina" sin error
             self.pasos = [x for x in self.pasos if x.tipo == "fin_macro"]
+        elif p.tipo == "punto":
+            self.modo = "goal"
+            if self.perdido:
+                self._fallar(f"point {p.punto[0]:g} {p.punto[1]:g}")
+                self.pasos = []
+                self.patrulla = None
         elif p.tipo == "goto":
             self.modo = "goal"
             if self.perdido:

@@ -122,6 +122,21 @@ def test_sin_adopt_job_no_se_puede_retomar(world):
     assert r["status"] == FAILED and "no permite retomarla" in r["description"]
 
 
+def test_un_job_que_el_driver_no_sabe_retomar(world):
+    """Decisión 214: el driver tiene el gancho, pero ese job no se puede retomar
+    (una macro del OMRON no tiene id): se cierra con el motivo del driver."""
+    fm, drivers, clock = world
+    send(fm.disp, "o1")
+
+    class NoMacro(RecoverDriver):
+        def adopt_job(self, job_id):
+            raise ValueError("las macros no tienen id")
+    fm = fm.restart({s: NoMacro() for s in SERIALS}, clock)
+    r = responses(fm.bus, "o1")[-1]
+    assert r["status"] == FAILED and "no puede retomarla: las macros no tienen id" in r["description"]
+    assert not fm.robots["mir-1"].busy
+
+
 def test_caida_lanzando_y_el_robot_la_tiene(world):
     fm, drivers, clock = world
     drivers["mir-1"] = CrashDriver(receives=True)

@@ -449,6 +449,59 @@ def test_macro_y_listas(tmp_path):
     assert eventos[-1] == "Completed macro Macro1"
 
 
+# Lo que crearon en el centro (decisión 206) y cómo guarda MobilePlanner una macro
+# hecha desde un template: `MacroTask` con los valores fijos.
+MAPA_PUNTOS = MAPA_MACROS.replace("LINES\n", """RouteInfo: MacroTemplate "MacroTemplateCoordenadas"
+RouteInfo: Task "gotoPoint" "$1" "$2" "$3"
+RouteInfo: Macro "IrATaller2PorCoordenadas"
+RouteInfo: MacroTask "MacroTemplateCoordenadas" "-8016" "6148" "-89"
+LINES
+""")
+
+
+def robot_puntos(tmp_path, **kw) -> OmronDigital:
+    f = tmp_path / "puntos.map"
+    f.write_text(MAPA_PUNTOS, encoding="latin-1")
+    kw.setdefault("reloj", lambda: FECHA)
+    return OmronDigital(mapa=leer_mapa(f), **kw)
+
+
+def test_mapa_con_goto_point_y_macro_task(tmp_path):
+    m = robot_puntos(tmp_path).mapa
+    assert m.templates["MacroTemplateCoordenadas"] == [("gotoPoint", "$1", "$2", "$3")]
+    assert m.macros["IrATaller2PorCoordenadas"] == [("MacroTask", "MacroTemplateCoordenadas", "-8016", "6148", "-89")]
+    assert m.macros["Macro1"][0] == ("goto", "Taller 2")          # lo de antes, igual
+
+
+def test_template_con_goto_point(tmp_path):
+    """Como en el LD (decisión 206): mm y grados, y llega con ese rumbo."""
+    r = robot_puntos(tmp_path)
+    s = Sesion(r)
+    assert s.responder("executeMacroTemplate MacroTemplateCoordenadas -8016 6148 -89") == []
+    eventos = correr(r, 60)
+    assert eventos[0] == "Executing macro template MacroTemplateCoordenadas"
+    assert eventos[-1] == "Completed macro template MacroTemplateCoordenadas"
+    assert not any(e.startswith(("Going to", "Arrived at")) for e in eventos)   # supuesto, como goto
+    assert (round(r.x), round(r.y), round(r.th)) == (-8016, 6148, -89)
+
+
+def test_macro_que_llama_a_un_template(tmp_path):
+    r = robot_puntos(tmp_path)
+    Sesion(r).responder("executeMacro IrATaller2PorCoordenadas")
+    eventos = correr(r, 60)
+    assert eventos[0] == "Executing macro IrATaller2PorCoordenadas"
+    assert eventos[-1] == "Completed macro IrATaller2PorCoordenadas"
+    assert (round(r.x), round(r.y), round(r.th)) == (-8016, 6148, -89)
+
+
+def test_goto_point_sin_localizar_falla(tmp_path):
+    r = robot_puntos(tmp_path, localizado=False)
+    Sesion(r).responder("executeMacroTemplate MacroTemplateCoordenadas -8016 6148 -89")
+    eventos = correr(r, 30)
+    assert "Error: Failed going to goal" in eventos
+    assert not any(e.startswith("Completed macro") for e in eventos)
+
+
 # --- más cosas vistas en el LD el 2026-11-20 ------------------------------------
 
 def test_crear_goal_con_map_object_update():

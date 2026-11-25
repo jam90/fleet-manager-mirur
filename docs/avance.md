@@ -4182,7 +4182,7 @@ solo enseña lo que pide su `fleet.yaml`. Arreglado:
      Probado por el usuario: el marcador sale `~ mir-2` y la entrada de
      mir-2 se llevó a mir-1. Abierto: la entrada sale `corregir` y se
      corrige sola al desplegar el marcador, sin «Sustituir»; ¿debería salir
-     *distinta* y esperar a «Sustituir», como lo demás?
+     *distinta* y esperar a «Sustituir», como lo demás? (Sí: decisión 213.)
 
 Mapa retocado: `suberri_mirur` corregido en la web de mir-1 (una parte mal
 dibujada), traído desde su ficha y sustituido en mir-2 con «Llevarle la del
@@ -4323,6 +4323,70 @@ Con esto, el punto 1 de «En curso» queda probado con robot. Queda el 1b
      el usuario con mir-2: `tools` puesto a `coger_herramienta` desde el
      Configurador y tareas desde «Nueva tarea», correcto.
 
+## 2026-11-25 — La entrada de un marcador, como las demás distintas
+
+213. **Una entrada de marcador movida en el robot sale «distinta» y solo se
+     toca con «Sustituir»** (era la pregunta abierta de la 209). Antes salía
+     «corregir» y cualquier despliegue que llevara el marcador (una mission
+     que va a él, «Preparar») la devolvía sola a la pose del catálogo: si
+     alguien la había ajustado a propósito para que ese robot atraque
+     mejor, se perdía sin aviso, al revés que con todo lo demás.
+     - Se distinguen los dos casos en `sync.plan`: la entrada de un marcador
+       **recién creado** en ese despliegue se sigue colocando sola (la pone
+       el MiR donde quiere y no hay nada que perder); la que **ya estaba**
+       y difiere es una distinta con `replaceable` («difiere: pose de la
+       entrada …») y con «Sustituir» pasa a «mover la entrada … → …».
+     - Con el robot ocupado, una entrada distinta ya no bloquea el
+       despliegue (no se toca); pedir sustituirla, sí.
+     - Web: la entrada se reconoce por el recurso (`auto` en el catálogo),
+       no por el verbo. En la ficha y en las listas, «distinto: su entrada
+       está en otro sitio». «Llevarle la del catálogo →» y «Sincronizar este
+       recurso →» marcan «Sustituir» también en la entrada, y este último
+       elige los robots mirando también la entrada. Guía al día.
+     - El estado `corregir` ya no lo produce el plan; se deja en la web y en
+       la comprobación por compatibilidad (informes guardados).
+     Tests: los dos de la entrada reescritos (`test_mir_sync.py`): recién
+     creada se coloca, movida no se toca, con «Sustituir» sí; ocupado.
+
+## 2026-11-25 — OMRON: retomar tras reiniciar el FM, e ir a punto en el digital (#43)
+
+El usuario no sabe cuándo volverá a tener el LD: se hace lo que no lo
+necesita (puntos 4 y 5 de lo que quedaba del #43); lo demás queda parado.
+
+214. **Retomar tras reiniciar el FM con un OMRON** (`find_job`/`adopt_job`
+     en `fm/adapters/omron/driver.py`).
+     - Los **trabajos de la cola** llevan el id que pone el FM a partir de
+       la etiqueta de la tarea (`orderId@hora`, sin espacios ni signos), así
+       que se buscan con `queueQuery jobid` y se retoman con su estado de
+       ahora (uno ya terminado sale terminado).
+     - **Si no está en la cola, no se relanza:** no se sabe si el LD guarda
+       los terminados ni cuánto (el digital los guarda todos; está apuntado
+       como supuesto en su README). Relanzarlo podría hacerlo dos veces, así
+       que `find_job` lanza y la tarea queda **en duda** para que decida una
+       persona (D9), como ya pasa sin red.
+     - **Las macros y los templates no tienen id** en el robot: `adopt_job`
+       lanza y la tarea se cierra FAILED con el motivo («no tienen id en el
+       robot: no se puede saber si siguen en marcha»). Para eso el core
+       acepta ahora que `adopt_job` lance (`Dispatcher._readopt`; el
+       contrato en `fm/adapters/base.py`).
+215. **OMRON digital: `gotoPoint` y `MacroTask`** (`simuladores/omron/`).
+     - `Task "gotoPoint" x y θ` dentro de una macro o template: va en línea
+       recta y llega con ese rumbo (mm y grados, como en el LD, decisión
+       206). Sin mensajes `Going to`, como los `goto` de una macro
+       (supuesto); sin localizar, falla como un goto.
+     - `MacroTask "<macro o template>" v1 v2…`: los pasos de la otra, con
+       sus `$n` sustituidos, dentro de la de fuera (como guarda MobilePlanner
+       una macro hecha desde un template, visto en el LD); hasta 5 niveles.
+     - El lector del `.map` guarda ahora todos los argumentos de cada paso
+       (`("gotoPoint", "$1", "$2", "$3")`); antes solo el primero, y un
+       `MacroTask` cerraba la macro.
+     - Con eso, la action «ir a punto» (`template: MacroTemplateCoordenadas`
+       con los tres en `number_params`) se prueba de principio a fin con el
+       driver contra el digital.
+     Tests: 484 (9 nuevos: el digital con `gotoPoint` y `MacroTask`; el
+     driver retomando un trabajo, sin encontrarlo y con una macro, e ir a
+     punto; el core con un job que no se puede retomar).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4460,13 +4524,12 @@ las del FM son placeholders y no hay tiempos que medir.
     decisiones 197–207). Hechos el OMRON digital y el driver, probado
     con el LD real desde un FM de prueba (template con parámetros desde
     `fleet/order` y desde la web). Falta: enseñar el autodock del robot
-    en la web (decisión 198); `find_job`/`adopt_job` para retomar tras un
-    reinicio (el `job_id` de la cola ya lo pone el FM; las macros no
-    tienen id); crear goals desde la pestaña Crear con `mapObjectUpdate`
+    en la web (decisión 198); crear goals desde la pestaña Crear con `mapObjectUpdate`
     (decisión 204, avisando en la Guía de cerrar MobilePlanner); probar
     `ir_a_omron`, `cancelOrder` y `startPause` desde el FM con el robot;
-    action "ir a punto" con `MacroTemplateCoordenadas` (decisión 206) y,
-    en el digital, `MacroTask` y `gotoPoint`;
+    action "ir a punto" con `MacroTemplateCoordenadas` (decisión 206; ya
+    probada contra el digital, decisión 215); comprobar con el LD cuánto
+    guarda los trabajos terminados (decisión 214) y retomar uno de verdad;
     el autodock por batería baja (no se pudo provocar). El robot no es
     nuestro: solo se tiene a ratos y moverlo requiere permiso.
 

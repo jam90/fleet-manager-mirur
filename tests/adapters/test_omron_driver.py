@@ -20,6 +20,8 @@ RouteInfo: MacroTemplate "MacroTemplateFM"
 RouteInfo: GoalTask "goto" "$1"
 RouteInfo: _goto "$1"
 RouteInfo: Task "wait" "$2"
+RouteInfo: MacroTemplate "MacroTemplateCoordenadas"
+RouteInfo: Task "gotoPoint" "$1" "$2" "$3"
 LINES
 DATA
 """
@@ -30,6 +32,9 @@ ACCIONES = {
                                 number_params=["espera_s"]),
     "ir_a": OmronAction("ir_a", "goal", goal_input="destino"),
     "saludar": OmronAction("saludar", "macro", nombre="Macro1"),
+    # «Ir a punto» (decisión 206): x e y en mm y el ángulo en grados, enteros
+    "ir_a_punto": OmronAction("ir_a_punto", "template", nombre="MacroTemplateCoordenadas",
+                              params=["x_mm", "y_mm", "theta_deg"], number_params=["x_mm", "y_mm", "theta_deg"]),
 }
 
 
@@ -126,3 +131,67 @@ def test_macro_y_ocupado_por_otro(entorno):
 def test_sin_robot_no_lanza(tmp_path):
     d = OmronDriver(OmronRobotConfig("omron-1", "127.0.0.1", "x", 1, ACCIONES))
     assert d.connect() is False and d.poll() is None and d.last_error
+
+
+def test_ir_a_punto_con_coordenadas(entorno):
+    """Decisión 206, ahora contra el digital: llega al punto y con ese rumbo."""
+    d, robot, _ = entorno
+    d.connect()
+    job = d.translate(accion("ir_a_punto", x_mm="1500", y_mm=-500, theta_deg="-89"))
+    assert job.payload["valores"] == ["1500", "-500", "-89"]
+    assert esperar(d, d.execute(job), max_s=15) == "FINISHED"
+    assert (round(robot.x), round(robot.y), round(robot.th)) == (1500, -500, -89)
+
+
+# --- retomar tras reiniciar el FM (decisión 214) ---
+
+def _otro_fm(srv) -> OmronDriver:
+    """El driver de un FM recién arrancado: no sabe nada de lo que lanzó el anterior."""
+    d = OmronDriver(OmronRobotConfig("omron-1", "127.0.0.1", "clave", srv.puerto, ACCIONES))
+    assert d.connect()
+    return d
+
+
+def test_retomar_un_trabajo_de_la_cola(entorno):
+    d, robot, srv = entorno
+    d.connect()
+    job = d.translate(accion("ir_a", destino="Almacen"))
+    job.tag = "fleet-77@1764060000.123"
+    job_id = d.execute(job)
+    nuevo = _otro_fm(srv)
+    try:
+        assert nuevo.find_job(job.tag) == job_id
+        nuevo.adopt_job(job_id)
+        assert nuevo.job_status(job_id) in ("WAITING", "RUNNING")
+        assert esperar(nuevo, job_id) == "FINISHED"
+        # Uno ya terminado también se retoma, y sale ya terminado.
+        otro = _otro_fm(srv)
+        otro.adopt_job(job_id)
+        assert otro.job_status(job_id) == "FINISHED"
+        otro.client.cerrar()
+    finally:
+        nuevo.client.cerrar()
+
+
+def test_si_no_esta_en_la_cola_no_se_sabe(entorno):
+    """No se sabe si el LD guarda los terminados: no se relanza, queda en duda."""
+    _, _, srv = entorno
+    nuevo = _otro_fm(srv)
+    try:
+        with pytest.raises(LookupError, match="no se sabe"):
+            nuevo.find_job("fleet-nunca@1.0")
+    finally:
+        nuevo.client.cerrar()
+
+
+def test_una_macro_no_se_puede_retomar(entorno):
+    d, _, srv = entorno
+    d.connect()
+    job_id = d.execute(d.translate(accion("saludar")))
+    assert job_id.startswith("macro-")
+    nuevo = _otro_fm(srv)
+    try:
+        with pytest.raises(ValueError, match="no tienen id"):
+            nuevo.adopt_job(job_id)
+    finally:
+        nuevo.client.cerrar()

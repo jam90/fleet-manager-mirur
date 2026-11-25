@@ -61,9 +61,12 @@ Se para con Ctrl-C o con SIGTERM.
   prioridad y, a igualdad, el más antiguo. Un trabajo lo saca del dock
   aunque esté cargando.
 - **Macros y templates** del `.map` (`executeMacro`,
-  `executeMacroTemplate <nombre> $1 $2…`): `goto` y `wait`; el resto de
-  tareas (`say`…) no hacen nada. Sin `Going to` dentro de la macro, y con
-  un goal inexistente la macro "termina" sin error, como el real.
+  `executeMacroTemplate <nombre> $1 $2…`): `goto`, `wait`, `gotoPoint x y θ`
+  (mm y grados; llega con ese rumbo) y `MacroTask` (una macro que llama a
+  otra o a un template con sus valores, como guarda MobilePlanner una macro
+  hecha desde un template); el resto de tareas (`say`…) no hacen nada. Sin
+  `Going to` dentro de la macro, y con un goal inexistente la macro
+  "termina" sin error, como el real.
 - **Movimiento directo:** `goto`, `dock`, `undock`, `patrol`, `patrolOnce`,
   `stop`, `stay`, `go`, `localizeAtGoal`. Una orden directa deja el
   trabajo de la cola `Interrupted`, y se retoma después.
@@ -120,6 +123,13 @@ las secciones de configuración. Detalle en `docs/avance.md` (entradas del
 - `queueMulti` con varios goals (formato de la respuesta).
 - Los números de `ChargeState` salvo `Float = 3`.
 - Que `stop` y `stay` lo dejen 60 s sin coger trabajos.
+- `gotoPoint` dentro de una macro: que no dé mensajes de `Going to point`
+  ni `Arrived at` (como `goto`), y que uno mal escrito no haga nada. En el LD
+  se vio solo dónde acaba el robot.
+- `MacroTask`: que la macro llamada no dé sus propios `Executing` y
+  `Completed` (solo la de fuera).
+- Cuánto guarda el LD los trabajos terminados en la cola (el digital, todos):
+  el FM no relanza uno que no encuentra tras un reinicio (decisión 214).
 
 ## Lo que no hace
 

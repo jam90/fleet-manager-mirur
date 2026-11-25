@@ -899,8 +899,8 @@ def recapture(sync, guid: str) -> dict:
         raise CreateError(f"un recurso de tipo {kind} no se trae del robot: solo misiones, posiciones, zonas y mapas")
     if old.get("creada_por_mir"):
         # La entrada de un marcador o cargador va con su madre: se trae la
-        # madre, que se lleva también la entrada (en la vista previa, la
-        # entrada movida en el robot sale «corregir», no «distinta»).
+        # madre, que se lleva también la entrada (decisión 213: la entrada
+        # movida en el robot sale «distinta», con «Sustituir»).
         mother = cat.items.get(old.get("parent_id") or "")
         if mother is None:
             raise CreateError(f"la entrada de {old['name']!r} no tiene su marcador en el catálogo")

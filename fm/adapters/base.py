@@ -230,7 +230,9 @@ class RobotDriver(Protocol):
         """Gancho opcional (decisión 161): tras reiniciar el FM, `job_id` lo
         lanzó el FM anterior; el driver lo trata como propio (no como trabajo
         ajeno) y el core vuelve a seguirlo con `job_status`. Sin el gancho,
-        una tarea en curso al reiniciar no se puede retomar."""
+        una tarea en curso al reiniciar no se puede retomar. Lanza si ese job
+        en concreto no se puede retomar (p. ej. una macro del OMRON, que no
+        tiene id; decisión 214): el core la cierra como FAILED con el motivo."""
 
     def make_missions(self) -> "MissionsSource":
         """Gancho opcional: objeto para consultar las misiones del robot desde

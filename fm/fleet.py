@@ -437,7 +437,11 @@ class Dispatcher:
             self._close(task, FAILED, f"el FM se reinició y no puede retomarla: {e.description}")
             return False
         job.tag = task.tag
-        adopt(task.job_id)
+        try:
+            adopt(task.job_id)
+        except Exception as e:                  # ese job no se puede retomar (decisión 214)
+            self._close(task, FAILED, f"el FM se reinició y no puede retomarla: {e}")
+            return False
         robot.orders.accept(task.order, job, task.job_id)
         log.info("[fleet] fleet/order %s: retomada en %s (job=%s)", task.order_id, task.serial, task.job_id)
         return True
