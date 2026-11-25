@@ -3815,6 +3815,8 @@ paneles, de los botones de peligro (`--bad-btn`) y de los enlaces en oscuro
      misión que pide herramienta escribe el código en el 2 y, si no coincide
      con el 5, carga la de cambio. Con el 1 por defecto el FM habría leído
      el comando como si fuera la herramienta.
+     *(Corregido el 2026-11-25 con la tabla real del usuario: la pedida va
+     en el 4, `M2D_Tool_quiero`; el 2 es `Impresora`. Ver ese día.)*
 
 193. **Herramienta fija por robot** (`robots.<serial>.tool`, en el driver
      MiR). mir-1 lleva un UR5 sin cambiador con la pinza DH140 siempre
@@ -4190,6 +4192,51 @@ probados con los MiR los puntos 3 y 4 de «En curso» (falta solo la
 pregunta de la entrada, arriba). `mapa-pruebas` no se retocó: con
 `suberri_mirur` ya se probó lo mismo.
 
+## 2026-11-25 — Herramientas con mir-2 (punto 1)
+
+Missions falsas hechas desde la pestaña Crear en mir-2 (así nacen con GUID
+del proyecto y una puede cargar la otra) y capturadas:
+`prueba-cambio-herramienta` (`…-0001-014`: espera 5 s y escribe el
+parámetro `herramienta` en el registro 5, haciendo de brazo) y
+`prueba-coger-herramienta` (`…-0001-015`: escribe `herramienta` en el
+registro **4** y, *If* registro 5 ≠ `herramienta`, *Load mission* de la de
+cambio). Tipo de tarea `coger_herramienta` con `tool_input: herramienta`,
+solo en mir-2 (mir-1 en mantenimiento, y su UR5 usa los registros). Sin
+movimiento; lanzadas con `send_fleet_order.py` con permiso del usuario:
+
+- `dh` con `vgc10` puesta: ASSIGNED, el *If* carga el cambio, el FM lee
+  `TOOL: dh` del registro 5 a los 5 s, FINISHED. Otra `dh`: sin cambio, 1 s.
+- `2f140`: REJECTED `TOOL_NOT_AVAILABLE` con el motivo de cada robot;
+  `llave`: REJECTED `VALIDATION_FAILURE` con la lista de herramientas.
+- `cgi` y en seguida `vgc10`: la segunda QUEUED («mir-2: ocupado») y,
+  al acabar la primera, ASSIGNED; cambia y FINISHED.
+
+210. **Registros PLC de la instalación** (tabla real del usuario, que
+     corrige la de la decisión 192):
+
+     | Reg | Nombre |
+     |---|---|
+     | 1 | `M2D_Comando` |
+     | 2 | `Impresora` |
+     | 3 | `M2D_Pieza` |
+     | 4 | `M2D_Tool_quiero` |
+     | 5 | `D2M_Tool_tengo` |
+     | 6 | `D2M_Estado` |
+     | 7 | `D2M_Hecho` |
+     | 8 | `D2M_Safe` |
+     | 9 | `Sumergir` |
+     | 10 | `Destino_calidad` |
+
+     El FM solo lee el 5 (`tool_register`), que no cambia. La pedida la
+     escribe la mission, así que el código no cambia; sí los comentarios
+     de los dos `fleet.yaml` y la Guía, que decían «el 2» (la Guía ya no
+     da número fijo: el que lea el brazo, en Tknika el 4).
+Detalle de la mission de prueba: el *Wait* que simula coger quedó dentro
+del *If* (solo se hace si hay cambio); no afecta a la prueba del FM.
+
+Con esto, el punto 1 de «En curso» queda probado con robot. Queda el 1b
+(una order que valga con varias herramientas).
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4229,8 +4276,9 @@ misiones ficticias en mir-2; luego 1b y 2)
    3), mir-1 con `tool: dh` y mir-2 con `tool_changer: [cgi, dh, vgc10]`.
    Falta una action con `tool_input` y probar con misiones falsas en mir-2:
    `cambio_herramienta`, que solo escribe en el registro 5 el código pedido
-   (haciendo de brazo), y una `coger` que lo escribe en el 2 y, si no
-   coincide con el 5, *Load mission* de la de cambio.
+   (haciendo de brazo), y una `coger` que lo escribe en el 4 y, si no
+   coincide con el 5, *Load mission* de la de cambio. **Hecho el
+   2026-11-25** (probado con mir-2, ver ese día).
 1b. **Misiones que valen con más de una herramienta** (el usuario,
    2026-11-07): p. ej. coger una pieza con la `dh` o con la `vgc10`. Hoy una
    order pide una herramienta concreta; habría que poder pedir una lista

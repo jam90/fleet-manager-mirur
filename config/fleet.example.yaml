@@ -63,7 +63,7 @@ drivers:
 #   vgc10: { code: 1, description: "Ventosa VGC10", count: 1 }
 #   2fg7:  { code: 2, description: "Pinza 2FG7" }
 # (en drivers.mir:)   tool_register: 5     (por defecto, el 5: el brazo escribe ahí la que lleva;
-#                                         la mission escribe en el 2 la que quiere)
+#                                         la mission escribe en el 4 la que quiere)
 # (en una action:)    coger: { mission: "coger", tool_input: garra }
 # (en un robot:)      tool_changer: [vgc10, 2fg7]   (con acoplador: las del soporte que puede ponerse)
 # (o, sin acoplador:) tool: vgc10           (la lleva siempre: no se lee el registro)
