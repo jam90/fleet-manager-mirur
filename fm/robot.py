@@ -314,7 +314,8 @@ class Robot:
         key = self.cfg.tool_inputs.get(action.actionType)
         if not key:
             return None
-        return needed_tools(action, {action.actionType: {"tool_input": key}}, self.cfg.raw.get("tool_codes") or {})
+        spec = {"tool_input": key, "tools": (self.cfg.raw.get("actions") or {}).get(action.actionType, {}).get("tools")}
+        return needed_tools(action, {action.actionType: spec}, self.cfg.raw.get("tool_codes") or {})
 
     def resolve_tool(self, action, tool: str | None = None):
         """Si la order pide herramienta (decisión 184), este robot tiene que

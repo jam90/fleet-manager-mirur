@@ -50,6 +50,7 @@ class SimRobotConfig:
     tool: str | None = None                       # herramienta al arrancar (None = no tiene)
     tool_inputs: dict[str, str] = field(default_factory=dict)   # actionType → parámetro con la herramienta
     tool_codes: dict[str, int] = field(default_factory=dict)    # catálogo `tools:` (lo pone el core)
+    tool_lists: dict[str, list[str]] = field(default_factory=dict)  # actionType → con las que se hace (decisión 212)
 
 
 def parse_config(serial: str, raw: Mapping, defaults: Mapping) -> SimRobotConfig:
@@ -71,6 +72,8 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping) -> SimRobotConfig
         tool_inputs={a: d["tool_input"] for a, d in (m.get("actions") or {}).items()
                      if isinstance(d, Mapping) and d.get("tool_input")},
         tool_codes=dict(m.get("tool_codes") or {}),
+        tool_lists={a: list(d["tools"]) for a, d in (m.get("actions") or {}).items()
+                    if isinstance(d, Mapping) and d.get("tools")},
     )
 
 
@@ -219,6 +222,8 @@ class SimDriver:
         return RobotSpec("SIM", description="robot simulado sin hardware (fm/adapters/sim)")
 
     def describe_actions(self) -> list[ActionInfo]:
-        tools = sorted(self.cfg.tool_codes)
-        return [ActionInfo(t, [ParamInfo(self.cfg.tool_inputs[t], "tool", True, tools)] if t in self.cfg.tool_inputs else [],
+        def tool_param(t):
+            fixed = self.cfg.tool_lists.get(t)
+            return ParamInfo(self.cfg.tool_inputs[t], "tool", not fixed, fixed or sorted(self.cfg.tool_codes))
+        return [ActionInfo(t, [tool_param(t)] if t in self.cfg.tool_inputs else [],
                            f"sim {self.cfg.duration_s:.0f}s") for t in sorted(self.cfg.action_types)]

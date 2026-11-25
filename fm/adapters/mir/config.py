@@ -56,6 +56,7 @@ class ActionConfig:
     number_ranges: dict[str, NumberRange] = field(default_factory=dict)   # límites opcionales por input
     positions_allowlist: set[str] | None = None   # None = las que admita el robot
     tool_input: str | None = None                 # input con la herramienta pedida (va su código, decisión 184)
+    tools: list[str] = field(default_factory=list)   # con las que se hace (decisión 212; vacío = cualquiera)
 
 
 @dataclass
@@ -123,6 +124,7 @@ def parse_config(serial: str, raw: Mapping, defaults: Mapping, env: Mapping[str,
             **_parse_numbers(serial, atype, a.get("number_inputs")),
             positions_allowlist=set(a["positions_allowlist"]) if a.get("positions_allowlist") else None,
             tool_input=str(a["tool_input"]) if a.get("tool_input") else None,
+            tools=[str(t) for t in a.get("tools") or []],
         )
 
     allow = merged.get("positions_allowlist")

@@ -3,7 +3,7 @@ import pytest
 
 from fm.adapters.mir import MirDriver
 from fm.adapters.mir.client import MirClient
-from fm.adapters.mir.config import ActionConfig, MirRobotConfig
+from fm.adapters.mir.config import ActionConfig, MirRobotConfig, parse_config
 from fm.vda5050.order import Action, ActionParameter, OrderRejected
 
 CFG = MirRobotConfig("mir-1", "h", "a", {
@@ -387,6 +387,17 @@ def test_herramienta_pedida_va_a_la_mission_como_su_codigo():
     with pytest.raises(OrderRejected, match="desconocida"):
         d.translate(Action("coger", "a2", actionParameters=[ActionParameter("garra", "pinza")]))
     assert [(p.key, p.kind, p.choices) for p in d.describe_actions()[0].params] == [("garra", "tool", ["2fg7", "vgc10"])]
+
+
+def test_tipo_de_tarea_con_sus_herramientas_para_la_web():
+    """Decisión 212: con `tools` en el tipo de tarea el parámetro no es obligatorio
+    y la web ofrece solo esas, en su orden (la preferencia)."""
+    cfg = parse_config("mir-1", {"host": "h", "tool_codes": {"vgc10": 1, "2fg7": 2, "dh": 3},
+                                 "actions": {"coger": {"mission": "coger", "tool_input": "garra",
+                                                       "tools": ["vgc10", "2fg7"]}}}, {}, {})
+    assert cfg.actions["coger"].tools == ["vgc10", "2fg7"]
+    p = MirDriver(cfg, _FakeClient()).describe_actions()[0].params[0]
+    assert (p.key, p.kind, p.required, p.choices) == ("garra", "tool", False, ["vgc10", "2fg7"])
 
 
 def test_herramienta_fija_no_lee_el_registro():

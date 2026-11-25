@@ -771,6 +771,7 @@ tools:                                   # las de la planta
   2fg7:  { code: 2, description: "Pinza 2FG7" }
 actions:
   coger: { mission: coger, tool_input: garra }   # la order trae {"key": "garra", "value": "vgc10"}
+  coger_caja: { mission: coger, tool_input: garra, tools: [vgc10, 2fg7] }   # se hace con estas; la order puede no traerla
 drivers:
   mir: { tool_register: 5 }              # registro PLC donde el brazo escribe el `code` que lleva (0 = ninguna); por defecto, el 5
 robots:
@@ -783,6 +784,12 @@ robots:
 - `actions.<tipo>.tool_input` — el parámetro de la order con el nombre de la
   herramienta. Ausente o desconocida → `VALIDATION_FAILURE`. A la mission le
   llega su **código** (en el MiR, como un número para *Set/If PLC register*).
+- `actions.<tipo>.tools` — con qué herramientas se hace ese tipo de tarea
+  (decisión 212), en orden de preferencia. Con ella la order **puede no
+  traer** el parámetro (valen todas, en ese orden) o acotar dentro de la
+  lista; una que no está → `VALIDATION_FAILURE` («2fg7 no vale para
+  'coger_caja'»). Sin `tools`, vale cualquiera del catálogo y cada order
+  tiene que decir cuál.
 - **Varias que valen** (decisión 211): `{"key": "garra", "value": "dh,vgc10"}`
   (o `["dh", "vgc10"]`). Primero va el robot que ya lleva una de ellas; si
   no, cada robot usa la primera de la lista que pueda ponerse y que quede

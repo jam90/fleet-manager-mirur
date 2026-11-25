@@ -79,6 +79,12 @@ def test_config_catalogo_cambiador_y_tool_input(tmp_path):
     ("tools: {x: {code: 1, color: rojo}}", "claves desconocidas"),
     ("tools: {x: {code: 1}}\nrobots: {sim-1: {driver: sim, tool_changer: [y]}}", "no están en el catálogo 'tools:'"),
     ("actions: {coger: {mission: c, tool_input: garra}}", "no hay catálogo 'tools:'"),
+    # Decisión 212: con qué herramientas se hace un tipo de tarea.
+    ("tools: {x: {code: 1}}\nactions: {coger: {mission: c, tools: [x]}}", "hace falta 'tool_input'"),
+    ("tools: {x: {code: 1}}\nactions: {coger: {mission: c, tool_input: g, tools: [y]}}", "y no están en el catálogo"),
+    ("tools: {x: {code: 1}}\nactions: {coger: {mission: c, tool_input: g, tools: x}}", "debe ser una lista"),
+    ("tools: {x: {code: 1}}\nactions: {coger: {mission: c, tool_input: g, tools: []}}", "debe ser una lista"),
+    ("tools: {x: {code: 1}}\nactions: {coger: {mission: c, tool_input: g, tools: [x, x]}}", "repetidas"),
 ])
 def test_config_errores(tmp_path, bad, msg):
     with pytest.raises(ConfigError, match=msg):
@@ -102,6 +108,20 @@ def test_needed_tools():
             needed_tools(falta, actions, tools)
     with pytest.raises(OrderRejected, match="herramienta 'pinza' desconocida"):
         needed_tools(_coger("vgc10,pinza"), actions, tools)
+
+
+def test_herramientas_del_tipo_de_tarea():
+    """Decisión 212: `tools` en el tipo de tarea. Sin parámetro valen esas, en su
+    orden; con él, solo se puede acotar dentro de ellas."""
+    actions = {"coger": {"tool_input": "garra", "tools": ["vgc10", "2fg7"]}}
+    tools = {"vgc10": {}, "2fg7": {}, "rq140": {}}
+    assert needed_tools(Action("coger", "a"), actions, tools) == ["vgc10", "2fg7"]
+    assert needed_tools(_coger(""), actions, tools) == ["vgc10", "2fg7"]
+    assert needed_tools(_coger("2fg7"), actions, tools) == ["2fg7"]
+    with pytest.raises(OrderRejected, match="rq140 no vale para 'coger' \\(valen vgc10, 2fg7\\)"):
+        needed_tools(_coger("2fg7,rq140"), actions, tools)
+    # Al driver le llega con el parámetro aunque la order no lo trajera.
+    assert with_tool(Action("coger", "a"), "garra", "vgc10").params() == {"garra": "vgc10"}
 
 
 def test_varias_herramientas_elegir_una():
@@ -321,6 +341,27 @@ def test_order_dirigida_con_varias_herramientas(tmp_path):
     disp.handle(topic("SIM", "sim-3", "order"), _order("d2", "vgc10,2fg7", serial="sim-3", man="SIM"))
     errors = [e for e in robots["sim-3"].orders.order_errors if e.errorType == "TOOL_NOT_AVAILABLE"]
     assert errors and "lleva rq140, no vgc10 ni 2fg7 (sin cambiador)" in errors[0].errorDescription
+
+
+def test_tipo_de_tarea_con_sus_herramientas(tmp_path):
+    """La order no dice herramienta: el FM usa las del tipo de tarea, en su orden."""
+    yaml = STOCK.replace("coger: {mission: coger, tool_input: garra}",
+                         "coger: {mission: coger, tool_input: garra, tools: [2fg7, vgc10]}")
+    disp, robots, bus = _fleet(tmp_path, yaml)
+    _send(disp, "o1")                                                # sin parámetro: la primera, 2fg7
+    assert _resp(bus, "o1")["assignedSerial"] == "sim-1" and robots["sim-1"].requested_tool() == "2fg7"
+    _send(disp, "o2")                                                # 2fg7 ya no queda: vgc10
+    assert _resp(bus, "o2")["assignedSerial"] == "sim-2" and robots["sim-2"].requested_tool() == "vgc10"
+    _send(disp, "o3", "rq140")                                       # fuera de las del tipo de tarea
+    r = _resp(bus, "o3")
+    assert r["status"] == "REJECTED" and "no vale para 'coger'" in r["errorDescription"]
+    # sim-3 (rq140 fija) no puede con ninguna de las del tipo de tarea; dirigida, se rechaza con el motivo.
+    disp.handle(topic("SIM", "sim-3", "order"), _order("d1", serial="sim-3", man="SIM"))
+    errors = [e for e in robots["sim-3"].orders.order_errors if e.errorType == "TOOL_NOT_AVAILABLE"]
+    assert errors and "lleva rq140, no 2fg7 ni vgc10 (sin cambiador)" in errors[0].errorDescription
+    # Para la web: no obligatoria y en el orden del tipo de tarea.
+    p = robots["sim-1"].driver.describe_actions()[0].params[0]
+    assert (p.key, p.required, p.choices) == ("garra", False, ["2fg7", "vgc10"])
 
 
 def test_sin_count_no_se_cuenta(tmp_path):

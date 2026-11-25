@@ -413,6 +413,20 @@ def _parse_catalog(raw, tools: dict[str, dict] | None = None) -> dict[str, dict]
                 raise ConfigError(f"actions.{name}.tool_input: debe ser el nombre del parámetro con la herramienta")
             if not tools:
                 raise ConfigError(f"actions.{name}.tool_input: no hay catálogo 'tools:' con las herramientas")
+        if "tools" in spec:
+            # Con qué herramientas se puede hacer esta tarea (decisión 212). Sin
+            # `tools`, vale cualquiera del catálogo: la elige quien manda la order.
+            v = spec["tools"]
+            if not spec.get("tool_input"):
+                raise ConfigError(f"actions.{name}.tools: hace falta 'tool_input' (el parámetro de la misión "
+                                  "que recibe la herramienta)")
+            if not isinstance(v, list) or not v or not all(isinstance(t, str) and t for t in v):
+                raise ConfigError(f"actions.{name}.tools: debe ser una lista de herramientas del catálogo (hay {v!r})")
+            unknown = [t for t in v if t not in (tools or {})]
+            if unknown:
+                raise ConfigError(f"actions.{name}.tools: {', '.join(unknown)} no están en el catálogo 'tools:'")
+            if len(set(v)) != len(v):
+                raise ConfigError(f"actions.{name}.tools: hay herramientas repetidas")
         catalog[str(name)] = spec
     return catalog
 

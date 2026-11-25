@@ -1004,8 +1004,10 @@
           <!-- La herramienta, con casillas: la order puede valer con varias (decisión 211);
                el FM elige una por robot (la que ya lleva, si es de las marcadas). -->
           <fieldset v-if="p.kind === 'tool'" class="field tool-checks" :id="'param-' + p.key">
-            <legend>{{ p.key }} ({{ PARAM_KIND[p.kind] }}; una o varias: vale cualquiera. Si el robot no lleva
+            <legend v-if="p.required">{{ p.key }} ({{ PARAM_KIND[p.kind] }}; una o varias: vale cualquiera. Si el robot no lleva
               ninguna, va a por la que marcaste antes)</legend>
+            <legend v-else>{{ p.key }} ({{ PARAM_KIND[p.kind] }}: las de este tipo de tarea; quita las que no quieras.
+              Si el robot no lleva ninguna, va a por la primera)</legend>
             <label v-for="c in p.choices" :key="c"><input type="checkbox" :value="c" v-model="form.params[p.key]"> {{ toolText(c) }}</label>
           </fieldset>
           <label class="field" v-else>
@@ -1942,7 +1944,7 @@
 
         <div class="field">Inputs de la misión
           <table class="inputs" v-if="actForm.inputs.length">
-            <thead><tr><th>input</th><th>qué es</th><th>rango opcional: mín · máx · paso</th><th></th></tr></thead>
+            <thead><tr><th>input</th><th>qué es</th><th>número: rango opcional · herramienta: con cuáles se hace</th><th></th></tr></thead>
             <tbody>
               <tr v-for="(i, n) in actForm.inputs" :key="n">
                 <td><code>{{ i.name }}</code></td>
@@ -1955,7 +1957,15 @@
                 <td><template v-if="i.kind === 'number'">
                   <input class="num-in sm" type="number" v-model.number="i.min" placeholder="mín" :aria-label="'mínimo de ' + i.name">
                   <input class="num-in sm" type="number" v-model.number="i.max" placeholder="máx" :aria-label="'máximo de ' + i.name">
-                  <input class="num-in sm" type="number" v-model.number="i.step" placeholder="paso" :aria-label="'paso de ' + i.name"></template></td>
+                  <input class="num-in sm" type="number" v-model.number="i.step" placeholder="paso" :aria-label="'paso de ' + i.name"></template>
+                  <!-- Decisión 212: con qué herramientas se hace este tipo de tarea. Ninguna marcada = cualquiera
+                       (la dice cada order); el orden en que se marcan es la preferencia. -->
+                  <div v-else-if="i.kind === 'tool'" class="tool-checks" role="group" :aria-label="'herramientas con que se hace ' + (actForm.name || 'la tarea')">
+                    <label v-for="t in toolRows.filter(t => t.status !== 'borrada' || actForm.tools.includes(t.name))" :key="t.name">
+                      <input type="checkbox" :value="t.name" v-model="actForm.tools"> {{ t.name }}<span class="muted" v-if="t.description"> — {{ t.description }}</span></label>
+                    <span class="hint">{{ actForm.tools.length ? 'Preferencia: ' + actForm.tools.join(' → ') + '. La order puede no traerla, o acotar entre estas.'
+                      : 'Ninguna marcada: vale cualquiera y cada order dice cuál.' }}</span>
+                  </div></td>
                 <td><button class="btn" v-if="i.manual" @click="actForm.inputs.splice(n, 1)" :aria-label="'quitar ' + i.name">✕</button></td>
               </tr>
             </tbody>
@@ -1966,7 +1976,8 @@
           <span class="hint">«No declarar»: si la order lo trae y la misión lo tiene, se pasa igual, pero no es obligatorio.
             «Herramienta»: la order trae su nombre, o varios separados por comas si vale cualquiera (<code>dh,vgc10</code>);
             el FM elige un robot que lleve o pueda ponerse una, y la misión recibe el código de esa (como mucho uno por tipo
-            de tarea). Solo salen aquí las variables de la misión en el MiR.</span>
+            de tarea). Al lado, las herramientas con que se hace la tarea, en orden de preferencia: con ellas la order puede no
+            traerla. Solo salen aquí las variables de la misión en el MiR.</span>
         </div>
 
         <div class="field" v-if="actForm.inputs.some(i => i.kind === 'position')">Posiciones admitidas (ninguna marcada = cualquiera del robot)
@@ -2595,8 +2606,8 @@
           <li><b>Las herramientas de la planta</b><a class="where" href="#configurador">→ Configuración</a>
             <p>En «Herramientas», «Editar» y «Añadir herramienta»: un nombre (el que llega en las orders), su <b>código</b> (el
               número con el que la identifica el programa del brazo; 0 es «ninguna») y una descripción. Se guarda en
-              <code>tools:</code> de <code>fleet.yaml</code> y se aplica sin reiniciar. Una que use algún robot no se puede borrar
-              hasta quitársela.</p></li>
+              <code>tools:</code> de <code>fleet.yaml</code> y se aplica sin reiniciar. Una que use algún robot o algún tipo de
+              tarea no se puede borrar hasta quitársela.</p></li>
           <li><b>Que el robot diga cuál lleva</b><span class="where">programa del brazo</span>
             <p>El brazo escribe el <code>code</code> de la que lleva en un registro PLC del MiR (<code>tool_register</code> en
               <code>drivers.mir</code>; por defecto, el 5). El FM lo lee y lo enseña en <a href="#operacion">Operación</a> y en Robots.
@@ -2630,13 +2641,18 @@
               añades la variable en el MiR y no la traes, no aparece.</p></li>
           <li><b>El tipo de tarea pide herramienta</b><a class="where" href="#configurador">→ Configuración</a>
             <p>En «Definición de los tipos de tarea», «Editar» el tipo y, en el input que sale de esa variable (p. ej.
-              <code>garra</code>), «herramienta» en «qué es» (<code>tool_input</code>; uno por tipo de tarea). La order trae el
-              nombre de la herramienta y la misión recibe su código; en «Nueva tarea» sale con una casilla por herramienta.</p></li>
+              <code>garra</code>), «herramienta» en «qué es» (<code>tool_input</code>; uno por tipo de tarea). Al lado, marca
+              <b>con qué herramientas se hace</b> esa tarea (<code>tools</code>), en orden de preferencia: la primera es la que
+              el FM manda poner si el robot no lleva ninguna de ellas. Así quien manda la order no tiene que saber de
+              herramientas: puede no decir ninguna (valen todas las marcadas) o quedarse con alguna de ellas; una que no esté
+              marcada se rechaza. Si no marcas ninguna, vale cualquiera del catálogo y cada order tiene que decir cuál. La
+              misión recibe siempre el código de una sola.</p></li>
           <li><b>Una tarea que vale con varias</b><a class="where" href="#operacion">→ Operación</a>
-            <p>Marca todas las que valgan (p. ej. la pinza y la ventosa para coger una pieza); a mano, la order lleva
-              <code>garra=dh,vgc10</code>. El FM manda primero al robot que ya lleva una de ellas y, si ninguno, al que
-              pueda ponerse una: la primera de la lista que le quede libre en el soporte. La misión recibe solo el código de la
-              elegida, así que no cambia nada en ella.</p></li>
+            <p>En «Nueva tarea», si el tipo de tarea tiene sus herramientas, salen ya marcadas: déjalas o quita las que no
+              quieras. Si no las tiene, marca todas las que valgan (p. ej. la pinza y la ventosa para coger una pieza). A mano,
+              la order lleva <code>garra=dh,vgc10</code>, o nada si valen las del tipo de tarea. El FM manda primero al robot que
+              ya lleva una de ellas y, si ninguno, al que pueda ponerse una: la primera de la lista que le quede libre en el
+              soporte. La misión recibe solo el código de la elegida, así que no cambia nada en ella.</p></li>
           <li><b>Al arrancar el FM, revisar los cambiadores</b><a class="where" href="#operacion">→ Operación</a>
             <p>Sale el aviso con lo que dice la configuración de cada cambiador: compruébalo y «Revisado». Lo guarda el FM: el
               aviso se quita en todos los navegadores hasta el próximo arranque, y queda dicho a qué hora y desde qué equipo.
@@ -2922,8 +2938,12 @@ createApp({
       const params = {};
       for (const p of currentParams.value) {
         const v = form.params[p.key];
-        // Las herramientas marcadas van como en la order a mano: «dh,vgc10».
-        if (Array.isArray(v)) { if (v.length) params[p.key] = v.join(','); }
+        // Las herramientas marcadas van como en la order a mano: «dh,vgc10». Si son todas las del tipo de
+        // tarea, no se manda nada: el FM usa su lista y su orden de preferencia (decisión 212).
+        if (Array.isArray(v)) {
+          const all = !p.required && (p.choices || []).every(c => v.includes(c));
+          if (v.length && !all) params[p.key] = v.join(',');
+        }
         else if (v !== undefined && v !== '') params[p.key] = v;
       }
       const r = await fetch('/api/fleet/order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2931,8 +2951,9 @@ createApp({
       ui.sending = false;
       if (!r.ok) { addEvent('ui', 'no se pudo enviar: ' + (await r.json()).detail); return; }
       const tool = currentParams.value.find(p => p.kind === 'tool');      // la que pide (decisión 184)
+      // Sin parámetro (las del tipo de tarea, decisión 212) se dice cuáles son, como en la cola.
       fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null,
-                            tool: tool ? params[tool.key] || '' : '' });
+                            tool: tool ? params[tool.key] || (tool.choices || []).join(',') : '' });
       if (fleetOrders.length > 5) fleetOrders.pop();
     }
 
@@ -2989,20 +3010,28 @@ createApp({
     });
     const currentParams = computed(() => {
       const a = actionCatalog.value.find(x => x.action_type === form.actionType);
-      return a ? Object.values(a.params).map(p => ({ ...p, choices: p.choices && p.choices.length ? p.choices.slice().sort() : null })) : [];
+      // Las herramientas, en el orden en que las da el driver: con `tools` en el tipo de
+      // tarea (decisión 212) ese orden es la preferencia.
+      return a ? Object.values(a.params).map(p => ({ ...p, choices: p.choices && p.choices.length
+        ? (p.kind === 'tool' ? p.choices.slice() : p.choices.slice().sort()) : null })) : [];
     });
 
     const hasRange = p => p.min != null && p.max != null;
     // Al cambiar de action: los números con rango arrancan en el mínimo, para
     // que deslizador y recuadro muestren lo mismo y no se envíe un vacío.
-    watch(() => form.actionType, () => {
+    // También cuando llegan (o cambian) los parámetros del tipo elegido: la lista de tipos llega
+    // por la red y puede hacerlo después de elegir uno.
+    watch(() => form.actionType + '|' + currentParams.value.map(p => p.key + ':' + (p.choices || []).join()).join(';'), () => {
       for (const p of currentParams.value) {
         if (p.kind === 'number' && hasRange(p) && typeof form.params[p.key] !== 'number') form.params[p.key] = p.min;
-        if (p.kind === 'tool' && !Array.isArray(form.params[p.key])) form.params[p.key] = [];
+        // Herramientas: de nuevo en cada tipo. Con las del tipo de tarea (no obligatoria,
+        // decisión 212), todas marcadas: se acota quitando.
+        if (p.kind === 'tool') form.params[p.key] = p.required ? [] : [...(p.choices || [])];
       }
     }, { immediate: true });
-    // Sin ninguna herramienta marcada no se envía (la order se rechazaría).
-    const toolMissing = computed(() => currentParams.value.some(p => p.kind === 'tool' && !(form.params[p.key] || []).length));
+    // Sin ninguna herramienta marcada no se envía (la order se rechazaría), salvo
+    // que el tipo de tarea diga con cuáles se hace: entonces valen esas.
+    const toolMissing = computed(() => currentParams.value.some(p => p.kind === 'tool' && p.required && !(form.params[p.key] || []).length));
 
     function statusOf(r, s) {
       if (!s || r.connection === 'CONNECTIONBROKEN' || (s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE'))
@@ -3956,7 +3985,11 @@ createApp({
       if (mode === 'changer') return (d ? d.tool_changer : r.tool_changer || []).includes(name) ? '✓' : '';
       return mode === 'fixed' && (d ? d.tool : r.tool) === name ? 'fija' : '';
     }
-    const toolUsers = name => cfgState.robots.filter(r => toolCell(name, r)).map(r => r.serial);
+    // Quién usa una herramienta: los robots que la llevan o la tienen en su cambiador y los tipos
+    // de tarea que se hacen con ella (`tools`, decisión 212), contando lo que hay en el borrador.
+    const toolUsers = name => [...cfgState.robots.filter(r => toolCell(name, r)).map(r => r.serial),
+      ...viewActions.value.filter(a => a.status !== 'borrada' && ((a.definition || {}).tools || []).includes(name))
+        .map(a => 'el tipo de tarea ' + a.name)];
     function addTool() {
       const f = toolForm, codes = toolRows.value.filter(t => t.status !== 'borrada').map(t => t.code);
       f.error = !/^(?=.*[A-Za-z])[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(f.name) ? 'Nombre: letras, números, «_», «-» o «.», con al menos una letra (p. ej. vgc10, 2fg7).'
@@ -4018,8 +4051,8 @@ createApp({
       return out.filter(a => a.status === 'nueva' || inSite(a.needs && a.needs.site));
     });
     const actForm = reactive({ open: false, isNew: false, name: '', mission: '', missionOther: '', inputs: [],
-                               allow: [], newInput: '', error: '', extra: {}, expected: '' });
-    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist', 'expected_s', 'tool_input'];
+                               allow: [], newInput: '', error: '', extra: {}, expected: '', tools: [] });
+    const KNOWN = ['mission', 'position_inputs', 'number_inputs', 'required_inputs', 'positions_allowlist', 'expected_s', 'tool_input', 'tools'];
     const catInputs = guid => (cfgChoices.value.missions.find(m => m.guid === guid) || { inputs: [] }).inputs;
     // Definición (claves del driver MiR) → filas del formulario, y al revés.
     function openActForm(a) {
@@ -4036,7 +4069,7 @@ createApp({
       if (!inCat) rows.forEach(r => { r.manual = true; });
       Object.assign(actForm, { open: true, isNew: !a, name: a ? a.name : '', error: '', newInput: '',
         mission: !a ? '' : inCat ? def.mission : '__otra__', missionOther: inCat ? '' : (def.mission || ''),
-        inputs: rows, allow: [...(def.positions_allowlist || [])], expected: def.expected_s ?? '',
+        inputs: rows, allow: [...(def.positions_allowlist || [])], expected: def.expected_s ?? '', tools: [...(def.tools || [])],
         extra: Object.fromEntries(Object.entries(def).filter(([k]) => !KNOWN.includes(k))) });
     }
     function onMissionChange() {
@@ -4083,6 +4116,7 @@ createApp({
       if (req.length) def.required_inputs = req;
       if (pos.length && f.allow.length) def.positions_allowlist = [...f.allow];
       if (tool.length) def.tool_input = tool[0].name;
+      if (tool.length && f.tools.length) def.tools = [...f.tools];
       if (f.expected !== '') def.expected_s = f.expected;
       const m = cfgChoices.value.missions.find(x => x.guid === mission);
       cfgEdit.draft.actions[name] = { definition: def, comments: m ? { mission: m.name } : {} };

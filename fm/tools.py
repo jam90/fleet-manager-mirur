@@ -12,7 +12,9 @@ Qué herramienta pide una order lo dice su parámetro `tool_input` (p. ej.
 quien manda la order (el MES, otro servicio).
 
 Una order puede valer con varias (punto 1b, decisión 211): `garra=dh,vgc10`
-(o una lista JSON). El FM elige UNA por robot (`pick_tool`): la que ya
+(o una lista JSON). Y el tipo de tarea puede decir con cuáles se hace
+(`actions.<tipo>.tools`, decisión 212): una order sin el parámetro vale con
+cualquiera de esas, y una que lo trae solo puede acotar dentro de ellas. El FM elige UNA por robot (`pick_tool`): la que ya
 lleva, si es de la lista; si no, la primera de la lista que pueda ponerse.
 La order que llega al driver lleva solo esa (`with_tool`): la mission
 recibe un único código, como antes.
@@ -41,20 +43,30 @@ def parse_tools(value: Any) -> list[str]:
 
 def needed_tools(action: Action, actions: Mapping[str, dict], tools: Mapping[str, dict]) -> list[str] | None:
     """Las herramientas con que vale `action` (None = su action no usa
-    herramienta; si no, al menos una). Lanza `OrderRejected`
-    (validationError) si falta el parámetro o alguna no está en el
-    catálogo: ningún robot la aceptaría."""
-    key = (actions.get(action.actionType) or {}).get("tool_input")
+    herramienta; si no, al menos una). Sin el parámetro, las del tipo de
+    tarea (`tools`, decisión 212); con él, las que pide, que tienen que ser
+    de esas. Lanza `OrderRejected` (validationError) si falta el parámetro
+    y el tipo de tarea no dice cuáles, o si pide una desconocida o que no
+    vale para esa tarea: ningún robot la aceptaría."""
+    spec = actions.get(action.actionType) or {}
+    key = spec.get("tool_input")
     if not key:
         return None
+    allowed = list(spec.get("tools") or [])
     given = action.params()
     names = parse_tools(given[key]) if key in given else []
     if not names:
+        if allowed:
+            return allowed
         raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (herramienta)")
     unknown = [t for t in names if t not in tools]
     if unknown:
         raise OrderRejected(E_VALIDATION_FAILURE,
                             f"'{key}': herramienta '{unknown[0]}' desconocida; hay {sorted(tools)}")
+    outside = [t for t in names if allowed and t not in allowed]
+    if outside:
+        raise OrderRejected(E_VALIDATION_FAILURE,
+                            f"'{key}': {outside[0]} no vale para '{action.actionType}' (valen {', '.join(allowed)})")
     return names
 
 
@@ -111,8 +123,11 @@ def pick_tool(tools: str | Collection[str], mounted: str | None, changer: Collec
 
 def with_tool(action: Action, key: str, tool: str) -> Action:
     """Copia de `action` con `key` = `tool`: lo que recibe el driver cuando
-    la order valía con varias (la mission recibe un único código)."""
+    la order valía con varias (la mission recibe un único código), o cuando
+    no lo traía y valen las del tipo de tarea (decisión 212)."""
     params = [ActionParameter(p.key, tool if p.key == key else p.value) for p in action.actionParameters]
+    if key not in action.params():
+        params.append(ActionParameter(key, tool))
     return replace(action, actionParameters=params)
 
 

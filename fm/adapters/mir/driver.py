@@ -365,7 +365,8 @@ class MirDriver:
                 params.append(ParamInfo(k, "number", True, min=r and r.min, max=r and r.max,
                                         step=r and r.step))
             if a.tool_input:
-                params.append(ParamInfo(a.tool_input, "tool", True, sorted(self.cfg.tool_codes)))
+                # Con `tools` en el tipo de tarea (decisión 212) la order puede no traerla.
+                params.append(ParamInfo(a.tool_input, "tool", not a.tools, a.tools or sorted(self.cfg.tool_codes)))
             name = self.mission_names.get(a.mission, a.mission)
             out.append(ActionInfo(a.action_type, params, f"misión '{name}'"))
         return out

@@ -4282,6 +4282,47 @@ Con esto, el punto 1 de «En curso» queda probado con robot. Queda el 1b
      ningún input al que decir «herramienta». Dos pasos nuevos en «Robots
      con cambio de herramienta».
 
+## 2026-11-25 — Con qué herramientas se hace cada tipo de tarea
+
+212. **`actions.<tipo>.tools`: las herramientas con que se hace un tipo de
+     tarea**, en orden de preferencia (necesita `tool_input`). Antes la
+     herramienta la decidía siempre quien manda la order (decisión 184).
+     El usuario preguntó si no debería saberlo el FM; se buscó cómo lo hacen
+     otros: MiR Fleet limita con grupos de robots y de missions qué robots
+     hacen qué missions; Open-RMF configura en cada flota los tipos de tarea
+     que sabe hacer; VDA 5050 deja las capacidades en el `factsheet` y el
+     reparto al gestor; las patentes de gestión de flotas describen tareas
+     que listan los recursos que necesitan. El patrón común: **los
+     requisitos en el tipo de tarea**, las capacidades en el robot y el
+     gestor empareja. Ninguna fuente lleva la cuenta de la herramienta
+     montada de cada robot; eso es propio de este FM.
+     - Sin el parámetro en la order, valen las del tipo de tarea, en su
+       orden (`needed_tools`). Con él, solo se acota dentro de esas; una
+       fuera → `VALIDATION_FAILURE` («rq140 no vale para 'coger' (valen
+       vgc10, 2fg7)»). Sin `tools`, como antes: cualquiera del catálogo y la
+       order tiene que decir cuál.
+     - Al driver le llega siempre una (`with_tool` añade el parámetro si la
+       order no lo traía): la mission no cambia.
+     - Los drivers (MiR y sim) describen el parámetro como no obligatorio y
+       con solo esas, en su orden; la web no las reordena.
+     - «Nueva tarea»: salen ya marcadas y se acota quitando; si se dejan
+       todas, la web no manda el parámetro (el FM usa la lista y su orden).
+       El aviso de la tarea dice igualmente cuáles pide.
+     - Configurador: en la fila del input de herramienta, una casilla por
+       herramienta del catálogo; el orden en que se marcan es la preferencia
+       y se enseña debajo («Preferencia: 2fg7 → vgc10»). Una herramienta que
+       usa un tipo de tarea no se puede borrar del catálogo (como las de los
+       robots); el cargador lo comprueba también.
+     Probado: `pytest` 475 (8 nuevos: validación, lectura de la order,
+     asignación con el soporte, order dirigida, descripción en MiR y sim) y
+     la web con Chromium sin pantalla contra un FM simulado con broker
+     propio: `coger` con `tools: [2fg7, vgc10]` sale con las dos marcadas y
+     sin parámetro va a por `2fg7`; quitando esa, `vgc10`; `coger_libre`
+     (sin `tools`) sale sin marcar y no deja enviar; el Configurador enseña
+     las casillas y la preferencia. Sin errores en la consola. Probado por
+     el usuario con mir-2: `tools` puesto a `coger_herramienta` desde el
+     Configurador y tareas desde «Nueva tarea», correcto.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
