@@ -4387,6 +4387,45 @@ necesita (puntos 4 y 5 de lo que quedaba del #43); lo demás queda parado.
      driver retomando un trabajo, sin encontrarlo y con una macro, e ir a
      punto; el core con un job que no se puede retomar).
 
+## 2026-11-25 — Revisión de usabilidad de la web: fallos corregidos
+
+Un agente revisor recorrió la web como operario y como administrador
+(Chromium sin pantalla, contra un FM simulado con broker propio y una copia
+del catálogo; informe con 22 puntos y capturas). Se corrigen los **fallos**;
+las mejoras (jerga como `AUTOMATIC`/`RUNNING` y «cancelOrder», confirmar
+«Cancelar tarea», el aviso de cambiadores en móvil, motivos solo en
+`title`…) quedan en #45.
+
+216. **Correcciones:**
+     - «Nueva tarea»: cada aviso sigue su tarea. Ya asignada, del `state`
+       de su robot (el FM no manda `order_response` al acabar): en marcha,
+       terminada o, en rojo, «no terminó: <motivo>». En cola, su puesto sale
+       de `fleet/queue` (antes se quedaba el del `QUEUED`) y remite a «Cola
+       de tareas» en vez de repetir el botón de quitar. Se ven las 3 últimas
+       (eran 5): en móvil la cola va debajo.
+     - «Nuevo tipo de tarea»: la etiqueta del nombre ya no se parte, y antes
+       de elegir misión dice «Elige una misión para ver sus variables», no
+       «no tiene inputs».
+     - Sin ningún robot que sepa leer el catálogo (hoy solo el driver MiR):
+       Catálogo, Mapa y Sincronización lo dicen, en vez de «vacío» o «no hay
+       mapas» (`/api/fleet/maps` devuelve `reader`); «no aplica: su marca no
+       se sincroniza».
+     - Batería mínima que no supera la de ir a cargar: el aviso lo explica
+       sin «histéresis» y Guardar pide confirmarlo (el cargador solo avisa
+       en el log, así que se sigue pudiendo).
+     - Errores de Guardar con `fleet.yaml` en una línea (`{…}`) o claves en
+       la misma línea: dicen dónde, por qué y qué hacer, y la web añade que
+       los cambios siguen sin guardar.
+     - Guía: «habilitar el tipo de tarea» (no «su acción»), el glosario de
+       Posición, y `fleet.yaml`/`catalog/` de la instalación (FM_CONFIG,
+       FM_CATALOG; en Tknika, `mirur-instalacion`) en vez de
+       `config/fleet.yaml`.
+     Probado: `pytest` 486 (2 nuevos) y en Chromium contra la flota
+     simulada: tres tareas para dos robots (la tercera en cola, puesto 1, y
+     luego terminada en sim-2), una cancelada en rojo con su motivo, los
+     mensajes sin MiR, el formulario, la confirmación de batería y el error
+     de guardar. Sin errores en la consola.
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4564,6 +4603,22 @@ las del FM son placeholders y no hay tiempos que medir.
     - Cómo se editan en el Configurador los campos propios de cada marca
       (`goal_input`, `template` + `params`, `macro`, `mqtt_*`…) sin que el
       formulario sea solo del MiR.
+
+- **#45** **Mejoras de usabilidad de la revisión del 2026-11-25** (decisión
+    216; informe del revisor, puntos 10–22). Traducir estados y modos
+    (`AUTOMATIC`, `RUNNING`, «cancelada por cancelOrder», «Tarea ui-…/0»,
+    «orders» y «fleet/order» en los estados vacíos); decir por qué «Enviar
+    tarea» está desactivado; etiqueta de herramientas más corta; dos filas
+    «Estado» en Robots («Estado del robot» / «Última tarea»); mismos
+    nombres de botones en todas las pestañas («Pausa»/«Pausar») y no
+    depender del emoji ⏸; confirmar «Cancelar tarea» y su contraste
+    desactivado; motivo de espera en la cola más corto («Espera a sim-1 o
+    sim-2») y el tipo y la herramienta en el diálogo de quitar; plegar el
+    aviso de cambiadores en móvil; ordenar la preferencia de herramientas
+    con flechas; motivos de «Borrar» visibles (no solo en `title`); atajo a
+    la definición de tipos de tarea y foco al abrir su formulario;
+    descripción de cada tipo de tarea en el desplegable; «Aplicado en
+    caliente» en palabras llanas.
 
 - **#41** **Prueba: posición de los robots por WebSocket** (pedido el
     2026-11-03, sale de #40; decisión 166). Prueba de concepto **fuera del

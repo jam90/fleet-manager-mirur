@@ -386,3 +386,11 @@ def test_unidades_de_una_herramienta():
     assert "count" not in back
     with pytest.raises(EditError, match="count debe ser un entero"):
         apply_edits(TOOLS_YAML, {"tools": {"dh": {"code": 2, "count": 0}}})
+
+
+def test_bloque_en_una_linea_dice_que_hacer():
+    """Revisión de usabilidad (2026-11-25): el error dice dónde, por qué y qué hacer."""
+    text = YAML.replace("  sim-2:\n    driver: sim\n    actions: [coger]\n", "  sim-2: {driver: sim, actions: [coger]}\n")
+    with pytest.raises(EditError, match=r"«robots.sim-2» está escrito en una sola línea, entre llaves .* "
+                                        r"Pásalo a una clave por línea"):
+        apply_edits(text, {"robots": {"sim-2": {"battery_min": 30}}})

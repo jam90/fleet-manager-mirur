@@ -740,7 +740,8 @@
       <label><input type="checkbox" v-model="fmap.positions"> Posiciones</label>
     </div>
     <div class="resp bad" v-if="fmap.msg">{{ fmap.msg }}</div>
-    <p class="empty" v-if="!fmapCur && !fmap.msg">No hay ningún mapa con imagen en el catálogo{{ fleet.site ? ' del site de la flota' : '' }}.</p>
+    <p class="empty" v-if="!fmapCur && !fmap.msg && !fmap.reader">{{ NO_CATALOG_READER }}</p>
+    <p class="empty" v-else-if="!fmapCur && !fmap.msg">No hay ningún mapa con imagen en el catálogo{{ fleet.site ? ' del site de la flota' : '' }}.</p>
     <div class="fleet-map" v-if="fmapCur">
       <svg :view-box.camel="fmapView" role="img" :aria-label="'Mapa ' + fmapCur.name + ' con los robots'">
         <image :href="'/api/fleet/maps/' + fmapCur.guid + '.png'" x="0" y="0" :width="fmapCur.width" :height="fmapCur.height"/>
@@ -1035,14 +1036,17 @@
           <button class="btn primary" id="order-send" type="submit"
                   :disabled="!form.actionType || sending || toolMissing">Enviar tarea</button>
         </form>
-        <div class="resp" v-for="o in fleetOrders" :key="o.orderId" :class="o.status || 'pending'">
+        <!-- Cada tarea enviada desde aquí, con su estado de ahora: el de la cola mientras espera
+             y, ya asignada, el del robot que la hace (el FM no manda order_response al acabar). -->
+        <div class="resp" v-for="o in fleetOrders" :key="o.orderId" :class="respClass(o)">
           <code>{{ o.orderId }}</code> <b>{{ o.actionType }}</b><template v-if="o.tool"> · pide {{ o.tool }}</template>
           <template v-if="!o.status"> · esperando respuesta…</template>
-          <template v-else-if="o.status === 'ASSIGNED'"> → <b>{{ o.assignedSerial }}</b> · {{ o.description }}</template>
-          <template v-else-if="o.status === 'QUEUED'"> · en cola (puesto {{ o.queuePosition }}) · {{ o.description }}
-            <button class="btn danger" :id="'cancel-' + o.orderId" @click="cancelFleetOrder(o)">✖ Quitar de la cola</button></template>
-          <template v-else-if="o.status === 'CANCELLED'"> · cancelada</template>
-          <template v-else> · {{ o.status }} <code>{{ o.errorType }}</code> {{ o.errorDescription || o.description }}</template>
+          <template v-else-if="o.status === 'ASSIGNED'"> → <b>{{ o.assignedSerial }}</b> · {{ execText(o) }}</template>
+          <template v-else-if="o.status === 'QUEUED'"> · en cola (puesto {{ livePos(o) }}): se sigue y se quita en
+            <a href="#cola">Cola de tareas</a></template>
+          <template v-else-if="o.status === 'CANCELLED'"> · quitada de la cola</template>
+          <template v-else-if="o.status === 'FINISHED'"> → <b>{{ o.assignedSerial }}</b> · terminada</template>
+          <template v-else> · {{ STATUS_TEXT[o.status] || o.status }}: {{ o.errorDescription || o.description }}</template>
         </div>
       </div>
       <div class="panel" id="cola">
@@ -1191,7 +1195,8 @@
             <span class="resource-meta" v-else><span v-for="w in whereIs(it)" :key="w.serial" :class="'w-' + w.state" :title="w.title">{{ w.text }}</span></span>
           </button>
         </li>
-        <li class="empty" v-if="!catalogItems.length">No hay recursos que coincidan con los filtros seleccionados.</li>
+        <li class="empty" v-if="!catalogItems.length">{{ noCatalogReader ? NO_CATALOG_READER
+          : syncState.catalog.length ? 'No hay recursos que coincidan con los filtros seleccionados.' : 'El catálogo está vacío.' }}</li>
       </ul>
 
       <section class="panel catalog-detail" v-if="catItem" aria-labelledby="cat-detail-title">
@@ -1645,7 +1650,8 @@
     <div class="panel cfg-bar">
       <template v-if="!cfgState.editable">
         <span class="tag">solo lectura</span>
-        <span class="hint">Este FM no tiene activada la edición. Para cambiar la config, edita <code>config/fleet.yaml</code> y reinicia el FM.</span>
+        <span class="hint">Este FM no tiene activada la edición. Para cambiar la config, edita el <code>fleet.yaml</code> de la instalación (el que dice <code>FM_CONFIG</code> en
+          <code>.env</code>) y reinicia el FM.</span>
       </template>
       <template v-else-if="!cfgEdit.on">
         <button class="btn primary" id="cfg-edit" @click="startEdit" :disabled="!cfgState.robots.length">Editar</button>
@@ -1853,13 +1859,15 @@
               <code class="guid">{{ f.block }}.{{ f.key }}</code></dd>
           </template>
         </dl>
-        <p class="hint">Batería mínima para aceptar orders (<code>battery_min</code>); debe ser mayor que la de ir a cargar.</p>
+        <p class="hint">Batería mínima para aceptar tareas (<code>battery_min</code>). Tiene que ser mayor que la de ir a
+          cargar: si no, un robot que acaba de cargar lo justo recibe una tarea y vuelve a pedir carga enseguida.</p>
         <dl class="kv">
           <template v-for="r in cfgState.robots" :key="r.serial">
             <dt><label :for="'cfg-bmin-' + r.serial">{{ r.serial }}</label></dt>
             <dd><input v-if="cfgEdit.on" class="num-in" type="number" :id="'cfg-bmin-' + r.serial" min="0" max="100" step="1"
                        v-model.number="cfgEdit.draft.robots[r.serial].battery_min"><template v-else>{{ r.battery_min }}</template> %
-              <span class="warnline" v-if="batteryMin(r) <= floor()">⚠ no supera {{ floor() }} %: sin histéresis</span></dd>
+              <span class="warnline" v-if="batteryMin(r) <= floor()">⚠ no supera el {{ floor() }} % de ir a cargar: recibiría
+                tareas y volvería a pedir carga nada más salir del cargador</span></dd>
           </template>
         </dl>
       </div>
@@ -1929,7 +1937,8 @@
       <!-- Formulario de una action (claves del driver MiR: mission e inputs). -->
       <div class="act-form" v-if="actForm.open">
         <h4>{{ actForm.isNew ? 'Nuevo tipo de tarea' : 'Editar ' + actForm.name }}</h4>
-        <label class="field" v-if="actForm.isNew">Nombre (<code>actionType</code>)
+        <!-- Un solo elemento: en .field (grid) cada trozo iría en su línea. -->
+        <label class="field" v-if="actForm.isNew"><span>Nombre (el <code>actionType</code> de las orders)</span>
           <input id="act-name" v-model.trim="actForm.name" placeholder="p. ej. traer" autocomplete="off"></label>
         <label class="field">Misión
           <select id="act-mission" v-model="actForm.mission" @change="onMissionChange">
@@ -1970,7 +1979,8 @@
               </tr>
             </tbody>
           </table>
-          <p class="hint" v-else>Esta misión no tiene inputs.</p>
+          <p class="hint" v-else-if="!actForm.mission">Elige una misión para ver sus variables.</p>
+          <p class="hint" v-else>Esta misión no tiene variables (en la web del MiR no hay ningún valor marcado como variable).</p>
           <div class="acts"><input class="num-in" style="width: 14em" v-model.trim="actForm.newInput" placeholder="añadir input a mano" @keyup.enter="addInput">
             <button class="btn" @click="addInput" :disabled="!actForm.newInput">Añadir</button></div>
           <span class="hint">«No declarar»: si la order lo trae y la misión lo tiene, se pasa igual, pero no es obligatorio.
@@ -2076,7 +2086,7 @@
             · {{ catMatches.elsewhere }} más en otros sites (marca «Ver todo el catálogo» arriba)</template>.
             «Todo» y las casillas de sección marcan solo lo que se ve; «Nada» lo desmarca todo, también lo que no se ve.</p>
         </div>
-        <p class="empty" v-if="!syncCatalog.length">El catálogo está vacío o ningún robot ofrece sincronización.</p>
+        <p class="empty" v-if="!syncCatalog.length">{{ noCatalogReader ? NO_CATALOG_READER : 'El catálogo está vacío.' }}</p>
         <details v-for="sec in catSections" :key="sec.key" class="cat-sec" :open="sec.open">
           <summary>
             <input type="checkbox" :aria-label="'Seleccionar ' + sec.label" :checked="sec.all"
@@ -2227,7 +2237,7 @@
   <main v-show="tab === 'guia'">
     <h2 class="page-title">Guía</h2>
     <p class="page-sub">Usa el menú de la izquierda para cambiar de apartado sin perder la orientación. Cada procedimiento incluye enlaces al siguiente paso.</p>
-    <div class="panel"><h3>Cómo se organiza el FM</h3><p><b>Trabajo diario:</b> Operación para enviar y supervisar tareas; Mapa para localizar robots; Robots para consultar su detalle y actuar.</p><p><b>Administración:</b> Catálogo para buscar un recurso y, en su ficha, ver en qué robots está, traer lo cambiado en un robot o quitarlo; también para crear o importar recursos. Sincronización para llevarlos a los robots, a varios a la vez; Configuración para definir los tipos de tarea, en qué robots y las reglas.</p><p>Recorrido de ejemplo: <a href="#catalogo">buscar un recurso</a> → sincronizarlo con un robot → <a href="#configurador">habilitar su acción</a> → <a href="#operacion">enviar una tarea</a>.</p></div>
+    <div class="panel"><h3>Cómo se organiza el FM</h3><p><b>Trabajo diario:</b> Operación para enviar y supervisar tareas; Mapa para localizar robots; Robots para consultar su detalle y actuar.</p><p><b>Administración:</b> Catálogo para buscar un recurso y, en su ficha, ver en qué robots está, traer lo cambiado en un robot o quitarlo; también para crear o importar recursos. Sincronización para llevarlos a los robots, a varios a la vez; Configuración para definir los tipos de tarea, en qué robots y las reglas.</p><p>Recorrido de ejemplo: <a href="#catalogo">buscar un recurso</a> → sincronizarlo con un robot → <a href="#configurador">habilitar el tipo de tarea que lo usa</a> → <a href="#operacion">enviar una tarea</a>.</p></div>
     <div class="panel guide">
 
       <!-- Para quien llega sin nada (decisión 128): el orden de todo lo demás. -->
@@ -2285,7 +2295,8 @@
             posición como parámetro, vale en cualquier mapa que tenga una con ese nombre.</dd>
           <dt>Grupo</dt><dd>Carpeta de misiones en la web del MiR (p. ej. <code>mirur-tknika</code>). Es de toda la flota, no de
             un site; toda misión está en uno.</dd>
-          <dt>Posición</dt><dd>Punto con nombre en un mapa del MiR. Las orders la piden por nombre (p. ej. <code>target_pos</code>).</dd>
+          <dt>Posición</dt><dd>Punto con nombre en un mapa del MiR. Las tareas la piden por su nombre (p. ej. <code>H2D1-VL</code>) en una variable de la misión (p. ej.
+            <code>target_pos</code>).</dd>
           <dt>Tipo de tarea</dt><dd>Lo que puede pedir una order (p. ej. <code>coger</code>): lanza una misión con sus
             parámetros. En VDA 5050 es una <i>action</i>, y su nombre, el <code>actionType</code>; por eso en
             <code>fleet.yaml</code> están en <code>actions:</code>. Se define una vez y se habilita robot a robot.</dd>
@@ -2333,9 +2344,12 @@
               historia en el robot, <code>scripts/mission_durations.py</code> te propone uno.</p></li>
           <li><b>Probarla</b><a class="where" href="#operacion">→ Operación</a>
             <p>En «Nueva tarea» elige el tipo de tarea y sus parámetros. <b>El robot se va a mover:</b> mira antes que el
-              camino esté libre.</p></li>
+              camino esté libre. Debajo sale cada tarea enviada con su estado de ahora: en cola (con su puesto; se quita en
+              «Cola de tareas»), en marcha en un robot, terminada o, en rojo, por qué no terminó.</p></li>
           <li><b>Guardarla en git</b><span class="where">terminal</span>
-            <p>Lo nuevo está en <code>catalog/</code> y en <code>config/fleet.yaml</code>: haz commit de los dos.</p></li>
+            <p>Lo nuevo está en la carpeta del catálogo y en el <code>fleet.yaml</code> de la instalación (los que dicen
+              <code>FM_CATALOG</code> y <code>FM_CONFIG</code> en <code>.env</code>; en Tknika, el repo
+              <code>mirur-instalacion</code>): haz commit de los dos allí.</p></li>
         </ol>
       </details>
 
@@ -2842,6 +2856,7 @@ createApp({
         r.connection = payload.connectionState;
       } else if (pt.subtopic === 'state') {
         diffState(pt.serial, r.state, payload);
+        followOrders(pt.serial, payload);
         r.state = payload;
       }
     }
@@ -2869,6 +2884,27 @@ createApp({
           p.instant[a.actionId] = a.actionStatus;
           if (a.actionId.startsWith('ui-')) live[serial].feedback = `${a.actionType}: ${a.actionStatus}`;
         }
+      }
+    }
+
+    // Estado de una tarea asignada, del `state` de su robot (lo apunta `followOrders`).
+    const EXEC_TEXT = { WAITING: 'asignada, empezando', INITIALIZING: 'asignada, empezando', RUNNING: 'en marcha',
+                        PAUSED: 'en pausa', FINISHED: 'terminada', FAILED: 'no terminó' };
+    const STATUS_TEXT = { REJECTED: 'rechazada', FAILED: 'falló', EXPIRED: 'caducó en la cola' };
+    const execText = o => (EXEC_TEXT[o.exec] || 'asignada') + (o.exec === 'FAILED' && o.execResult ? ': ' + o.execResult : '');
+    const respClass = o => !o.status ? 'pending' : o.status !== 'ASSIGNED' ? o.status
+      : o.exec === 'FAILED' ? 'FAILED' : o.exec === 'FINISHED' ? 'ASSIGNED' : 'pending';
+    // El puesto de ahora, de la cola publicada; el del order_response se queda viejo al moverse la cola.
+    const livePos = o => { const t = fleetQueue.tasks.find(x => x.orderId === o.orderId);
+                           return t ? queuePos(t) : o.queuePosition; };
+    function followOrders(serial, s) {
+      for (const o of fleetOrders) {
+        if (o.status !== 'ASSIGNED' || o.assignedSerial !== serial || s.orderId !== o.orderId) continue;
+        const a = (s.actionStates || [])[0];
+        if (!a) continue;
+        o.exec = a.actionStatus;
+        const err = (s.errors || []).find(e => (e.errorReferences || []).some(r => r.referenceValue === o.orderId));
+        o.execResult = a.actionResult || (err && err.errorDescription) || '';
       }
     }
 
@@ -2955,7 +2991,7 @@ createApp({
       // Sin parámetro (las del tipo de tarea, decisión 212) se dice cuáles son, como en la cola.
       fleetOrders.unshift({ orderId: (await r.json()).orderId, actionType: form.actionType, status: null,
                             tool: tool ? params[tool.key] || (tool.choices || []).join(',') : '' });
-      if (fleetOrders.length > 5) fleetOrders.pop();
+      if (fleetOrders.length > 3) fleetOrders.pop();     // en móvil, la cola va debajo: no la alejes
     }
 
     // ---------------- cola de la flota (fleet/queue, docs/plan-cola.md)
@@ -2991,11 +3027,6 @@ createApp({
 
     // Saca de la cola del FM una order que aún espera robot (decisión 156).
     // El resultado llega por order_response (CANCELLED) como cualquier otro.
-    async function cancelFleetOrder(o) {
-      const r = await fetch(`/api/orders/${encodeURIComponent(o.orderId)}/cancel?wait=3`, { method: 'POST' });
-      if (!r.ok) addEvent('ui', `no se pudo cancelar ${o.orderId}: ` + (await r.json()).detail);
-    }
-
     // ---------------- vistas derivadas
     const actionCatalog = computed(() => {
       const byType = {};
@@ -3236,7 +3267,7 @@ createApp({
       return previewFresh.value && go.length ? `Desplegar en ${go.join(', ').replace(/, ([^,]*)$/, ' y $1')}` : 'Desplegar';
     });
     function syncRobotState(r) {
-      if (!r.supported) return { key: '', label: 'no aplica' };
+      if (!r.supported) return { key: '', label: 'no aplica: su marca no se sincroniza' };
       if (r.deploying) return { key: 'ejecutando', label: 'desplegando' };
       if (!r.online) return { key: 'sinconexion', label: 'sin conexión' };
       if (r.busy) return { key: 'encola', label: 'ocupado' };
@@ -3383,7 +3414,7 @@ createApp({
       const rep = syncState.reports[r.serial];
       const row = { serial: r.serial, supported: r.supported, details: [], fixable: false, surplus: [],
                     canCheck: r.supported && r.online && !r.deploying && !r.checking };
-      if (!r.supported) return { ...row, key: '', label: 'no aplica', when: '' };
+      if (!r.supported) return { ...row, key: '', label: 'no aplica: su marca no se sincroniza', when: '' };
       if (r.checking) Object.assign(row, { key: 'ejecutando', label: 'comprobando…' });
       if (!rep || !rep.state) return { key: r.online ? '' : 'sinconexion', label: r.online ? 'sin comprobar' : 'sin conexión',
                                        when: '', ...row };
@@ -4143,7 +4174,7 @@ createApp({
         const out = await res.json();
         // FastAPI da `detail` como texto (nuestros errores) o como lista (validación del cuerpo).
         const detail = Array.isArray(out.detail) ? out.detail.map(e => e.msg).join('; ') : out.detail;
-        if (!res.ok) { say('no se ha guardado: ' + detail, 'bad'); return; }
+        if (!res.ok) { say('No se ha guardado: ' + detail + '. Tus cambios siguen aquí, sin guardar.', 'bad'); return; }
         if (!out.changed) { cancelEdit(); say('no había nada que cambiar'); return; }
         const where = out.backup ? `Guardado (copia en ${out.backup}). ` : '';
         if (out.restart.length) { cancelEdit(); say(where + 'Requiere reiniciar el FM: ' + out.restart.join('; '), 'warn'); loadConfig(); return; }
@@ -4153,7 +4184,15 @@ createApp({
       } catch (e) { say('no se pudo contactar con el FM', 'bad'); }
       finally { cfgEdit.saving = false; }
     }
-    const saveConfig = () => postConfig('/api/config', cfgEdits.value);
+    // Una batería mínima que no supera la de ir a cargar se puede guardar (el FM solo avisa en el log),
+    // pero casi siempre es un error: se pide confirmarlo en palabras llanas.
+    function saveConfig() {
+      const low = cfgState.robots.filter(r => batteryMin(r) <= floor()).map(r => `${r.serial} (${batteryMin(r)} %)`);
+      if (low.length && !confirm(`La batería mínima para aceptar tareas de ${low.join(', ')} no supera el ${floor()} % `
+          + 'con el que van a cargar.\n\nUn robot así recibiría tareas con la batería justa y volvería a pedir carga nada '
+          + 'más salir del cargador.\n\n¿Guardar igualmente?')) return;
+      return postConfig('/api/config', cfgEdits.value);
+    }
     const reloadFile = () => postConfig('/api/config/reload');
     // Aviso del hilo principal por el WebSocket (topic fm/config).
     function onConfigApplied(p) {
@@ -4317,13 +4356,19 @@ createApp({
     const promptsElsewhere = computed(() => prompts.value.filter(r => !(ui.tab === 'robot' && r.serial === robotSel.value)));
     // También en el título: se ve con la pestaña del navegador en segundo plano.
     watch(() => prompts.value.length, n => { document.title = (n ? `(${n}) ¿? ` : '') + 'Fleet Manager'; }, { immediate: true });
+    // Sin ningún robot que sepa leer el catálogo (hoy, solo el driver MiR), Catálogo, Mapa y
+    // Sincronización no tienen de dónde sacarlo: se dice eso, no que esté vacío.
+    const NO_CATALOG_READER = 'Ningún robot de esta flota puede leer el catálogo (hoy solo lo hacen los MiR): '
+      + 'sus misiones, posiciones y mapas no se ven ni se sincronizan desde aquí.';
+    const noCatalogReader = computed(() => syncState.robots.length > 0 && !syncState.robots.some(r => r.supported));
     // ---------------- Flota (decisión 141): mapa del catálogo + robots encima
-    const fmap = reactive({ maps: [], sel: '', zones: true, positions: false, crop: {}, msg: '' });
+    const fmap = reactive({ maps: [], sel: '', zones: true, positions: false, crop: {}, msg: '', reader: true });
     async function loadFleetMaps() {
       try {
         const r = await fetch('/api/fleet/maps');
         if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-        fmap.maps = (await r.json()).maps; fmap.msg = '';
+        const got = await r.json();
+        fmap.maps = got.maps; fmap.reader = got.reader !== false; fmap.msg = '';
       } catch (e) { fmap.msg = 'No se pudieron leer los mapas del catálogo: ' + e.message; }
     }
     // Metros del mapa → píxeles del PNG: origen en la esquina inferior
@@ -4773,8 +4818,8 @@ createApp({
 
     loadFleet();
     connect();
-    return { navGroups, pageLabel, catalogVisible, syncResource, mapHash, cfgJump, fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere,
-             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, toolMissing, instant, sendOrder, cancelFleetOrder, fleetQueue, queueBusy, queuePos, waitedFor, queueAction, hasRange,
+    return { navGroups, NO_CATALOG_READER, noCatalogReader, pageLabel, catalogVisible, syncResource, mapHash, cfgJump, fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere,
+             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, toolMissing, instant, sendOrder, fleetQueue, queueBusy, queuePos, execText, respClass, livePos, STATUS_TEXT, waitedFor, queueAction, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, nHiddenSel, selectSection, selectAll, previewFresh,

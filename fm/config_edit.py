@@ -439,7 +439,8 @@ def _set(text: str, op: Op) -> str:
         where = f"{where}.{key}" if where else key
         if i < len(op.path) - 1:
             if not isinstance(child, yaml.MappingNode):
-                raise EditError(f"{where} no es un bloque: edítalo a mano")
+                raise EditError(f"en fleet.yaml, «{where}» no es un bloque con una clave por línea; "
+                                f"cámbialo a mano en el fichero")
             node = child
             continue
         # Clave encontrada: sustituir su valor.
@@ -472,7 +473,12 @@ def _insert(text: str, parent, rest: tuple[str, ...], op: Op, where: str, depth:
     if len(rest) != 1:
         raise EditError(f"{where + '.' if where else ''}{rest[0]} no existe en fleet.yaml")
     if not isinstance(parent, yaml.MappingNode) or parent.flow_style or not parent.value:
-        raise EditError(f"{where} tiene una forma que no se sabe editar sin estropearla: edítalo a mano")
+        # El FM edita el texto línea a línea para no tocar comentarios ni orden: con
+        # `{…}` en una línea (o un bloque vacío) no sabe dónde poner la clave nueva.
+        forma = ("está escrito en una sola línea, entre llaves ({…})" if getattr(parent, "flow_style", False)
+                 else "está vacío" if isinstance(parent, yaml.MappingNode) else "no es un bloque")
+        raise EditError(f"en fleet.yaml, «{where}» {forma} y el FM no sabe añadirle «{rest[0]}» sin estropearlo. "
+                        f"Pásalo a una clave por línea (o añade «{rest[0]}» a mano en el fichero) y vuelve a guardar")
     col = parent.value[0][0].start_mark.column
     at = _line_end(text, _last_index(parent))
     block = _render(rest[0], op.value, col, depth, op.comment)
@@ -493,7 +499,8 @@ def _delete(text: str, op: Op) -> str:
     k, v = found
     a = _line_start(text, k.start_mark.index)
     if text[a:k.start_mark.index].strip():
-        raise EditError(f"{'.'.join(op.path)} comparte línea con otra clave: edítalo a mano")
+        raise EditError(f"en fleet.yaml, «{'.'.join(op.path)}» comparte línea con otra clave y el FM no sabe "
+                        f"quitarla sin estropearla: pásalo a una clave por línea o cámbialo a mano en el fichero")
     b = _line_end(text, _last_index(v))
     if len(op.path) == 1 and text[max(0, a - 2):a] == "\n\n" and b + 1 >= len(text):
         a -= 1                            # el bloque del final se fue con su línea en blanco (`_insert`)

@@ -569,7 +569,9 @@ class WebServer:
         except Exception as e:              # catálogo roto: la sección lo dice y el resto sigue
             log.warning("[web] no se pudieron leer los mapas del catálogo: %s", e)
             raise HTTPException(500, f"no se pudieron leer los mapas del catálogo: {e}")
-        return {"maps": maps, "site": self.cfg.site}
+        # `reader`: hay algún robot que sabe leer el catálogo (hoy, un MiR). Sin
+        # ninguno, la web no dice «no hay mapas», sino por qué no se ven.
+        return {"maps": maps, "site": self.cfg.site, "reader": first is not None}
 
     def _first_creator(self, capability: str = "create_choices"):
         """El catálogo es común: basta con el primer robot que ofrezca `capability`."""

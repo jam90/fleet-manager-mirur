@@ -842,3 +842,11 @@ def test_finished_de_una_order_repetida_es_final():
                          "assignedSerial": "sim-1", "description": "terminada en sim-1"})
     rec = TestClient(srv.app).get("/api/orders/mm-1").json()
     assert (rec["status"], rec["serial"], rec["description"]) == ("FINISHED", "sim-1", "terminada en sim-1")
+
+
+def test_mapas_sin_robot_que_lea_el_catalogo():
+    """Revisión de usabilidad (2026-11-25): con una flota sin MiR, la web no dice
+    «no hay mapas» sino que ningún robot puede leer el catálogo."""
+    srv, _ = _server()
+    got = TestClient(srv.app).get("/api/fleet/maps").json()
+    assert got["maps"] == [] and got["reader"] is False
