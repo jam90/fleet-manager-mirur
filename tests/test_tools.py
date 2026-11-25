@@ -11,7 +11,8 @@ from fm.config import ConfigError, load_config
 from fm.fleet import Dispatcher
 from fm.reload import restart_reasons
 from fm.robot import Robot
-from fm.tools import changer_notice, needed_tool, tool_name, tool_problem, stock_problem, tool_holders
+from fm.tools import (changer_notice, needed_tools, parse_tools, pick_tool, stock_problem, tool_holders,
+                      tool_name, tool_problem, with_tool)
 from fm.vda5050.header import HeaderCounter, make_header, topic
 from fm.vda5050.order import Action, ActionParameter, OrderRejected
 from test_fleet import FLEET_MAN, FakeBus
@@ -85,14 +86,41 @@ def test_config_errores(tmp_path, bad, msg):
 
 
 # --------------------------------------------------- funciones puras (fm/tools.py)
-def test_needed_tool():
-    actions, tools = {"coger": {"tool_input": "garra"}, "ir_a": {}}, {"vgc10": {}}
-    assert needed_tool(Action("ir_a", "a"), actions, tools) is None
-    assert needed_tool(Action("coger", "a", actionParameters=[ActionParameter("garra", "vgc10")]), actions, tools) == "vgc10"
-    with pytest.raises(OrderRejected, match="falta el parámetro obligatorio 'garra'"):
-        needed_tool(Action("coger", "a"), actions, tools)
+def _coger(garra):
+    return Action("coger", "a", actionParameters=[ActionParameter("garra", garra), ActionParameter("pieza", 3)])
+
+
+def test_needed_tools():
+    actions, tools = {"coger": {"tool_input": "garra"}, "ir_a": {}}, {"vgc10": {}, "2fg7": {}}
+    assert needed_tools(Action("ir_a", "a"), actions, tools) is None
+    assert needed_tools(_coger("vgc10"), actions, tools) == ["vgc10"]
+    # Varias (decisión 211): con comas o como lista JSON; el orden es la preferencia.
+    assert needed_tools(_coger(" 2fg7, vgc10 ,2fg7"), actions, tools) == ["2fg7", "vgc10"]
+    assert needed_tools(_coger(["vgc10", "2fg7"]), actions, tools) == ["vgc10", "2fg7"]
+    for falta in (Action("coger", "a"), _coger(""), _coger(" , ")):
+        with pytest.raises(OrderRejected, match="falta el parámetro obligatorio 'garra'"):
+            needed_tools(falta, actions, tools)
     with pytest.raises(OrderRejected, match="herramienta 'pinza' desconocida"):
-        needed_tool(Action("coger", "a", actionParameters=[ActionParameter("garra", "pinza")]), actions, tools)
+        needed_tools(_coger("vgc10,pinza"), actions, tools)
+
+
+def test_varias_herramientas_elegir_una():
+    assert parse_tools("a") == ["a"] and parse_tools(["a", "b", "a"]) == ["a", "b"]
+    # La que lleva, si es de la lista, aunque no sea la primera.
+    assert pick_tool(["a", "b"], "b", {"a", "b"}) == ("b", "")
+    # Si no, la primera de la lista que tenga en su cambiador.
+    assert pick_tool(["a", "b", "c"], "", {"c", "b"}) == ("b", "")
+    # La primera no queda en el soporte: la siguiente.
+    busy = {"a": "no queda a libre en el soporte (ocupada por x)"}
+    assert pick_tool(["a", "b"], "", {"a", "b"}, lambda t: busy.get(t, "")) == ("b", "")
+    assert pick_tool(["a"], "", {"a", "b"}, lambda t: busy.get(t, "")) == (None, busy["a"])
+    # Ninguna: el motivo las nombra todas.
+    assert tool_problem(["a", "c"], "b", {"d"}) == "lleva b y no tiene a ni c en su cambiador"
+    assert tool_problem(["a", "c"], "b", ()) == "lleva b, no a ni c (sin cambiador)"
+    assert pick_tool(["a", "c"], "b", ()) == (None, "lleva b, no a ni c (sin cambiador)")
+    # Al driver le llega una sola; lo demás de la action, igual.
+    one = with_tool(_coger("vgc10,2fg7"), "garra", "2fg7")
+    assert one.params() == {"garra": "2fg7", "pieza": 3} and _coger("x").params()["garra"] == "x"
 
 
 def test_tool_problem_y_nombres():
@@ -119,6 +147,18 @@ def test_asignador_filtra_y_prefiere_la_que_ya_lleva(tmp_path):
     assert r.serial == "sim-1" and r.rejections == {"sim-2": "lleva 2fg7, no vgc10 (sin cambiador)"}
     # Sin herramienta pedida, como siempre: más batería.
     assert assign("ir_a", snaps, cfg).serial == "sim-1"
+
+
+def test_asignador_con_varias_herramientas(tmp_path):
+    cfg = _cfg(tmp_path)
+    snaps = {"sim-1": RobotSnapshot("sim-1", 50, False, tool=""),
+             "sim-2": RobotSnapshot("sim-2", 40, False, tool="2fg7")}
+    # Valen los dos; va el que ya lleva una de la lista, y cada uno con la suya.
+    r = assign("coger", snaps, cfg, ["vgc10", "2fg7"])
+    assert r.ranking == ["sim-2", "sim-1"] and r.tools == {"sim-2": "2fg7", "sim-1": "vgc10"}
+    # Una sola de la lista no la puede usar sim-2 (sin cambiador): fuera, con el motivo.
+    r = assign("coger", snaps, cfg, ["vgc10"])
+    assert r.ranking == ["sim-1"] and r.rejections["sim-2"] == "lleva 2fg7, no vgc10 (sin cambiador)"
 
 
 # -------------------------------------------- cola de fleet/order y robots simulados
@@ -255,6 +295,32 @@ def test_la_segunda_order_espera_a_que_quede_la_ventosa(tmp_path):
         r.poll()
     disp.tick()
     assert _resp(bus, "o2")["assignedSerial"] == "sim-1"
+
+
+def test_varias_herramientas_con_el_soporte(tmp_path):
+    """Decisión 211: con la ventosa ya en sim-1, una order que vale con la
+    ventosa o la pinza va a sim-2 con la pinza (la mission recibe una sola)."""
+    disp, robots, bus = _fleet(tmp_path, STOCK)
+    _send(disp, "o1", "vgc10")
+    assert _resp(bus, "o1")["assignedSerial"] == "sim-1"
+    _send(disp, "o2", "vgc10,2fg7")
+    assert _resp(bus, "o2")["assignedSerial"] == "sim-2"
+    assert robots["sim-2"].requested_tool() == "2fg7"
+    # Las dos ocupadas y sim-3 sin ninguna de ellas: la tercera espera y la cola dice lo que pide.
+    _send(disp, "o3", "2fg7,vgc10")
+    assert _resp(bus, "o3")["status"] == "QUEUED"
+    queue = [p for t, p in bus.published if t.endswith("/queue")][-1]["tasks"]
+    assert queue[0]["orderId"] == "o3" and queue[0]["tool"] == "2fg7,vgc10"
+
+
+def test_order_dirigida_con_varias_herramientas(tmp_path):
+    disp, robots, bus = _fleet(tmp_path, STOCK)
+    _send(disp, "o1", "vgc10")                                       # sim-1 va a por la ventosa
+    disp.handle(topic("SIM", "sim-2", "order"), _order("d1", "vgc10,2fg7", serial="sim-2", man="SIM"))
+    assert robots["sim-2"].requested_tool() == "2fg7"                # la ventosa no queda: la pinza
+    disp.handle(topic("SIM", "sim-3", "order"), _order("d2", "vgc10,2fg7", serial="sim-3", man="SIM"))
+    errors = [e for e in robots["sim-3"].orders.order_errors if e.errorType == "TOOL_NOT_AVAILABLE"]
+    assert errors and "lleva rq140, no vgc10 ni 2fg7 (sin cambiador)" in errors[0].errorDescription
 
 
 def test_sin_count_no_se_cuenta(tmp_path):

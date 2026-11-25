@@ -16,7 +16,7 @@ from fm.idle import IdleGuard
 from fm.maintenance import MaintenanceStore
 from fm.orders import OrderTracker, pick_action
 from fm.vda5050.order import Order, OrderRejected
-from fm.tools import needed_tool, tool_problem
+from fm.tools import needed_tools, pick_tool, tool_problem, with_tool
 from fm.vda5050.state import (E_MOBILE_ROBOT_NOT_AVAILABLE, E_ORDER_EXECUTION_FAILED,
                               E_ROBOT_OUTSIDE_SITE, E_ROBOT_UNREACHABLE, E_TOOL_NOT_AVAILABLE, I_MAINTENANCE,
                               I_MAINTENANCE_PENDING, I_TOOL_REQUESTED, Error, Info, State)
@@ -292,9 +292,11 @@ class Robot:
             self.log.info("en mantenimiento (SERVICE): el FM no le manda nada")
         self._in_service = self.in_service
 
-    def translate_order(self, order: Order) -> Job:
+    def translate_order(self, order: Order, tool: str | None = None) -> Job:
         """Valida reglas de ciclo de vida + traduce a `Job` del driver. Sin red.
-        Lanza IgnoreOrder / OrderRejected."""
+        Lanza IgnoreOrder / OrderRejected. `tool`: la herramienta con que la
+        hará, si ya la ha elegido el `Dispatcher` (decisión 211); si no, la
+        elige el robot entre las que pide la order."""
         self.orders.check_new(order, self.last_telemetry)
         if self.in_maintenance:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE, self.maintenance_reason)
@@ -304,22 +306,36 @@ class Robot:
             raise OrderRejected(E_MOBILE_ROBOT_NOT_AVAILABLE,
                                 "el robot ejecuta un trabajo ajeno al FM (lanzado desde la web)")
         action = pick_action(order, self.orders.done_action_ids(order))
-        self._check_tool(action)
-        return self.driver.translate(action)
+        return self.driver.translate(self.resolve_tool(action, tool))
 
-    def _check_tool(self, action) -> None:
+    def tool_options(self, action) -> list[str] | None:
+        """Las herramientas con que vale `action` en este robot (None = su
+        action no usa herramienta). Lanza validationError como `needed_tools`."""
+        key = self.cfg.tool_inputs.get(action.actionType)
+        if not key:
+            return None
+        return needed_tools(action, {action.actionType: {"tool_input": key}}, self.cfg.raw.get("tool_codes") or {})
+
+    def resolve_tool(self, action, tool: str | None = None):
         """Si la order pide herramienta (decisión 184), este robot tiene que
         llevarla o tenerla en su cambiador. En una `fleet/order` ya lo ha
         mirado el asignador; aquí cuenta para las dirigidas a este robot y por
-        si ha cambiado lo que lleva desde entonces."""
-        key = self.cfg.tool_inputs.get(action.actionType)
-        if not key:
-            return
-        tool = needed_tool(action, {action.actionType: {"tool_input": key}}, self.cfg.raw.get("tool_codes") or {})
+        si ha cambiado lo que lleva desde entonces. Devuelve la action con UNA
+        herramienta (decisión 211): la elegida, o la que prefiere este robot."""
+        options = self.tool_options(action)
+        if options is None:
+            return action
         t = self.last_telemetry
-        problem = tool_problem(tool, t.tool if t else None, self.cfg.tool_changer)
+        mounted = t.tool if t else None
+        if tool is None:
+            tool, problem = pick_tool(options, mounted, self.cfg.tool_changer)
+        elif tool not in options:
+            problem = f"'{tool}' no es ninguna de las que pide la order ({', '.join(options)})"
+        else:
+            problem = tool_problem(tool, mounted, self.cfg.tool_changer)
         if problem:
             raise OrderRejected(E_TOOL_NOT_AVAILABLE, problem)
+        return with_tool(action, self.cfg.tool_inputs[action.actionType], tool)
 
     def execute(self, order: Order, job: Job, priority: int = 0) -> str:
         """Lanza el job en el robot y lo registra en el tracker. Devuelve el job_id.

@@ -4237,6 +4237,51 @@ del *If* (solo se hace si hay cambio); no afecta a la prueba del FM.
 Con esto, el punto 1 de «En curso» queda probado con robot. Queda el 1b
 (una order que valga con varias herramientas).
 
+## 2026-11-25 — Una order que vale con varias herramientas (punto 1b)
+
+211. **El parámetro de la herramienta admite varias**: `garra=dh,vgc10`
+     (texto con comas, como se escribe a mano y como sale de la web) o una
+     lista JSON. El orden es la preferencia de quien manda la order.
+     - **El FM elige UNA por robot** (`fm/tools.py::pick_tool`): la que ya
+       lleva, si es de la lista; si no, la primera de la lista que tenga en
+       su cambiador y que quede libre en el soporte (decisión 196). Con
+       `dh,vgc10` y la `dh` puesta en otro robot, va a por la `vgc10`.
+     - **Al driver le llega la order con una sola** (`with_tool`): la
+       mission recibe un único código, como antes, y no cambia nada en
+       Blockly ni en los drivers. `TOOL_REQUESTED` y la reserva del soporte
+       usan la elegida, porque salen de la action ya resuelta.
+     - Asignador: un robot vale si puede usar alguna; primero los que ya
+       llevan una de la lista, luego batería. `AssignResult.tools` dice con
+       cuál la haría cada candidato y el `Dispatcher` se la pasa a
+       `Robot.translate_order(order, tool)`. En una order dirigida la elige
+       el propio FM con el soporte (`_directed_tool`). Los motivos nombran
+       todas: «lleva rq140, no vgc10 ni 2fg7 (sin cambiador)».
+     - En `fleet/queue` y en la web, la tarea dice «pide dh,vgc10», como
+       vino. En «Nueva tarea» la herramienta pasa de desplegable a
+       **casillas**; el orden en que se marcan es la preferencia (lo dice la
+       leyenda) y sin ninguna no se envía.
+     - **Limitación:** la elegida no se guarda en la cola (SQLite). Si el
+       FM se reinicia con una de varias en marcha, al retomarla se supone
+       la que lleve el robot (lo normal, ya cambiada) o la que elegiría; solo
+       afecta a la reserva del soporte y a `TOOL_REQUESTED`.
+     Probado: `pytest` 467 (5 nuevos en `test_tools.py`: lectura del
+     parámetro, elección, asignador, soporte con la cola y order dirigida)
+     y la web con Chromium sin pantalla contra un FM simulado con broker
+     propio (tres `sim`, una ventosa y una pinza en el soporte): casillas,
+     «Enviar» deshabilitado sin ninguna, `vgc10` → sim-1, `vgc10,2fg7` →
+     sim-2 con `2fg7`, la tercera en cola y luego a sim-1 con la `vgc10`
+     que ya llevaba; sin errores en la consola y sin scroll a 390 px. Guía
+     («Una tarea que vale con varias») y README al día. **Falta con mir-2**
+     (hay que reiniciar el FM: cambia el servidor).
+     Probado con mir-2 (FM reiniciado): `dh,vgc10` con `vgc10` puesta → sin
+     cambio; `cgi,dh` → cambia a `cgi` (registro 5 = 1: la mission recibió
+     un solo código); `dh,cgi` con `cgi` puesta → sin cambio.
+     Guía, a raíz de una pregunta del usuario: la mission tiene que tener una
+     **variable** para la herramienta en Blockly, y el FM tiene que verla en
+     el catálogo (capturar o traer); sin ella, el Configurador no ofrece
+     ningún input al que decir «herramienta». Dos pasos nuevos en «Robots
+     con cambio de herramienta».
+
 ## Pendiente (a 2026-10-29)
 
 Lista única de lo abierto. **Los números (`#21`) son identificadores, no orden:** se
@@ -4279,7 +4324,8 @@ misiones ficticias en mir-2; luego 1b y 2)
    (haciendo de brazo), y una `coger` que lo escribe en el 4 y, si no
    coincide con el 5, *Load mission* de la de cambio. **Hecho el
    2026-11-25** (probado con mir-2, ver ese día).
-1b. **Misiones que valen con más de una herramienta** (el usuario,
+1b. ~~**Misiones que valen con más de una herramienta**~~ (hecho el
+   2026-11-25, decisión 211; falta probarlo con mir-2). (El usuario,
    2026-11-07): p. ej. coger una pieza con la `dh` o con la `vgc10`. Hoy una
    order pide una herramienta concreta; habría que poder pedir una lista
    («cualquiera de estas») y que el asignador prefiera la que ya lleva.

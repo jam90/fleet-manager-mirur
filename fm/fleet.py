@@ -22,7 +22,7 @@ from fm.mqtt_bus import FLEET, MqttBus
 from fm.instant import apply_instant_actions
 from fm.orders import IgnoreOrder, pick_action
 from fm.robot import Robot
-from fm.tools import needed_tool, stock_problem, tool_holders, tool_problem
+from fm.tools import needed_tools, pick_tool, stock_problem, tool_holders, tool_problem, tools_label, with_tool
 from fm.tasks import (ASSIGNED, ASSIGNING, CANCELLED, EXPIRED, FAILED, FINISHED, QUEUED, REJECTED,
                       RETRYABLE, MemoryTaskStore, Task, TaskStore, iso)
 from fm.vda5050.header import parse_topic, validate_header
@@ -118,7 +118,9 @@ class Dispatcher:
                 raise OrderRejected(E_VALIDATION_FAILURE, invalid)
             order = parse_order(data)
             req = robot.translate_order(order)
-            self._check_stock(robot, order)
+            tool = self._directed_tool(robot, order)
+            if tool is not None:
+                req = robot.translate_order(order, tool)   # la que deja libre el soporte (decisión 211)
             robot.execute(order, req)
         except IgnoreOrder:
             log.info("[%s] order %s repetida: ignorada", serial, order_id)
@@ -206,7 +208,8 @@ class Dispatcher:
         Traducir no toca la red ni el robot. Con herramienta (decisión 184)
         vale el que la lleva ahora o la tiene en su cambiador; si no la tiene
         ninguno, alguien tendría que ponerla a mano: se rechaza y lo dice."""
-        tool = needed_tool(action, self.cfg.actions, self.cfg.tools)
+        tools = needed_tools(action, self.cfg.actions, self.cfg.tools)
+        key = (self.cfg.actions.get(action.actionType) or {}).get("tool_input")
         rejections: dict[str, str] = {}
         failures: dict[str, OrderRejected] = {}
         for serial in sorted(self.robots):
@@ -214,12 +217,14 @@ class Dispatcher:
             if action.actionType not in r.cfg.action_types:
                 rejections[serial] = f"no soporta '{action.actionType}'"
                 continue
-            problem = tool and tool_problem(tool, r.snapshot().tool, r.cfg.tool_changer)
+            mounted = r.snapshot().tool
+            tool, problem = pick_tool(tools, mounted, r.cfg.tool_changer) if tools else (None, "")
             if problem:
                 failures[serial] = OrderRejected(E_TOOL_NOT_AVAILABLE, problem)
                 continue
             try:
-                r.driver.translate(action)
+                # Con varias herramientas, el driver traduce la que usaría este robot.
+                r.driver.translate(with_tool(action, key, tool) if tool else action)
                 return
             except OrderRejected as e:
                 # VALIDATION_FAILURE es culpa de la order (falta un parámetro,
@@ -250,11 +255,11 @@ class Dispatcher:
         snaps = {s: r.snapshot() for s, r in self.robots.items()}
         try:
             # Se vuelve a mirar en cada intento: la config puede haber cambiado en caliente.
-            tool = needed_tool(pick_action(task.order), self.cfg.actions, self.cfg.tools)
+            tools = needed_tools(pick_action(task.order), self.cfg.actions, self.cfg.tools)
         except OrderRejected as e:
             self._drop(task, e)
             return
-        result = assign(task.action_type, snaps, self.cfg, tool, self._tool_stock(tool))
+        result = assign(task.action_type, snaps, self.cfg, tools, {t: self._tool_stock(t) for t in tools or []})
         if not result.ok:
             self._wait(task, result.reason)
             return
@@ -266,7 +271,7 @@ class Dispatcher:
         for serial in result.ranking:
             robot = self.robots[serial]
             try:
-                job = robot.translate_order(task.order)
+                job = robot.translate_order(task.order, result.tools.get(serial))
             except IgnoreOrder:
                 failures[serial] = OrderRejected(E_NO_MOBILE_ROBOT_AVAILABLE, "ya ha recibido esta order")
                 continue
@@ -424,7 +429,10 @@ class Dispatcher:
             self._close(task, FAILED, f"el FM se reinició y {task.serial} {why}")
             return False
         try:
-            job = robot.driver.translate(pick_action(task.order))
+            # Con varias herramientas (decisión 211) no se guardó cuál se eligió: la
+            # que lleva ahora si es de la lista (lo normal, ya cambiada), o la que
+            # elegiría el robot. Solo cuenta para la reserva del soporte.
+            job = robot.driver.translate(robot.resolve_tool(pick_action(task.order)))
         except OrderRejected as e:
             self._close(task, FAILED, f"el FM se reinició y no puede retomarla: {e.description}")
             return False
@@ -595,20 +603,28 @@ class Dispatcher:
         return count, tool_holders(tool, ((s, r.cfg.tool_changer, r.known_tool, r.requested_tool())
                                           for s, r in self.robots.items()))
 
-    def _check_stock(self, robot: Robot, order: Order) -> None:
-        """Una order dirigida a un robot que tendría que ir a por la
-        herramienta al soporte: si no queda ninguna, se rechaza (no hay cola
-        por robot). En `fleet/order` lo mira el asignador."""
-        tool = needed_tool(pick_action(order, robot.orders.done_action_ids(order)), self.cfg.actions, self.cfg.tools)
-        problem = tool and stock_problem(tool, *self._tool_stock(tool), robot.serial, robot.known_tool)
+    def _directed_tool(self, robot: Robot, order: Order) -> str | None:
+        """La herramienta con que `robot` hará una order dirigida a él, mirando
+        también las unidades del soporte (decisión 196): si la que prefiere
+        no queda libre, otra de la lista (decisión 211); si no queda ninguna,
+        se rechaza (no hay cola por robot). None = no pide herramienta. En
+        `fleet/order` lo mira el asignador."""
+        tools = robot.tool_options(pick_action(order, robot.orders.done_action_ids(order)))
+        if not tools:
+            return None
+        tool, problem = pick_tool(tools, robot.known_tool, robot.cfg.tool_changer,
+                                  lambda t: stock_problem(t, *self._tool_stock(t), robot.serial, robot.known_tool))
         if problem:
             raise OrderRejected(E_TOOL_NOT_AVAILABLE, problem)
+        return tool
 
     def _tool_of(self, task: Task) -> str | None:
+        """Las que pide la tarea, como en la order (`dh` o `dh,vgc10`)."""
         try:
-            return needed_tool(pick_action(task.order), self.cfg.actions, self.cfg.tools)
+            tools = needed_tools(pick_action(task.order), self.cfg.actions, self.cfg.tools)
         except OrderRejected:
             return None
+        return tools_label(tools) if tools else None
 
     @staticmethod
     def _all_failed(rejections: dict[str, str], failures: dict[str, OrderRejected]) -> OrderRejected:

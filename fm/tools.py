@@ -10,42 +10,110 @@ entre los que valen, prefiere el que ya la lleva (sin cambio).
 Qué herramienta pide una order lo dice su parámetro `tool_input` (p. ej.
 `garra`). Qué herramienta necesita cada pieza no es cosa del FM: lo decide
 quien manda la order (el MES, otro servicio).
+
+Una order puede valer con varias (punto 1b, decisión 211): `garra=dh,vgc10`
+(o una lista JSON). El FM elige UNA por robot (`pick_tool`): la que ya
+lleva, si es de la lista; si no, la primera de la lista que pueda ponerse.
+La order que llega al driver lleva solo esa (`with_tool`): la mission
+recibe un único código, como antes.
 """
 from __future__ import annotations
 
-from typing import Collection, Mapping
+from dataclasses import replace
+from typing import Any, Callable, Collection, Mapping
 
-from fm.vda5050.order import Action, OrderRejected
+from fm.vda5050.order import Action, ActionParameter, OrderRejected
 from fm.vda5050.state import E_VALIDATION_FAILURE
 
 
-def needed_tool(action: Action, actions: Mapping[str, dict], tools: Mapping[str, dict]) -> str | None:
-    """La herramienta que pide `action` (None = su action no usa herramienta).
-    Lanza `OrderRejected` (validationError) si falta el parámetro o la
-    herramienta no está en el catálogo: ningún robot la aceptaría."""
+def parse_tools(value: Any) -> list[str]:
+    """Valor del parámetro → lista de herramientas, en el orden en que vienen
+    (es la preferencia de quien manda la order) y sin repetidas. Vale una
+    sola (`"dh"`), varias separadas por comas (`"dh, vgc10"`) o una lista."""
+    items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+    out: list[str] = []
+    for v in items:
+        name = str(v).strip()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def needed_tools(action: Action, actions: Mapping[str, dict], tools: Mapping[str, dict]) -> list[str] | None:
+    """Las herramientas con que vale `action` (None = su action no usa
+    herramienta; si no, al menos una). Lanza `OrderRejected`
+    (validationError) si falta el parámetro o alguna no está en el
+    catálogo: ningún robot la aceptaría."""
     key = (actions.get(action.actionType) or {}).get("tool_input")
     if not key:
         return None
     given = action.params()
-    if key not in given:
+    names = parse_tools(given[key]) if key in given else []
+    if not names:
         raise OrderRejected(E_VALIDATION_FAILURE, f"falta el parámetro obligatorio '{key}' (herramienta)")
-    tool = str(given[key])
-    if tool not in tools:
+    unknown = [t for t in names if t not in tools]
+    if unknown:
         raise OrderRejected(E_VALIDATION_FAILURE,
-                            f"'{key}': herramienta '{tool}' desconocida; hay {sorted(tools)}")
-    return tool
+                            f"'{key}': herramienta '{unknown[0]}' desconocida; hay {sorted(tools)}")
+    return names
 
 
-def tool_problem(tool: str, mounted: str | None, changer: Collection[str]) -> str:
-    """Por qué un robot NO puede hacer una order que pide `tool` ("" = sí
-    puede). `mounted`: la que lleva ahora ("" = ninguna; None = su driver no
-    lo sabe); `changer`: las de su cambiador."""
-    if mounted == tool or tool in changer:
+def tools_label(tools: Collection[str]) -> str:
+    """`dh` o `dh,vgc10`: como se escribe en la order (para la cola y la web)."""
+    return ",".join(tools)
+
+
+def _wanted(tools: str | Collection[str]) -> list[str]:
+    return [tools] if isinstance(tools, str) else list(tools)
+
+
+def usable_tools(tools: str | Collection[str], mounted: str | None, changer: Collection[str]) -> list[str]:
+    """De las que valen, las que este robot puede usar, en el orden en que se
+    prefieren: primero la que lleva (sin cambio), luego las de su cambiador
+    en el orden de la order."""
+    tools = _wanted(tools)
+    first = [mounted] if mounted in tools else []
+    return first + [t for t in tools if t in changer and t != mounted]
+
+
+def tool_problem(tools: str | Collection[str], mounted: str | None, changer: Collection[str]) -> str:
+    """Por qué un robot NO puede hacer una order que vale con `tools` (una o
+    varias; "" = sí puede). `mounted`: la que lleva ahora ("" = ninguna;
+    None = su driver no lo sabe); `changer`: las de su cambiador."""
+    tools = _wanted(tools)
+    if usable_tools(tools, mounted, changer):
         return ""
+    want = " ni ".join(tools)
     if mounted is None:
-        return f"no se sabe qué herramienta lleva y no tiene {tool} en su cambiador"
+        return f"no se sabe qué herramienta lleva y no tiene {want} en su cambiador"
     now = f"lleva {mounted}" if mounted else "no lleva herramienta"
-    return f"{now} y no tiene {tool} en su cambiador" if changer else f"{now}, no {tool} (sin cambiador)"
+    return f"{now} y no tiene {want} en su cambiador" if changer else f"{now}, no {want} (sin cambiador)"
+
+
+def pick_tool(tools: str | Collection[str], mounted: str | None, changer: Collection[str],
+              stock: Callable[[str], str] = lambda tool: "") -> tuple[str | None, str]:
+    """La herramienta con que este robot haría la order: `(tool, "")`, o
+    `(None, motivo)`. `stock(t)`: por qué no puede ir a por `t` al soporte
+    ahora ("" = sí puede; `stock_problem`). Si la que prefiere no queda
+    libre, prueba la siguiente: con `dh,vgc10` y la `dh` puesta en otro
+    robot, va a por la `vgc10`."""
+    usable = usable_tools(tools, mounted, changer)
+    if not usable:
+        return None, tool_problem(tools, mounted, changer)
+    problems = []
+    for t in usable:
+        problem = stock(t)
+        if not problem:
+            return t, ""
+        problems.append(problem)
+    return None, "; ".join(problems)
+
+
+def with_tool(action: Action, key: str, tool: str) -> Action:
+    """Copia de `action` con `key` = `tool`: lo que recibe el driver cuando
+    la order valía con varias (la mission recibe un único código)."""
+    params = [ActionParameter(p.key, tool if p.key == key else p.value) for p in action.actionParameters]
+    return replace(action, actionParameters=params)
 
 
 def changer_notice(changer: Collection[str], mounted: str | None) -> str:

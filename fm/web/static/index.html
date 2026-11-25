@@ -217,6 +217,11 @@
   .field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
   .field input, .field select { font: inherit; font-weight: 400; color: var(--ink); background: var(--surface);
     border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 10px; }
+  /* Herramientas de una tarea (decisión 211): casillas, se puede marcar más de una. */
+  .tool-checks { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .tool-checks legend { padding: 0; margin-bottom: 4px; }
+  .tool-checks label { display: flex; align-items: center; gap: 8px; font-weight: 400; color: var(--ink); min-height: 32px; }
+  .tool-checks input { width: 18px; height: 18px; padding: 0; margin: 0; }
   /* Número con rango: deslizador (cómodo en tablet) + recuadro, mismo v-model. */
   .numrow { display: grid; grid-template-columns: 1fr 5.5em; gap: 10px; align-items: center; }
   .field input[type=range] { padding: 0; border: 0; background: none; height: 36px; accent-color: var(--accent); }
@@ -358,6 +363,7 @@
   .inputs th, .inputs td { text-align: left; padding: 4px 8px 4px 0; vertical-align: middle; }
   .inputs th { color: var(--ink-3); font-weight: 600; }
   .num-in.sm { width: 5em; }
+  .num-in.wide { width: 9em; }                 /* cabe «sin aviso» y las flechas */
   .allow { display: flex; flex-wrap: wrap; gap: 4px 14px; font-weight: 400; color: var(--ink); }
   .deleted { opacity: .55; } .deleted b { text-decoration: line-through; }
   .cfg-robot { display: grid; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -994,7 +1000,15 @@
               </option>
             </select>
           </label>
-          <label class="field" v-for="p in currentParams" :key="p.key">
+          <template v-for="p in currentParams" :key="p.key">
+          <!-- La herramienta, con casillas: la order puede valer con varias (decisión 211);
+               el FM elige una por robot (la que ya lleva, si es de las marcadas). -->
+          <fieldset v-if="p.kind === 'tool'" class="field tool-checks" :id="'param-' + p.key">
+            <legend>{{ p.key }} ({{ PARAM_KIND[p.kind] }}; una o varias: vale cualquiera. Si el robot no lleva
+              ninguna, va a por la que marcaste antes)</legend>
+            <label v-for="c in p.choices" :key="c"><input type="checkbox" :value="c" v-model="form.params[p.key]"> {{ toolText(c) }}</label>
+          </fieldset>
+          <label class="field" v-else>
             <!-- Un solo elemento: en .field (grid) cada trozo iría en su línea. -->
             <span>{{ p.key }}<template v-if="PARAM_KIND[p.kind]"> ({{ PARAM_KIND[p.kind] }})</template></span>
             <select v-if="p.choices" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
@@ -1015,7 +1029,9 @@
                    v-model.number="form.params[p.key]" :required="p.required">
             <input v-else type="text" :id="'param-' + p.key" v-model="form.params[p.key]" :required="p.required">
           </label>
-          <button class="btn primary" id="order-send" type="submit" :disabled="!form.actionType || sending">Enviar tarea</button>
+          </template>
+          <button class="btn primary" id="order-send" type="submit"
+                  :disabled="!form.actionType || sending || toolMissing">Enviar tarea</button>
         </form>
         <div class="resp" v-for="o in fleetOrders" :key="o.orderId" :class="o.status || 'pending'">
           <code>{{ o.orderId }}</code> <b>{{ o.actionType }}</b><template v-if="o.tool"> · pide {{ o.tool }}</template>
@@ -1948,8 +1964,9 @@
           <div class="acts"><input class="num-in" style="width: 14em" v-model.trim="actForm.newInput" placeholder="añadir input a mano" @keyup.enter="addInput">
             <button class="btn" @click="addInput" :disabled="!actForm.newInput">Añadir</button></div>
           <span class="hint">«No declarar»: si la order lo trae y la misión lo tiene, se pasa igual, pero no es obligatorio.
-            «Herramienta»: la order trae su nombre, la misión recibe su código y el FM elige un robot que la lleve o pueda
-            ponérsela (como mucho uno por tipo de tarea).</span>
+            «Herramienta»: la order trae su nombre, o varios separados por comas si vale cualquiera (<code>dh,vgc10</code>);
+            el FM elige un robot que lleve o pueda ponerse una, y la misión recibe el código de esa (como mucho uno por tipo
+            de tarea). Solo salen aquí las variables de la misión en el MiR.</span>
         </div>
 
         <div class="field" v-if="actForm.inputs.some(i => i.kind === 'position')">Posiciones admitidas (ninguna marcada = cualquiera del robot)
@@ -1958,7 +1975,7 @@
           </div>
         </div>
         <label class="field">Tiempo normal en ejecución, en segundos (opcional)
-          <input id="act-expected" class="num-in" type="number" min="1" step="1" v-model.number="actForm.expected" placeholder="sin aviso"></label>
+          <input id="act-expected" class="num-in wide" type="number" min="1" step="1" v-model.number="actForm.expected" placeholder="sin aviso"></label>
         <p class="hint">Si una tarea de este tipo pasa más tiempo en ejecución (sin contar la espera en cola ni las pausas), su robot muestra un aviso. <code>scripts/mission_durations.py</code> propone un valor a partir de la historia del robot.</p>
         <p class="err" v-if="actForm.error">{{ actForm.error }}</p>
         <div class="acts">
@@ -2597,14 +2614,29 @@
               quede libre el robot que la lleva. Una order dirigida a ese robot se rechaza. Debajo sale cuántas quedan ahora.
               Un robot del que no se sabe qué lleva cuenta como si tuviera una de cada (por prudencia), y uno sin red, con la
               última que se le leyó. La que lleva fija un robot sin acoplador no cuenta: no es del soporte.</p></li>
+          <li><b>La misión recibe la herramienta en una variable</b><span class="where">web del MiR</span>
+            <p>La misión tiene que tener una <b>variable</b> numérica para la herramienta (el nombre es libre: <code>herramienta</code>,
+              <code>garra</code>…). Lo normal es crearla al hacer variable el valor de <i>Set PLC register</i> y usarla también en el
+              <i>If</i> y en el <i>Load mission</i>. <b>Sin esa variable, el FM no puede pedir herramienta para esa misión</b>: al
+              MiR solo se le pasan valores por las variables de la misión, así que en Configuración no saldrá ningún input al que
+              decir «herramienta».</p></li>
           <li><b>La misión cambia la herramienta</b><span class="where">web del MiR</span>
             <p>Recibe la pedida como un número y la escribe en el registro que lea el brazo (en la instalación de Tknika, el 4). Si no coincide con la que lleva
               (el registro de <code>tool_register</code>, por defecto el 5), <i>Load mission</i> de la de cambio y después
               sigue. El FM no la cambia: solo elige robot.</p></li>
+          <li><b>Que el FM vea la variable</b><a class="where" href="#catalogo">→ Catálogo</a>
+            <p>Captura la misión al catálogo (o «Traer al catálogo» si la has cambiado en la web del robot después). El
+              Configurador saca los inputs de un tipo de tarea de las variables de su misión tal como está en el catálogo: si
+              añades la variable en el MiR y no la traes, no aparece.</p></li>
           <li><b>El tipo de tarea pide herramienta</b><a class="where" href="#configurador">→ Configuración</a>
-            <p>En «Definición de los tipos de tarea», «Editar» el tipo y, en el input de la misión con la herramienta (p. ej.
+            <p>En «Definición de los tipos de tarea», «Editar» el tipo y, en el input que sale de esa variable (p. ej.
               <code>garra</code>), «herramienta» en «qué es» (<code>tool_input</code>; uno por tipo de tarea). La order trae el
-              nombre de la herramienta y la misión recibe su código; en «Nueva tarea» sale como desplegable.</p></li>
+              nombre de la herramienta y la misión recibe su código; en «Nueva tarea» sale con una casilla por herramienta.</p></li>
+          <li><b>Una tarea que vale con varias</b><a class="where" href="#operacion">→ Operación</a>
+            <p>Marca todas las que valgan (p. ej. la pinza y la ventosa para coger una pieza); a mano, la order lleva
+              <code>garra=dh,vgc10</code>. El FM manda primero al robot que ya lleva una de ellas y, si ninguno, al que
+              pueda ponerse una: la primera de la lista que le quede libre en el soporte. La misión recibe solo el código de la
+              elegida, así que no cambia nada en ella.</p></li>
           <li><b>Al arrancar el FM, revisar los cambiadores</b><a class="where" href="#operacion">→ Operación</a>
             <p>Sale el aviso con lo que dice la configuración de cada cambiador: compruébalo y «Revisado». Lo guarda el FM: el
               aviso se quita en todos los navegadores hasta el próximo arranque, y queda dicho a qué hora y desde qué equipo.
@@ -2612,7 +2644,7 @@
               <a href="#configurador">Configuración</a> → Herramientas (sin reiniciar). Si no, la misión fallará al intentar
               ponérsela.</p></li>
           <li><b>Seguirlo en Operación</b><a class="where" href="#operacion">→ Operación</a>
-            <p>Al enviar una tarea y en la cola, cada una dice la herramienta que pide («pide vgc10»). La tarjeta de cada
+            <p>Al enviar una tarea y en la cola, cada una dice la herramienta que pide («pide vgc10» o «pide dh,vgc10»). La tarjeta de cada
               robot (y su pestaña en Robots) dice la que lleva, la que pide su tarea en curso y las de su cambiador. En
               «Eventos» sale cuándo cambia la que lleva. Si nadie puede ponérsela, la order se rechaza
               (<code>TOOL_NOT_AVAILABLE</code>) o espera en la cola, y el motivo dice por qué.</p></li>
@@ -2888,7 +2920,12 @@ createApp({
     async function sendOrder() {
       ui.sending = true;
       const params = {};
-      for (const p of currentParams.value) if (form.params[p.key] !== undefined && form.params[p.key] !== '') params[p.key] = form.params[p.key];
+      for (const p of currentParams.value) {
+        const v = form.params[p.key];
+        // Las herramientas marcadas van como en la order a mano: «dh,vgc10».
+        if (Array.isArray(v)) { if (v.length) params[p.key] = v.join(','); }
+        else if (v !== undefined && v !== '') params[p.key] = v;
+      }
       const r = await fetch('/api/fleet/order', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actionType: form.actionType, params }) });
       ui.sending = false;
@@ -2959,9 +2996,13 @@ createApp({
     // Al cambiar de action: los números con rango arrancan en el mínimo, para
     // que deslizador y recuadro muestren lo mismo y no se envíe un vacío.
     watch(() => form.actionType, () => {
-      for (const p of currentParams.value)
+      for (const p of currentParams.value) {
         if (p.kind === 'number' && hasRange(p) && typeof form.params[p.key] !== 'number') form.params[p.key] = p.min;
-    });
+        if (p.kind === 'tool' && !Array.isArray(form.params[p.key])) form.params[p.key] = [];
+      }
+    }, { immediate: true });
+    // Sin ninguna herramienta marcada no se envía (la order se rechazaría).
+    const toolMissing = computed(() => currentParams.value.some(p => p.kind === 'tool' && !(form.params[p.key] || []).length));
 
     function statusOf(r, s) {
       if (!s || r.connection === 'CONNECTIONBROKEN' || (s.errors || []).some(e => e.errorType === 'ROBOT_UNREACHABLE'))
@@ -4689,7 +4730,7 @@ createApp({
     loadFleet();
     connect();
     return { navGroups, pageLabel, catalogVisible, syncResource, mapHash, cfgJump, fleet, ui, form, fleetOrders, events, robotsView, prompts, promptsElsewhere,
-             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, instant, sendOrder, cancelFleetOrder, fleetQueue, queueBusy, queuePos, waitedFor, queueAction, hasRange,
+             fmap, fmapChoices, fmapCur, fmapView, fmapFont, fmapStroke, fmapRobots, fmapAway, toPx, actionCatalog, currentParams, toolMissing, instant, sendOrder, cancelFleetOrder, fleetQueue, queueBusy, queuePos, waitedFor, queueAction, hasRange,
              tabs: TABS, tab: computed(() => ui.tab),
              robotSel, robotHash, pickRobot, rd, deg, fixed, duration, hhmmss, since, dayTime, mis, fixT,
              syncState, syncCatalog, syncPlans, catSections, catMatches, nSelected, nHiddenSel, selectSection, selectAll, previewFresh,

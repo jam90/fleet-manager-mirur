@@ -377,7 +377,7 @@ FM aunque esté vacía:
                "waiting": "ahora no puede ningún robot: mir-1: ocupado; mir-2: ocupado" } ] }
 ```
 
-Si su action pide herramienta, la tarea lleva también `"tool"` (la que pide).
+Si su action pide herramienta, la tarea lleva también `"tool"` (la que pide, o las que valen separadas por comas: `dh,vgc10`).
 
 Para cancelar una order de la cola (o en curso), `fleet/instantActions` con
 `cancelOrder` y el parámetro `orderId` (por HTTP, `POST
@@ -783,6 +783,12 @@ robots:
 - `actions.<tipo>.tool_input` — el parámetro de la order con el nombre de la
   herramienta. Ausente o desconocida → `VALIDATION_FAILURE`. A la mission le
   llega su **código** (en el MiR, como un número para *Set/If PLC register*).
+- **Varias que valen** (decisión 211): `{"key": "garra", "value": "dh,vgc10"}`
+  (o `["dh", "vgc10"]`). Primero va el robot que ya lleva una de ellas; si
+  no, cada robot usa la primera de la lista que pueda ponerse y que quede
+  libre en el soporte. La mission recibe **un solo código**, el de la
+  elegida, y `TOOL_REQUESTED` dice cuál. En `fleet/queue`, `tool` sale como
+  vino (`dh,vgc10`).
 - `robots.<serial>.tool_changer` — las de su cambiador; puede ponerse
   cualquiera. Sin cambiador, solo vale la que lleve montada.
 - `robots.<serial>.tool` — (MiR) la que lleva **siempre**, para un brazo sin
@@ -792,7 +798,7 @@ robots:
 - La **montada ahora** no se configura: la lee el driver (MiR:
   `tool_register`) y sale en `state.information[]` como `TOOL`, en Operación
   y en Robots. Por defecto, el registro 5, como en el protocolo MiR ↔ brazo
-  del otro proyecto: `1` comando, `2` herramienta que quiere el MiR (la
+  de la instalación: `1` comando, `4` herramienta que quiere el MiR (la
   escribe la mission), `5` la que tiene montada el brazo (la escribe él).
   La que pide la order en curso sale como `TOOL_REQUESTED`
   (la pone el FM, no el driver), y la que pide cada tarea de la cola, en
